@@ -1,7 +1,7 @@
 'use server'
 
 import { createServerClient } from '@/lib/supabase/server'
-import type { Agent } from '@/lib/types/database'
+import type { Agent, CallLog } from '@/lib/types/database'
 
 type CredentialsResult =
   | { agent: Agent; password: string; sipServer: string; sipDomain: string }
@@ -66,4 +66,16 @@ export async function saveCallLog(
 
   if (error) return { error: error.message }
   return {}
+}
+
+export async function getCallHistory(agentId: string): Promise<CallLog[]> {
+  const supabase = createServerClient()
+  const { data } = await supabase
+    .from('call_logs')
+    .select('*')
+    .eq('agent_id', agentId)
+    .order('created_at', { ascending: false })
+    .limit(20)
+
+  return (data ?? []) as CallLog[]
 }

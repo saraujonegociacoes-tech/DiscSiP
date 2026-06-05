@@ -6,6 +6,7 @@ import {
   Registerer,
   RegistererState,
   Inviter,
+  Invitation,
   SessionState,
 } from 'sip.js'
 import { useSoftphoneStore } from '@/store/softphoneStore'
@@ -17,11 +18,26 @@ export interface SipCredentials {
   sipDomain: string
 }
 
+type WebRTCSessionDescriptionHandler = { peerConnection?: RTCPeerConnection }
+
+function attachRemoteAudio(sdh: unknown, el: HTMLAudioElement) {
+  const handler = sdh as WebRTCSessionDescriptionHandler
+  const pc = handler?.peerConnection
+  if (!pc) return
+  const stream = new MediaStream()
+  pc.getReceivers().forEach((r) => {
+    if (r.track) stream.addTrack(r.track)
+  })
+  el.srcObject = stream
+  el.play().catch(console.error)
+}
+
 export function useSipAgent(audioRef: React.RefObject<HTMLAudioElement | null>) {
   const userAgentRef = useRef<UserAgent | null>(null)
   const registererRef = useRef<Registerer | null>(null)
   const sessionRef = useRef<Inviter | null>(null)
-  const { setSipStatus, setCallStatus, resetCall } = useSoftphoneStore()
+  const invitationRef = useRef<Invitation | null>(null)
+  const { setSipStatus, setCallStatus, setIncomingCall, resetCall } = useSoftphoneStore()
 
   const connect = useCallback(
     async (credentials: SipCredentials) => {
@@ -38,6 +54,30 @@ export function useSipAgent(audioRef: React.RefObject<HTMLAudioElement | null>) 
           authorizationPassword: credentials.password,
           transportOptions: { server: credentials.sipServer },
           logLevel: 'error',
+          delegate: {
+            onInvite(invitation: Invitation) {
+              const from = invitation.remoteIdentity.uri.user ?? 'Desconhecido'
+              invitationRef.current = invitation
+              setIncomingCall(from)
+
+              invitation.stateChange.addListener((state) => {
+                switch (state) {
+                  case SessionState.Established:
+                    setCallStatus('answered', from)
+                    if (audioRef.current) {
+                      attachRemoteAudio(invitation.sessionDescriptionHandler, audioRef.current)
+                    }
+                    break
+                  case SessionState.Terminated:
+                    setCallStatus('ended')
+                    if (audioRef.current) audioRef.current.srcObject = null
+                    setTimeout(resetCall, 2000)
+                    invitationRef.current = null
+                    break
+                }
+              })
+            },
+          },
         })
 
         userAgentRef.current = ua
@@ -65,7 +105,7 @@ export function useSipAgent(audioRef: React.RefObject<HTMLAudioElement | null>) 
         setSipStatus('error', err instanceof Error ? err.message : 'Erro SIP')
       }
     },
-    [setSipStatus]
+    [setSipStatus, setIncomingCall, setCallStatus, resetCall, audioRef]
   )
 
   const disconnect = useCallback(async () => {
@@ -103,25 +143,15 @@ export function useSipAgent(audioRef: React.RefObject<HTMLAudioElement | null>) 
 
       inviter.stateChange.addListener((state) => {
         switch (state) {
-          case SessionState.Established: {
+          case SessionState.Established:
             setCallStatus('answered', phoneNumber)
-            const sdh = inviter.sessionDescriptionHandler as unknown as { peerConnection?: RTCPeerConnection }
-            const pc = sdh?.peerConnection
-            if (pc && audioRef.current) {
-              const stream = new MediaStream()
-              pc.getReceivers().forEach((r) => {
-                if (r.track) stream.addTrack(r.track)
-              })
-              audioRef.current.srcObject = stream
-              audioRef.current.play().catch(console.error)
+            if (audioRef.current) {
+              attachRemoteAudio(inviter.sessionDescriptionHandler, audioRef.current)
             }
             break
-          }
           case SessionState.Terminated:
             setCallStatus('ended')
-            if (audioRef.current) {
-              audioRef.current.srcObject = null
-            }
+            if (audioRef.current) audioRef.current.srcObject = null
             setTimeout(resetCall, 2000)
             sessionRef.current = null
             break
@@ -134,14 +164,18 @@ export function useSipAgent(audioRef: React.RefObject<HTMLAudioElement | null>) 
   )
 
   const hangup = useCallback(async () => {
-    const session = sessionRef.current
+    const session = sessionRef.current ?? invitationRef.current
     if (!session) return
     try {
       if (
         session.state === SessionState.Initial ||
         session.state === SessionState.Establishing
       ) {
-        await session.cancel()
+        if (session instanceof Inviter) {
+          await session.cancel()
+        } else {
+          await (session as Invitation).reject()
+        }
       } else if (session.state === SessionState.Established) {
         await session.bye()
       }
@@ -150,6 +184,32 @@ export function useSipAgent(audioRef: React.RefObject<HTMLAudioElement | null>) 
     }
   }, [])
 
+  const answerCall = useCallback(async () => {
+    const invitation = invitationRef.current
+    if (!invitation) return
+    try {
+      await invitation.accept({
+        sessionDescriptionHandlerOptions: {
+          constraints: { audio: true, video: false },
+        },
+      })
+    } catch (err) {
+      console.error('Erro ao atender chamada:', err)
+    }
+  }, [])
+
+  const rejectCall = useCallback(async () => {
+    const invitation = invitationRef.current
+    if (!invitation) return
+    try {
+      await invitation.reject()
+      invitationRef.current = null
+      resetCall()
+    } catch {
+      // ignore
+    }
+  }, [resetCall])
+
   useEffect(() => {
     return () => {
       disconnect()
@@ -157,5 +217,5 @@ export function useSipAgent(audioRef: React.RefObject<HTMLAudioElement | null>) 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  return { connect, disconnect, call, hangup }
+  return { connect, disconnect, call, hangup, answerCall, rejectCall }
 }

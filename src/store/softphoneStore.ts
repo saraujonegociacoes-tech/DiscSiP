@@ -3,7 +3,7 @@
 import { create } from 'zustand'
 
 export type SipStatus = 'disconnected' | 'connecting' | 'registered' | 'error'
-export type CallStatus = 'idle' | 'ringing' | 'answered' | 'ended'
+export type CallStatus = 'idle' | 'incoming' | 'ringing' | 'answered' | 'ended'
 
 interface SoftphoneState {
   agentId: string | null
@@ -14,9 +14,11 @@ interface SoftphoneState {
   callStatus: CallStatus
   callNumber: string | null
   callStartedAt: Date | null
+  incomingFrom: string | null
   setAgent: (id: string, name: string, extension: number) => void
   setSipStatus: (status: SipStatus, error?: string) => void
   setCallStatus: (status: CallStatus, number?: string) => void
+  setIncomingCall: (from: string) => void
   resetCall: () => void
   logout: () => void
 }
@@ -30,6 +32,7 @@ export const useSoftphoneStore = create<SoftphoneState>((set) => ({
   callStatus: 'idle',
   callNumber: null,
   callStartedAt: null,
+  incomingFrom: null,
 
   setAgent: (id, name, extension) =>
     set({ agentId: id, agentName: name, extension }),
@@ -44,8 +47,11 @@ export const useSoftphoneStore = create<SoftphoneState>((set) => ({
       callStartedAt: status === 'answered' ? new Date() : null,
     }),
 
+  setIncomingCall: (from) =>
+    set({ callStatus: 'incoming', incomingFrom: from }),
+
   resetCall: () =>
-    set({ callStatus: 'idle', callNumber: null, callStartedAt: null }),
+    set({ callStatus: 'idle', callNumber: null, callStartedAt: null, incomingFrom: null }),
 
   logout: () =>
     set({
@@ -57,5 +63,6 @@ export const useSoftphoneStore = create<SoftphoneState>((set) => ({
       callStatus: 'idle',
       callNumber: null,
       callStartedAt: null,
+      incomingFrom: null,
     }),
 }))
