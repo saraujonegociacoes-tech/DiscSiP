@@ -105,8 +105,8 @@ export function useSipAgent(audioRef: React.RefObject<HTMLAudioElement | null>) 
         switch (state) {
           case SessionState.Established: {
             setCallStatus('answered', phoneNumber)
-            const sdh = inviter.sessionDescriptionHandler as any
-            const pc = sdh?.peerConnection as RTCPeerConnection | undefined
+            const sdh = inviter.sessionDescriptionHandler as unknown as { peerConnection?: RTCPeerConnection }
+            const pc = sdh?.peerConnection
             if (pc && audioRef.current) {
               const stream = new MediaStream()
               pc.getReceivers().forEach((r) => {
