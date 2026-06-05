@@ -1,0 +1,61 @@
+# dependencies
+/node_modules
+/.pnp
+.pnp.js
+.yarn/install-state.gz
+
+# next.js
+/.next/
+/out/
+
+# production
+/build
+
+# testing
+/coverage
+
+# misc
+.DS_Store
+*.pem
+Thumbs.db
+
+# debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# env — NUNCA commitar credenciais
+.env
+.env.local
+.env.*.local
+.env.development
+.env.test
+.env.production
+.dev.vars
+
+# cloudflare / opennext
+.wrangler/
+.vercel/
+.open-next/
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts
+
+# supabase local dev
+supabase/.temp/
+supabase/functions/.env
+
+# editor
+.vscode/settings.json
+.idea/
+*.swp
+*.swo
+
+# arquivos locais de projeto (não sobem para o repo público)
+.agents/
+.claude/
+visual/
+softphone-autodial-conceito.md
+skills-lock.json
