@@ -3,12 +3,14 @@
 import { useRef, useState, useEffect } from 'react'
 import { useSipAgent } from '@/hooks/useSipAgent'
 import { useSoftphoneStore } from '@/store/softphoneStore'
+import { useDialerStore } from '@/store/dialerStore'
 import { getSipCredentials, saveCallLog } from '@/app/actions/sip'
 import { DialPad } from './DialPad'
 import { CallHistory } from './CallHistory'
+import { DialerTab } from './DialerTab'
 import { Sidebar } from '@/components/Sidebar'
 
-type Tab = 'softphone' | 'history'
+type Tab = 'softphone' | 'dialer' | 'history'
 
 export default function SoftphoneClient() {
   const audioRef = useRef<HTMLAudioElement | null>(null)
@@ -19,6 +21,7 @@ export default function SoftphoneClient() {
     callStatus, callNumber, incomingFrom, callStartedAt,
     setAgent, resetCall, logout,
   } = useSoftphoneStore()
+  const { campaign } = useDialerStore()
 
   const [extensionInput, setExtensionInput] = useState('')
   const [loginError, setLoginError] = useState('')
@@ -39,7 +42,7 @@ export default function SoftphoneClient() {
     return () => clearInterval(interval)
   }, [callStatus])
 
-  // Salva call_log quando chamada termina
+  // Salva call_log quando chamada termina (inclui campaign_id se o dialer estiver ativo)
   useEffect(() => {
     if (callStatus !== 'ended' || !agentId || !extension || !callNumber) return
     if (callLogSavedRef.current) return
@@ -58,8 +61,9 @@ export default function SoftphoneClient() {
       durationSeconds,
       startedAt: callStartedAt ? callStartedAt.toISOString() : null,
       endedAt: new Date().toISOString(),
+      ...(campaign && { campaignId: campaign.id }),
     })
-  }, [callStatus, agentId, extension, callNumber, callStartedAt])
+  }, [callStatus, agentId, extension, callNumber, callStartedAt, campaign])
 
   useEffect(() => {
     if (callStatus === 'idle') callLogSavedRef.current = false
@@ -155,11 +159,11 @@ export default function SoftphoneClient() {
     <div className="min-h-screen bg-[#070d1a] flex">
       <Sidebar />
 
-      <div className="flex-1 flex flex-col">
+      <div className="flex-1 flex flex-col min-w-0">
         {/* Top bar */}
-        <header className="flex items-center justify-between px-6 py-3 border-b border-slate-800">
+        <header className="flex items-center justify-between px-6 py-3 border-b border-slate-800 shrink-0">
           <div className="flex gap-1">
-            {(['softphone', 'history'] as Tab[]).map((tab) => (
+            {(['softphone', 'dialer', 'history'] as Tab[]).map((tab) => (
               <button
                 key={tab}
                 onClick={() => setActiveTab(tab)}
@@ -169,7 +173,7 @@ export default function SoftphoneClient() {
                     : 'text-slate-400 hover:text-white'
                 }`}
               >
-                {tab === 'softphone' ? 'Softphone' : 'Histórico'}
+                {tab === 'softphone' ? 'Softphone' : tab === 'dialer' ? 'Dialer' : 'Histórico'}
               </button>
             ))}
           </div>
@@ -187,9 +191,9 @@ export default function SoftphoneClient() {
           </div>
         </header>
 
-        <main className="flex-1 p-6">
+        <main className="flex-1 p-6 overflow-y-auto">
           {/* ─── Aba Softphone ─── */}
-          {activeTab === 'softphone' && (
+          <div className={activeTab === 'softphone' ? 'block' : 'hidden'}>
             <div className="max-w-sm mx-auto space-y-3">
               {/* Chamada recebida */}
               {callStatus === 'incoming' && (
@@ -201,13 +205,13 @@ export default function SoftphoneClient() {
                   <div className="flex gap-3 mt-5">
                     <button
                       onClick={answerCall}
-                      className="flex-1 bg-green-600 hover:bg-green-500 active:bg-green-700 text-white py-3 rounded-xl font-semibold transition-colors"
+                      className="flex-1 bg-green-600 hover:bg-green-500 text-white py-3 rounded-xl font-semibold transition-colors"
                     >
                       Atender
                     </button>
                     <button
                       onClick={rejectCall}
-                      className="flex-1 bg-red-600 hover:bg-red-500 active:bg-red-700 text-white py-3 rounded-xl font-semibold transition-colors"
+                      className="flex-1 bg-red-600 hover:bg-red-500 text-white py-3 rounded-xl font-semibold transition-colors"
                     >
                       Rejeitar
                     </button>
@@ -235,21 +239,20 @@ export default function SoftphoneClient() {
                   )}
                   <button
                     onClick={hangup}
-                    className="mt-5 w-full bg-red-600 hover:bg-red-500 active:bg-red-700 text-white py-3 rounded-xl font-semibold transition-colors"
+                    className="mt-5 w-full bg-red-600 hover:bg-red-500 text-white py-3 rounded-xl font-semibold transition-colors"
                   >
                     {callStatus === 'ringing' ? 'Cancelar' : 'Encerrar'}
                   </button>
                 </div>
               )}
 
-              {/* Chamada encerrada */}
               {callStatus === 'ended' && (
                 <div className="bg-[#111827] border border-slate-700/60 rounded-2xl px-6 py-4 text-center">
                   <p className="text-slate-400 text-sm">Chamada encerrada</p>
                 </div>
               )}
 
-              {/* Discagem (idle ou ended) */}
+              {/* Discagem */}
               {(callStatus === 'idle' || callStatus === 'ended') && (
                 <div className="bg-[#111827] border border-slate-700/60 rounded-2xl p-5">
                   <div className="flex gap-2">
@@ -269,7 +272,7 @@ export default function SoftphoneClient() {
                     <button
                       onClick={() => call(dialNumber.trim())}
                       disabled={sipStatus !== 'registered' || !dialNumber.trim()}
-                      className="bg-green-600 hover:bg-green-500 active:bg-green-700 disabled:bg-slate-700 disabled:text-slate-500 text-white px-4 rounded-xl transition-colors text-xl"
+                      className="bg-green-600 hover:bg-green-500 disabled:bg-slate-700 disabled:text-slate-500 text-white px-4 rounded-xl transition-colors text-xl"
                       title="Ligar"
                     >
                       ✆
@@ -277,21 +280,19 @@ export default function SoftphoneClient() {
                     {dialNumber && (
                       <button
                         onClick={() => setDialNumber((n) => n.slice(0, -1))}
-                        className="bg-[#1a2234] hover:bg-slate-700 text-slate-400 px-3 rounded-xl transition-colors text-sm"
+                        className="bg-[#1a2234] hover:bg-slate-700 text-slate-400 px-3 rounded-xl transition-colors"
                         title="Apagar"
                       >
                         ⌫
                       </button>
                     )}
                   </div>
-
                   <button
                     onClick={() => setShowDialPad((v) => !v)}
                     className="w-full mt-3 text-slate-500 hover:text-slate-300 text-xs transition-colors py-1"
                   >
                     {showDialPad ? 'Ocultar teclado' : 'Mostrar teclado'}
                   </button>
-
                   {showDialPad && (
                     <DialPad onKey={(k) => setDialNumber((n) => n + k)} />
                   )}
@@ -302,7 +303,12 @@ export default function SoftphoneClient() {
                 <p className="text-red-400 text-xs text-center">{sipError}</p>
               )}
             </div>
-          )}
+          </div>
+
+          {/* ─── Aba Dialer — sempre montada para manter o hook ativo ─── */}
+          <div className={activeTab === 'dialer' ? 'block' : 'hidden'}>
+            <DialerTab onCall={call} />
+          </div>
 
           {/* ─── Aba Histórico ─── */}
           {activeTab === 'history' && agentId && (
@@ -317,7 +323,6 @@ export default function SoftphoneClient() {
         </main>
       </div>
 
-      {/* Agente logado no sidebar já está via Zustand — sem necessidade de nome aqui */}
       <audio ref={audioRef} autoPlay hidden />
     </div>
   )

@@ -47,25 +47,31 @@ interface SaveCallLogInput {
   durationSeconds: number
   startedAt: string | null
   endedAt: string | null
+  campaignId?: string
 }
 
 export async function saveCallLog(
   input: SaveCallLogInput
-): Promise<{ error?: string }> {
+): Promise<{ id?: string; error?: string }> {
   const supabase = createServerClient()
-  const { error } = await supabase.from('call_logs').insert({
-    agent_id: input.agentId,
-    extension: input.extension,
-    phone_number: input.phoneNumber,
-    direction: input.direction,
-    status: input.status,
-    duration_seconds: input.durationSeconds,
-    started_at: input.startedAt,
-    ended_at: input.endedAt,
-  })
+  const { data, error } = await supabase
+    .from('call_logs')
+    .insert({
+      agent_id: input.agentId,
+      extension: input.extension,
+      phone_number: input.phoneNumber,
+      direction: input.direction,
+      status: input.status,
+      duration_seconds: input.durationSeconds,
+      started_at: input.startedAt,
+      ended_at: input.endedAt,
+      ...(input.campaignId && { campaign_id: input.campaignId }),
+    })
+    .select('id')
+    .single()
 
   if (error) return { error: error.message }
-  return {}
+  return { id: data?.id }
 }
 
 export async function getCallHistory(agentId: string): Promise<CallLog[]> {
