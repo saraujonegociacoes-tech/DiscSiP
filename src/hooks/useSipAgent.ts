@@ -54,8 +54,8 @@ export function useSipAgent(audioRef: React.RefObject<HTMLAudioElement | null>) 
             case RegistererState.Unregistered:
               setSipStatus('disconnected')
               break
-            case RegistererState.Failed:
-              setSipStatus('error', 'Falha no registro SIP')
+            case RegistererState.Terminated:
+              setSipStatus('error', 'Registro SIP encerrado')
               break
           }
         })
