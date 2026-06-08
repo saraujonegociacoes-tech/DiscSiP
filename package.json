@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "next dev --turbopack",
     "build": "next build",
-    "build:cf": "opennextjs-cloudflare build && node -e \"const fs=require('fs');fs.renameSync('.open-next/worker.js','.open-next/_worker.js');fs.readdirSync('.open-next/assets').forEach(f=>fs.cpSync('.open-next/assets/'+f,'.open-next/'+f,{recursive:true}));\"",
+    "build:cf": "opennextjs-cloudflare build && node -e \"const fs=require('fs');fs.renameSync('.open-next/worker.js','.open-next/_worker.js');fs.readdirSync('.open-next/assets').forEach(f=>fs.cpSync('.open-next/assets/'+f,'.open-next/'+f,{recursive:true}));const init=fs.readFileSync('.open-next/cloudflare/init.js','utf8');fs.writeFileSync('.open-next/cloudflare/init.js',init.replace('__ASSETS_RUN_WORKER_FIRST__: false','__ASSETS_RUN_WORKER_FIRST__: true'));\"",
     "preview": "opennextjs-cloudflare build && wrangler pages dev",
     "start": "next start",
     "lint": "eslint"
