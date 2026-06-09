@@ -1,40 +1,51 @@
 'use client'
 
-import { useRef, useState, useEffect } from 'react'
-import { useSipAgent } from '@/hooks/useSipAgent'
+import { useState, useEffect } from 'react'
 import { useSoftphoneStore } from '@/store/softphoneStore'
 import { useDialerStore } from '@/store/dialerStore'
-import { getSipCredentials, saveCallLog } from '@/app/actions/sip'
-import { DialPad } from './DialPad'
+import { getAgentByExtension } from '@/app/actions/dialer'
 import { CallHistory } from './CallHistory'
 import { DialerTab } from './DialerTab'
 import { Sidebar } from '@/components/Sidebar'
+import { HELPER_URL } from '@/lib/constants'
 
-type Tab = 'softphone' | 'dialer' | 'history'
+type Tab = 'dialer' | 'history'
 
 export default function SoftphoneClient() {
-  const audioRef = useRef<HTMLAudioElement | null>(null)
-  const { connect, disconnect, call, hangup, answerCall, rejectCall } = useSipAgent(audioRef)
   const {
     agentId, agentName, extension,
-    sipStatus, sipError,
-    callStatus, callNumber, incomingFrom, callStartedAt,
-    setAgent, resetCall, logout,
+    callStatus, callNumber,
+    helperOnline,
+    setAgent, setCallStatus, setHelperOnline, logout, resetCall,
   } = useSoftphoneStore()
-  const { campaign } = useDialerStore()
+  const { reset: resetDialer } = useDialerStore()
 
   const [extensionInput, setExtensionInput] = useState('')
   const [loginError, setLoginError] = useState('')
   const [isLoggingIn, setIsLoggingIn] = useState(false)
-  const [dialNumber, setDialNumber] = useState('')
+  const [activeTab, setActiveTab] = useState<Tab>('dialer')
   const [callDuration, setCallDuration] = useState(0)
-  const [activeTab, setActiveTab] = useState<Tab>('softphone')
-  const [showDialPad, setShowDialPad] = useState(false)
-  const callLogSavedRef = useRef(false)
 
-  // Cronômetro da chamada
+  // Verifica se o helper local está online a cada 10s
   useEffect(() => {
-    if (callStatus !== 'answered') {
+    const check = async () => {
+      try {
+        const res = await fetch(`${HELPER_URL}/ping`, {
+          signal: AbortSignal.timeout(2000),
+        })
+        setHelperOnline(res.ok)
+      } catch {
+        setHelperOnline(false)
+      }
+    }
+    check()
+    const interval = setInterval(check, 10000)
+    return () => clearInterval(interval)
+  }, [setHelperOnline])
+
+  // Cronômetro: conta a partir do momento que a chamada foi disparada
+  useEffect(() => {
+    if (callStatus !== 'calling') {
       setCallDuration(0)
       return
     }
@@ -42,32 +53,8 @@ export default function SoftphoneClient() {
     return () => clearInterval(interval)
   }, [callStatus])
 
-  // Salva call_log quando chamada termina (inclui campaign_id se o dialer estiver ativo)
-  useEffect(() => {
-    if (callStatus !== 'ended' || !agentId || !extension || !callNumber) return
-    if (callLogSavedRef.current) return
-    callLogSavedRef.current = true
-
-    const durationSeconds = callStartedAt
-      ? Math.floor((Date.now() - callStartedAt.getTime()) / 1000)
-      : 0
-
-    saveCallLog({
-      agentId,
-      extension,
-      phoneNumber: callNumber,
-      direction: 'outbound',
-      status: durationSeconds > 0 ? 'answered' : 'no_answer',
-      durationSeconds,
-      startedAt: callStartedAt ? callStartedAt.toISOString() : null,
-      endedAt: new Date().toISOString(),
-      ...(campaign && { campaignId: campaign.id }),
-    })
-  }, [callStatus, agentId, extension, callNumber, callStartedAt, campaign])
-
-  useEffect(() => {
-    if (callStatus === 'idle') callLogSavedRef.current = false
-  }, [callStatus])
+  const formatDuration = (s: number) =>
+    `${Math.floor(s / 60).toString().padStart(2, '0')}:${(s % 60).toString().padStart(2, '0')}`
 
   const handleLogin = async () => {
     const ext = parseInt(extensionInput)
@@ -78,7 +65,7 @@ export default function SoftphoneClient() {
     setIsLoggingIn(true)
     setLoginError('')
 
-    const result = await getSipCredentials(ext)
+    const result = await getAgentByExtension(ext)
     if ('error' in result) {
       setLoginError(result.error)
       setIsLoggingIn(false)
@@ -86,45 +73,28 @@ export default function SoftphoneClient() {
     }
 
     setAgent(result.agent.id, result.agent.name, result.agent.extension)
-    await connect({
-      extension: result.agent.extension,
-      password: result.password,
-      sipServer: result.sipServer,
-      sipDomain: result.sipDomain,
-    })
     setIsLoggingIn(false)
   }
 
-  const handleLogout = async () => {
-    await disconnect()
+  const handleLogout = () => {
     logout()
     resetCall()
+    resetDialer()
     setExtensionInput('')
-    setDialNumber('')
   }
-
-  const formatDuration = (s: number) =>
-    `${Math.floor(s / 60).toString().padStart(2, '0')}:${(s % 60).toString().padStart(2, '0')}`
-
-  const sipIndicator = {
-    disconnected: { dot: 'bg-slate-500', label: 'Desconectado' },
-    connecting: { dot: 'bg-yellow-400 animate-pulse', label: 'Conectando...' },
-    registered: { dot: 'bg-green-400', label: 'Registrado' },
-    error: { dot: 'bg-red-500', label: 'Erro SIP' },
-  }[sipStatus]
 
   // ─── Tela de login ───────────────────────────────────────────────────────────
   if (!agentId) {
     return (
-      <div className="min-h-screen bg-[#070d1a] flex items-center justify-center p-4">
+      <div className="min-h-screen bg-[#0f172a] flex items-center justify-center p-4">
         <div className="w-full max-w-xs">
           <div className="text-center mb-8">
-            <h1 className="text-3xl font-bold text-white tracking-tight">
-              Disc<span className="text-blue-500">SiP</span>
+            <h1 className="text-3xl text-white tracking-tight">
+              <span className="font-medium">Disc</span><span className="font-bold text-blue-500">SiP</span>
             </h1>
-            <p className="text-slate-500 text-sm mt-1">Softphone Web</p>
+            <p className="text-slate-500 text-sm mt-1">Power Dialer</p>
           </div>
-          <div className="bg-[#111827] border border-slate-700/60 rounded-2xl p-8">
+          <div className="bg-[#1e293b] border border-slate-700/60 rounded-2xl p-8">
             <label className="block text-xs text-slate-400 mb-2 uppercase tracking-wider">
               Ramal
             </label>
@@ -136,7 +106,7 @@ export default function SoftphoneClient() {
               onChange={(e) => setExtensionInput(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && handleLogin()}
               placeholder="5125"
-              className="w-full bg-[#1a2234] border border-slate-600 rounded-xl px-4 py-3 text-white text-xl text-center placeholder:text-slate-600 focus:outline-none focus:border-blue-500 transition-colors"
+              className="w-full bg-[#111827] border border-slate-600 rounded-xl px-4 py-3 text-white text-xl text-center placeholder:text-slate-600 focus:outline-none focus:border-blue-500 transition-colors"
             />
             {loginError && (
               <p className="text-red-400 text-sm mt-2 text-center">{loginError}</p>
@@ -146,7 +116,7 @@ export default function SoftphoneClient() {
               disabled={isLoggingIn || !extensionInput}
               className="w-full mt-4 bg-blue-600 hover:bg-blue-500 active:bg-blue-700 disabled:bg-slate-700 disabled:text-slate-500 text-white font-semibold py-3 rounded-xl transition-colors"
             >
-              {isLoggingIn ? 'Conectando...' : 'Entrar'}
+              {isLoggingIn ? 'Carregando...' : 'Entrar'}
             </button>
           </div>
         </div>
@@ -156,14 +126,14 @@ export default function SoftphoneClient() {
 
   // ─── Layout principal ────────────────────────────────────────────────────────
   return (
-    <div className="min-h-screen bg-[#070d1a] flex">
+    <div className="min-h-screen bg-[#0f172a] flex">
       <Sidebar />
 
       <div className="flex-1 flex flex-col min-w-0">
         {/* Top bar */}
         <header className="flex items-center justify-between px-6 py-3 border-b border-slate-800 shrink-0">
           <div className="flex gap-1">
-            {(['softphone', 'dialer', 'history'] as Tab[]).map((tab) => (
+            {(['dialer', 'history'] as Tab[]).map((tab) => (
               <button
                 key={tab}
                 onClick={() => setActiveTab(tab)}
@@ -173,14 +143,20 @@ export default function SoftphoneClient() {
                     : 'text-slate-400 hover:text-white'
                 }`}
               >
-                {tab === 'softphone' ? 'Softphone' : tab === 'dialer' ? 'Dialer' : 'Histórico'}
+                {tab === 'dialer' ? 'Dialer' : 'Histórico'}
               </button>
             ))}
           </div>
           <div className="flex items-center gap-4">
             <div className="flex items-center gap-2">
-              <span className={`w-2 h-2 rounded-full shrink-0 ${sipIndicator.dot}`} />
-              <span className="text-xs text-slate-400">{sipIndicator.label}</span>
+              <span
+                className={`w-2 h-2 rounded-full shrink-0 ${
+                  helperOnline ? 'bg-green-400' : 'bg-red-500 animate-pulse'
+                }`}
+              />
+              <span className="text-xs text-slate-400">
+                {helperOnline ? 'Helper online' : 'Helper offline'}
+              </span>
             </div>
             <button
               onClick={handleLogout}
@@ -191,139 +167,47 @@ export default function SoftphoneClient() {
           </div>
         </header>
 
-        <main className="flex-1 p-6 overflow-y-auto">
-          {/* ─── Aba Softphone ─── */}
-          <div className={activeTab === 'softphone' ? 'block' : 'hidden'}>
-            <div className="max-w-sm mx-auto space-y-3">
-              {/* Chamada recebida */}
-              {callStatus === 'incoming' && (
-                <div className="bg-[#111827] border border-blue-500/50 rounded-2xl p-6 text-center">
-                  <p className="text-blue-400 text-xs font-medium uppercase tracking-wider animate-pulse mb-2">
-                    Chamada recebida
-                  </p>
-                  <p className="text-white text-2xl font-mono">{incomingFrom}</p>
-                  <div className="flex gap-3 mt-5">
-                    <button
-                      onClick={answerCall}
-                      className="flex-1 bg-green-600 hover:bg-green-500 text-white py-3 rounded-xl font-semibold transition-colors"
-                    >
-                      Atender
-                    </button>
-                    <button
-                      onClick={rejectCall}
-                      className="flex-1 bg-red-600 hover:bg-red-500 text-white py-3 rounded-xl font-semibold transition-colors"
-                    >
-                      Rejeitar
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {/* Chamada ativa */}
-              {(callStatus === 'ringing' || callStatus === 'answered') && (
-                <div className="bg-[#111827] border border-slate-700/60 rounded-2xl p-6 text-center">
-                  {callStatus === 'ringing' ? (
-                    <p className="text-yellow-400 text-xs font-medium uppercase tracking-wider animate-pulse">
-                      Chamando...
-                    </p>
-                  ) : (
-                    <p className="text-green-400 text-xs font-medium uppercase tracking-wider">
-                      Em chamada
-                    </p>
-                  )}
-                  <p className="text-white text-2xl font-mono mt-2">{callNumber}</p>
-                  {callStatus === 'answered' && (
-                    <p className="text-blue-400 text-4xl font-mono mt-3 tabular-nums">
-                      {formatDuration(callDuration)}
-                    </p>
-                  )}
-                  <button
-                    onClick={hangup}
-                    className="mt-5 w-full bg-red-600 hover:bg-red-500 text-white py-3 rounded-xl font-semibold transition-colors"
-                  >
-                    {callStatus === 'ringing' ? 'Cancelar' : 'Encerrar'}
-                  </button>
-                </div>
-              )}
-
-              {callStatus === 'ended' && (
-                <div className="bg-[#111827] border border-slate-700/60 rounded-2xl px-6 py-4 text-center">
-                  <p className="text-slate-400 text-sm">Chamada encerrada</p>
-                </div>
-              )}
-
-              {/* Discagem */}
-              {(callStatus === 'idle' || callStatus === 'ended') && (
-                <div className="bg-[#111827] border border-slate-700/60 rounded-2xl p-5">
-                  <div className="flex gap-2">
-                    <input
-                      type="tel"
-                      value={dialNumber}
-                      onChange={(e) => setDialNumber(e.target.value)}
-                      onKeyDown={(e) =>
-                        e.key === 'Enter' &&
-                        sipStatus === 'registered' &&
-                        dialNumber.trim() &&
-                        call(dialNumber.trim())
-                      }
-                      placeholder="Número para discar"
-                      className="flex-1 bg-[#1a2234] border border-slate-600 rounded-xl px-3 py-3 text-white placeholder:text-slate-600 focus:outline-none focus:border-blue-500 transition-colors text-sm"
-                    />
-                    <button
-                      onClick={() => call(dialNumber.trim())}
-                      disabled={sipStatus !== 'registered' || !dialNumber.trim()}
-                      className="bg-green-600 hover:bg-green-500 disabled:bg-slate-700 disabled:text-slate-500 text-white px-4 rounded-xl transition-colors text-xl"
-                      title="Ligar"
-                    >
-                      ✆
-                    </button>
-                    {dialNumber && (
-                      <button
-                        onClick={() => setDialNumber((n) => n.slice(0, -1))}
-                        className="bg-[#1a2234] hover:bg-slate-700 text-slate-400 px-3 rounded-xl transition-colors"
-                        title="Apagar"
-                      >
-                        ⌫
-                      </button>
-                    )}
-                  </div>
-                  <button
-                    onClick={() => setShowDialPad((v) => !v)}
-                    className="w-full mt-3 text-slate-500 hover:text-slate-300 text-xs transition-colors py-1"
-                  >
-                    {showDialPad ? 'Ocultar teclado' : 'Mostrar teclado'}
-                  </button>
-                  {showDialPad && (
-                    <DialPad onKey={(k) => setDialNumber((n) => n + k)} />
-                  )}
-                </div>
-              )}
-
-              {sipError && (
-                <p className="text-red-400 text-xs text-center">{sipError}</p>
-              )}
+        {/* Banner de chamada ativa */}
+        {callStatus === 'calling' && (
+          <div className="bg-[#0a1f0a] border-b border-green-800/50 px-6 py-3 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
+              <span className="text-green-400 text-sm font-medium">
+                Em chamada — {callNumber}
+              </span>
+              <span className="text-slate-400 text-sm tabular-nums">
+                {formatDuration(callDuration)}
+              </span>
             </div>
+            <button
+              onClick={() => setCallStatus('ended')}
+              className="bg-red-600 hover:bg-red-500 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors"
+            >
+              Encerrar
+            </button>
           </div>
+        )}
 
-          {/* ─── Aba Dialer — sempre montada para manter o hook ativo ─── */}
+        <main className="flex-1 p-6 overflow-y-auto">
+          {/* Aba Dialer — sempre montada para manter o hook ativo */}
           <div className={activeTab === 'dialer' ? 'block' : 'hidden'}>
-            <DialerTab onCall={call} />
+            <DialerTab />
           </div>
 
-          {/* ─── Aba Histórico ─── */}
+          {/* Aba Histórico */}
           {activeTab === 'history' && agentId && (
             <div className="max-w-lg mx-auto">
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-white font-semibold">Histórico de chamadas</h2>
-                <span className="text-slate-500 text-xs">Ramal {extension} · últimas 20</span>
+                <span className="text-slate-500 text-xs">
+                  Ramal {extension} · últimas 20
+                </span>
               </div>
               <CallHistory agentId={agentId} key={agentId} />
             </div>
           )}
         </main>
       </div>
-
-      <audio ref={audioRef} autoPlay hidden />
     </div>
   )
 }

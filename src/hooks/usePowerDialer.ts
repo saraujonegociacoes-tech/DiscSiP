@@ -8,13 +8,24 @@ import {
   updateContactStatus,
   updateCampaignStatus,
 } from '@/app/actions/campaigns'
+import { saveCallLog } from '@/app/actions/dialer'
 import type { ContactStatus } from '@/lib/types/database'
+import { HELPER_URL } from '@/lib/constants'
 
-interface UsePowerDialerOptions {
-  onCall: (phoneNumber: string) => Promise<void>
+async function triggerMicroSIP(number: string): Promise<void> {
+  const clean = number.replace(/\D/g, '')
+  try {
+    await fetch(`${HELPER_URL}/call`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ number: clean }),
+    })
+  } catch {
+    // Helper offline — MicroSIP não será acionado automaticamente
+  }
 }
 
-export function usePowerDialer({ onCall }: UsePowerDialerOptions) {
+export function usePowerDialer() {
   const {
     campaign,
     currentContact,
@@ -25,7 +36,8 @@ export function usePowerDialer({ onCall }: UsePowerDialerOptions) {
     setPendingDisposition,
   } = useDialerStore()
 
-  const { agentId, callStatus } = useSoftphoneStore()
+  const { agentId, extension, callStatus, callStartedAt, setCallStatus } =
+    useSoftphoneStore()
 
   const pauseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const callEndHandledRef = useRef(false)
@@ -42,10 +54,11 @@ export function usePowerDialer({ onCall }: UsePowerDialerOptions) {
     }
 
     setCurrentContact(contact)
-    await onCall(contact.phone_number)
-  }, [campaign, agentId, setCurrentContact, setDialerStatus, onCall])
+    setCallStatus('calling', contact.phone_number)
+    await triggerMicroSIP(contact.phone_number)
+  }, [campaign, agentId, setCurrentContact, setDialerStatus, setCallStatus])
 
-  // Quando a chamada termina com discador rodando, pede disposição ao agente
+  // Quando chamada termina com discador rodando, pede disposição ao agente
   useEffect(() => {
     if (
       callStatus === 'ended' &&
@@ -60,7 +73,7 @@ export function usePowerDialer({ onCall }: UsePowerDialerOptions) {
 
   // Reseta flag quando nova chamada começa
   useEffect(() => {
-    if (callStatus === 'ringing') {
+    if (callStatus === 'calling') {
       callEndHandledRef.current = false
     }
   }, [callStatus])
@@ -82,13 +95,34 @@ export function usePowerDialer({ onCall }: UsePowerDialerOptions) {
     await dialNext()
   }, [campaign, setDialerStatus, dialNext])
 
-  // Agente define resultado da chamada e discador avança para o próximo
   const submitDisposition = useCallback(
     async (status: ContactStatus, disposition?: string) => {
-      if (!currentContact) return
+      if (!currentContact || !agentId || !extension) return
+
+      const durationSeconds = callStartedAt
+        ? Math.floor((Date.now() - callStartedAt.getTime()) / 1000)
+        : 0
+
+      const callStatus: 'answered' | 'no_answer' | 'busy' | 'failed' =
+        status === 'answered' ? 'answered'
+        : status === 'busy' ? 'busy'
+        : 'no_answer'
+
+      await saveCallLog({
+        agentId,
+        extension,
+        phoneNumber: currentContact.phone_number,
+        direction: 'outbound',
+        status: callStatus,
+        durationSeconds,
+        startedAt: callStartedAt?.toISOString() ?? null,
+        endedAt: new Date().toISOString(),
+        campaignId: campaign?.id,
+      })
 
       await updateContactStatus(currentContact.id, status, disposition)
       setPendingDisposition(false)
+      setCallStatus('idle')
 
       if (dialerStatus !== 'running') return
 
@@ -96,7 +130,18 @@ export function usePowerDialer({ onCall }: UsePowerDialerOptions) {
         dialNext()
       }, pauseBetweenCalls * 1000)
     },
-    [currentContact, dialerStatus, pauseBetweenCalls, setPendingDisposition, dialNext]
+    [
+      currentContact,
+      agentId,
+      extension,
+      campaign,
+      callStartedAt,
+      dialerStatus,
+      pauseBetweenCalls,
+      setPendingDisposition,
+      setCallStatus,
+      dialNext,
+    ]
   )
 
   useEffect(() => {

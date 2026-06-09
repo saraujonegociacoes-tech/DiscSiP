@@ -9,7 +9,7 @@ const inter = Inter({
 
 export const metadata: Metadata = {
   title: "DiscSiP",
-  description: "Softphone Web com Power Dialer",
+  description: "Power Dialer para equipe de vendas — Araujo Negociações",
 };
 
 export default function RootLayout({

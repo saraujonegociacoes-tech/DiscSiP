@@ -15,8 +15,7 @@
     "next": "15.5.19",
     "react": "19.1.0",
     "react-dom": "19.1.0",
-    "sip.js": "^0.21.2",
-    "zustand": "^5.0.14"
+"zustand": "^5.0.14"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3",

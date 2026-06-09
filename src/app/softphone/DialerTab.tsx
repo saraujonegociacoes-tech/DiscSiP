@@ -36,13 +36,9 @@ const STATUS_COLOR: Record<string, string> = {
   completed: 'text-blue-400',
 }
 
-interface DialerTabProps {
-  onCall: (phoneNumber: string) => Promise<void>
-}
-
 type View = 'list' | 'campaign'
 
-export function DialerTab({ onCall }: DialerTabProps) {
+export function DialerTab() {
   const {
     campaign,
     currentContact,
@@ -52,8 +48,8 @@ export function DialerTab({ onCall }: DialerTabProps) {
     setCampaign,
     setPauseBetweenCalls,
   } = useDialerStore()
-  const { sipStatus, callStatus, callNumber } = useSoftphoneStore()
-  const { start, pause, resume, submitDisposition } = usePowerDialer({ onCall })
+  const { helperOnline, callStatus, callNumber } = useSoftphoneStore()
+  const { start, pause, resume, submitDisposition } = usePowerDialer()
 
   const [view, setView] = useState<View>('list')
   const [campaigns, setCampaigns] = useState<Campaign[]>([])
@@ -126,7 +122,7 @@ export function DialerTab({ onCall }: DialerTabProps) {
         <h2 className="text-white font-semibold mb-5">Campanhas</h2>
 
         {/* Criar campanha */}
-        <div className="bg-[#111827] border border-slate-700/60 rounded-2xl p-4 mb-4">
+        <div className="bg-[#1e293b] border border-slate-700/60 rounded-2xl p-4 mb-4">
           <div className="flex gap-2">
             <input
               type="text"
@@ -134,7 +130,7 @@ export function DialerTab({ onCall }: DialerTabProps) {
               onChange={(e) => setNewName(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && handleCreate()}
               placeholder="Nome da nova campanha"
-              className="flex-1 bg-[#1a2234] border border-slate-600 rounded-xl px-3 py-2.5 text-white placeholder:text-slate-600 focus:outline-none focus:border-blue-500 transition-colors text-sm"
+              className="flex-1 bg-[#111827] border border-slate-600 rounded-xl px-3 py-2.5 text-white placeholder:text-slate-600 focus:outline-none focus:border-blue-500 transition-colors text-sm"
             />
             <button
               onClick={handleCreate}
@@ -156,7 +152,7 @@ export function DialerTab({ onCall }: DialerTabProps) {
               <button
                 key={c.id}
                 onClick={() => handleSelect(c)}
-                className="w-full flex items-center justify-between bg-[#111827] border border-slate-800 hover:border-slate-600 rounded-xl px-4 py-3 transition-colors text-left group"
+                className="w-full flex items-center justify-between bg-[#1e293b] border border-slate-800 hover:border-slate-600 rounded-xl px-4 py-3 transition-colors text-left group"
               >
                 <div>
                   <p className="text-white text-sm font-medium">{c.name}</p>
@@ -199,7 +195,7 @@ export function DialerTab({ onCall }: DialerTabProps) {
           ].map((s) => (
             <div
               key={s.key}
-              className="bg-[#111827] border border-slate-800 rounded-xl p-3 text-center"
+              className="bg-[#1e293b] border border-slate-800 rounded-xl p-3 text-center"
             >
               <p className={`text-2xl font-bold tabular-nums ${s.color}`}>
                 {stats[s.key] ?? 0}
@@ -212,7 +208,7 @@ export function DialerTab({ onCall }: DialerTabProps) {
 
       {/* Disposição após chamada */}
       {pendingDisposition && (
-        <div className="bg-[#111827] border border-blue-500/40 rounded-2xl p-5">
+        <div className="bg-[#1e293b] border border-blue-500/40 rounded-2xl p-5">
           <p className="text-blue-400 text-xs font-medium uppercase tracking-wider mb-3">
             Resultado — {callNumber ?? currentContact?.phone_number}
           </p>
@@ -221,7 +217,7 @@ export function DialerTab({ onCall }: DialerTabProps) {
               <button
                 key={d.value}
                 onClick={() => submitDisposition(d.status, d.value)}
-                className="bg-[#1a2234] hover:bg-slate-700 active:scale-95 text-white text-sm py-3 px-3 rounded-xl transition-all text-left"
+                className="bg-[#111827] hover:bg-slate-700 active:scale-95 text-white text-sm py-3 px-3 rounded-xl transition-all text-left"
               >
                 {d.label}
               </button>
@@ -232,18 +228,15 @@ export function DialerTab({ onCall }: DialerTabProps) {
 
       {/* Contato atual */}
       {currentContact && dialerStatus === 'running' && !pendingDisposition && (
-        <div className="bg-[#111827] border border-slate-700/60 rounded-2xl p-4">
+        <div className="bg-[#1e293b] border border-slate-700/60 rounded-2xl p-4">
           <p className="text-slate-400 text-xs uppercase tracking-wider mb-2">Contato atual</p>
           {currentContact.name && (
             <p className="text-white font-medium">{currentContact.name}</p>
           )}
           <p className="text-blue-400 font-mono text-lg">{currentContact.phone_number}</p>
           <p className="text-xs mt-1.5">
-            {callStatus === 'ringing' && (
+            {callStatus === 'calling' && (
               <span className="text-yellow-400 animate-pulse">Chamando...</span>
-            )}
-            {callStatus === 'answered' && (
-              <span className="text-green-400">Em chamada</span>
             )}
             {(callStatus === 'idle' || callStatus === 'ended') && (
               <span className="text-slate-500">Aguardando próximo...</span>
@@ -253,12 +246,12 @@ export function DialerTab({ onCall }: DialerTabProps) {
       )}
 
       {/* Controles */}
-      <div className="bg-[#111827] border border-slate-700/60 rounded-2xl p-4">
+      <div className="bg-[#1e293b] border border-slate-700/60 rounded-2xl p-4">
         <div className="flex gap-2">
           {dialerStatus === 'idle' && (
             <button
               onClick={handleStart}
-              disabled={sipStatus !== 'registered' || !stats || stats.pending === 0}
+              disabled={!helperOnline || !stats || stats.pending === 0}
               className="flex-1 bg-green-600 hover:bg-green-500 active:bg-green-700 disabled:bg-slate-700 disabled:text-slate-500 text-white py-3 rounded-xl font-semibold text-sm transition-colors"
             >
               ▶ Iniciar discagem
@@ -275,7 +268,7 @@ export function DialerTab({ onCall }: DialerTabProps) {
           {dialerStatus === 'paused' && (
             <button
               onClick={resume}
-              disabled={sipStatus !== 'registered'}
+              disabled={!helperOnline}
               className="flex-1 bg-green-600 hover:bg-green-500 disabled:bg-slate-700 disabled:text-slate-500 text-white py-3 rounded-xl font-semibold text-sm transition-colors"
             >
               ▶ Retomar
@@ -309,7 +302,7 @@ export function DialerTab({ onCall }: DialerTabProps) {
       </div>
 
       {/* Adicionar contatos */}
-      <div className="bg-[#111827] border border-slate-700/60 rounded-2xl p-4">
+      <div className="bg-[#1e293b] border border-slate-700/60 rounded-2xl p-4">
         <button
           onClick={() => setShowAddContacts((v) => !v)}
           className="w-full flex items-center justify-between text-sm text-slate-400 hover:text-white transition-colors"
@@ -331,7 +324,7 @@ export function DialerTab({ onCall }: DialerTabProps) {
               onChange={(e) => setContactsText(e.target.value)}
               placeholder={'11987654321\nMaria Silva,11976543210'}
               rows={5}
-              className="w-full bg-[#1a2234] border border-slate-600 rounded-xl px-3 py-2.5 text-white placeholder:text-slate-600 focus:outline-none focus:border-blue-500 transition-colors text-sm font-mono resize-none"
+              className="w-full bg-[#111827] border border-slate-600 rounded-xl px-3 py-2.5 text-white placeholder:text-slate-600 focus:outline-none focus:border-blue-500 transition-colors text-sm font-mono resize-none"
             />
             {addResult && (
               <p className={`text-xs mt-1.5 ${addResult.startsWith('Erro') ? 'text-red-400' : 'text-green-400'}`}>

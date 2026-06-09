@@ -3,13 +3,9 @@
 import { createServerClient } from '@/lib/supabase/server'
 import type { Agent, CallLog } from '@/lib/types/database'
 
-type CredentialsResult =
-  | { agent: Agent; password: string; sipServer: string; sipDomain: string }
-  | { error: string }
+type AgentResult = { agent: Agent } | { error: string }
 
-export async function getSipCredentials(
-  extension: number
-): Promise<CredentialsResult> {
+export async function getAgentByExtension(extension: number): Promise<AgentResult> {
   if (extension < 5125 || extension > 5150) {
     return { error: 'Ramal inválido. Use um ramal entre 5125 e 5150.' }
   }
@@ -25,17 +21,7 @@ export async function getSipCredentials(
     return { error: 'Ramal não encontrado.' }
   }
 
-  const password = process.env.ramalkey_5125_5150
-  if (!password) {
-    return { error: 'Credenciais SIP não configuradas no servidor.' }
-  }
-
-  return {
-    agent: agent as Agent,
-    password,
-    sipServer: process.env.NEXT_PUBLIC_SIP_SERVER!,
-    sipDomain: process.env.NEXT_PUBLIC_SIP_DOMAIN!,
-  }
+  return { agent: agent as Agent }
 }
 
 interface SaveCallLogInput {

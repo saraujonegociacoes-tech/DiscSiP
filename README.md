@@ -1,37 +1,61 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# DiscSiP — Power Dialer
 
-## Getting Started
+Sistema web de discagem semi-automática para a equipe de vendas da Araujo Negociações, integrado ao PABX Intelbras WidevoiceX via MicroSIP.
 
-First, run the development server:
+- **App:** https://discsip.pages.dev
+- **Deploy:** Cloudflare Pages
+
+## Como funciona
+
+1. Agente abre o DiscSiP no browser e entra com seu ramal
+2. Seleciona uma campanha e clica **Iniciar discagem**
+3. O sistema busca o próximo contato da fila e aciona o MicroSIP via helper local
+4. O MicroSIP disca automaticamente — agente só atende o telefone
+5. Ao encerrar, agente registra o resultado e o próximo contato é carregado
+
+## Stack
+
+| Camada | Tecnologia |
+|--------|-----------|
+| Frontend + Backend | Next.js 15 (App Router, Server Actions) |
+| Deploy | Cloudflare Pages (`@opennextjs/cloudflare`) |
+| Banco de dados | Supabase (PostgreSQL) |
+| Estado global | Zustand 5 |
+| Estilo | TailwindCSS 4 |
+| Discagem | MicroSIP + helper local Node.js |
+
+## Configuração do ambiente
 
 ```bash
+cp .env.example .env.local
+# preencha com suas credenciais Supabase
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Helper local (máquinas dos agentes)
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+O helper é um script Node.js que roda em background em cada PC de agente e aciona o MicroSIP via protocolo `tel:`.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+**Instalação (uma vez por máquina):**
 
-## Learns More
+```
+local-helper/instalar.bat
+```
 
-To learn more about Next.js, take a look at the following resources:
+Requisito: Node.js instalado na máquina.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Build e deploy
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+```bash
+npm run build:cf   # build para Cloudflare Pages
+```
 
-## Deploy on Vercel
+O Cloudflare Pages detecta commits na branch `main` e faz o deploy automaticamente.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Variáveis de ambiente (Cloudflare Pages dashboard)
 
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+| Variável | Descrição |
+|----------|-----------|
+| `NEXT_PUBLIC_SUPABASE_URL` | URL do projeto Supabase |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Chave pública do Supabase |

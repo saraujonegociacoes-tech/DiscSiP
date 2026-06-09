@@ -10,20 +10,15 @@ const NAV_ITEMS = [
 
 export function Sidebar() {
   const pathname = usePathname()
-  const { agentName, extension, sipStatus } = useSoftphoneStore()
+  const { agentName, extension, helperOnline } = useSoftphoneStore()
 
-  const sipDot = {
-    disconnected: 'bg-slate-500',
-    connecting: 'bg-yellow-400 animate-pulse',
-    registered: 'bg-green-400',
-    error: 'bg-red-500',
-  }[sipStatus]
+  const helperDot = helperOnline ? 'bg-green-400' : 'bg-slate-500'
 
   return (
-    <aside className="w-52 shrink-0 bg-[#0c1628] border-r border-slate-800 min-h-screen flex flex-col">
+    <aside className="w-52 shrink-0 bg-[#111827] border-r border-slate-800 min-h-screen flex flex-col">
       <div className="px-5 py-5 border-b border-slate-800">
-        <span className="text-lg font-bold text-white">
-          Disc<span className="text-blue-500">SiP</span>
+        <span className="text-lg text-white">
+          <span className="font-medium">Disc</span><span className="font-bold text-blue-500">SiP</span>
         </span>
       </div>
 
@@ -50,7 +45,7 @@ export function Sidebar() {
       {agentName && (
         <div className="px-5 py-4 border-t border-slate-800">
           <div className="flex items-center gap-2 mb-0.5">
-            <span className={`w-2 h-2 rounded-full shrink-0 ${sipDot}`} />
+            <span className={`w-2 h-2 rounded-full shrink-0 ${helperDot}`} />
             <span className="text-white text-sm font-medium truncate">{agentName}</span>
           </div>
           <p className="text-slate-500 text-xs pl-4">Ramal {extension}</p>

@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { getCallHistory } from '@/app/actions/sip'
+import { getCallHistory } from '@/app/actions/dialer'
 import type { CallLog } from '@/lib/types/database'
 
 interface CallHistoryProps {
@@ -71,7 +71,7 @@ export function CallHistory({ agentId }: CallHistoryProps) {
       {logs.map((log) => (
         <div
           key={log.id}
-          className="flex items-center gap-3 bg-[#111827] border border-slate-800 rounded-xl px-4 py-3"
+          className="flex items-center gap-3 bg-[#1e293b] border border-slate-800 rounded-xl px-4 py-3"
         >
           <span className="text-slate-500 text-sm w-4 shrink-0">
             {DIRECTION_ICON[log.direction]}
