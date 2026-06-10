@@ -1,6 +1,6 @@
 # DiscSiP — Documentação Técnica
 
-> Atualizado em: 2026-06-09
+> Atualizado em: 2026-06-10 (Sprint 6.3 concluído — Listas e Campanhas; 6.4 em andamento)
 
 ---
 
@@ -117,6 +117,7 @@ O script pós-build faz 3 coisas manualmente:
 |------|------|
 | `NEXT_PUBLIC_SUPABASE_URL` | Secret |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Secret |
+| `MAKE_WEBHOOK_URL` | Secret (opcional; notificação pós-chamada via Make) |
 
 ---
 
@@ -125,14 +126,19 @@ O script pós-build faz 3 coisas manualmente:
 ### Tabelas
 
 - `agents` — agentes (ramais 5125–5150, nome, role)
-- `campaigns` — campanhas de discagem
-- `campaign_contacts` — contatos de cada campanha com status de discagem
+- `campaigns` — campanhas de discagem. Campos de config: `schedule_start`, `schedule_end` (horário de funcionamento), `visible_fields` (jsonb, campos visíveis ao agente)
+- `campaign_agents` — N:N campanha ↔ agente (quem participa de cada campanha)
+- `lists` — mailing carregado dentro de uma campanha. `column_mapping` (jsonb), regras de reciclagem (`recycle_enabled`, `recycle_statuses`, `recycle_after_hours`, `recycle_max_attempts`)
+- `campaign_contacts` — contatos de cada campanha. Inclui `list_id`, `extra_data` (jsonb, campos extras do mailing), `attempts` (tentativas para reciclagem)
 - `call_logs` — registro histórico de chamadas por agente
+
+Migração: `supabase/migrations/20260610_lists_and_campaigns.sql`.
 
 ### Status de contato (`ContactStatus`)
 
 ```
 pending → dialing → answered | no_answer | busy | failed | do_not_call
+                  ↘ (reciclagem) pending → ... → exhausted (esgotou tentativas)
 ```
 
 ---
@@ -146,63 +152,24 @@ pending → dialing → answered | no_answer | busy | failed | do_not_call
 | Sprint 2 | Softphone UI | ✅ Concluído → removido |
 | Sprint 3 | Power Dialer Backend | ✅ Concluído |
 | Sprint 4 | Power Dialer UI + Helper local MicroSIP | ✅ Concluído |
-| Sprint 5 | Supervisor Dashboard | 🔜 **PRÓXIMO** |
-| Sprint 6 | Estados de erro, polish e Make | 🔜 Futuro |
+| Sprint 5 | Supervisor Dashboard | ✅ Concluído |
+| Sprint 6 | Estados de erro, polish, Listas, Campanhas, Notificações | ✅ Concluído (6.1–6.4) |
 
 ---
 
-## ⚡ SPRINT 5 — Supervisor Dashboard
+## ✅ SPRINT 5 — Supervisor Dashboard (Concluído)
 
-### Objetivo
+### O que foi entregue
 
-Criar uma visão gerencial em `/dashboard` onde o supervisor vê em tempo real: métricas das campanhas, status dos agentes e volume de chamadas.
+- `src/components/Sidebar.tsx` — link "Dialer" (`/softphone`) e "Dashboard" (`/dashboard`)
+- `src/app/actions/supervisor.ts` — Server Actions: `getDashboardStats`, `getCampaignsSummary`, `getCallsByHour`, `getAgentActivity`
+- `src/app/dashboard/page.tsx` — Server Component, busca dados em paralelo com `Promise.all`
+- `src/app/dashboard/DashboardClient.tsx` — layout com Sidebar, métricas, gráfico, tabela de campanhas
+- `src/app/dashboard/MetricCard.tsx` — card reutilizável de métrica
+- `src/app/dashboard/CallsChart.tsx` — gráfico de linha `recharts` (chamadas por hora do dia atual)
+- `src/app/dashboard/AgentList.tsx` — lista de agentes com status e contagem de chamadas hoje
 
-### Referência visual
-
-Ver `visual/imagem_prototipo.png` — painel à esquerda com sidebar expandida, métricas no topo, gráfico de chamadas no centro, lista de agentes à direita.
-
-### Tarefas
-
-#### 5.1 — Sidebar: adicionar navegação
-
-Atualizar `src/components/Sidebar.tsx`:
-```
-/softphone  → "Dialer"     (agentes)
-/dashboard  → "Dashboard"  (supervisor)
-```
-
-#### 5.2 — Nova rota `/dashboard`
-
-Criar `src/app/dashboard/page.tsx` (Server Component) e `src/app/dashboard/DashboardClient.tsx` (`'use client'`).
-
-Layout: grid de métricas no topo + gráfico + lista de agentes.
-
-#### 5.3 — Server Actions para métricas
-
-Criar `src/app/actions/supervisor.ts`:
-- `getDashboardStats()` — total de contatos, % contatados, chamadas hoje, agentes ativos
-- `getCampaignsSummary()` — lista de campanhas com stats resumidos
-- `getRecentActivity()` — últimas 50 chamadas de todos os agentes
-
-#### 5.4 — Cards de métricas
-
-Componente `src/app/dashboard/MetricCard.tsx`:
-- Total de contatos na fila
-- Chamadas hoje
-- Taxa de atendimento (%)
-- Agentes ativos
-
-#### 5.5 — Gráfico de chamadas
-
-Instalar `recharts` e criar componente de gráfico de linha com chamadas por hora do dia atual.
-
-#### 5.6 — Lista de agentes
-
-Buscar `call_logs` recentes agrupados por agente para mostrar quem está ativo e status da última chamada.
-
-### Banco de dados — queries necessárias (sem migração)
-
-Todas as queries usam tabelas já existentes (`call_logs`, `campaign_contacts`, `agents`). Nenhuma migração necessária para Sprint 5.
+Nenhuma migração de banco necessária — usa tabelas existentes.
 
 ---
 
@@ -212,30 +179,124 @@ Todas as queries usam tabelas já existentes (`call_logs`, `campaign_contacts`, 
 
 Estabilizar a experiência do agente e conectar automações externas via Make.
 
-### Tarefas
+### ✅ 6.1 — Estados de erro e borda (Concluído)
 
-#### 6.1 — Estados de erro e borda
+- `DialerTab.tsx`: banner vermelho quando helper offline, com instrução de como religar (`start.bat`)
+- `DialerTab.tsx`: banner informativo quando campanha não tem mais contatos pendentes
+- `usePowerDialer.ts`: `getNextContact` com retry automático (3 tentativas, 1s de intervalo)
 
-- Helper offline: bloquear início de discagem com mensagem clara
-- Sem contatos pendentes: mensagem ao tentar iniciar campanha vazia
-- Falha de rede: retry automático no `getNextContact`
+### ✅ 6.2 — Estados vazios e loading (Concluído)
 
-#### 6.2 — Estados vazios e loading
+- `DialerTab.tsx`: skeleton animado na lista de campanhas durante carregamento
+- `DialerTab.tsx`: empty state com ícone quando não há campanhas criadas
+- `CallHistory.tsx`: skeleton animado + empty state com ícone quando não há chamadas
 
-- Skeleton loading nas listas de campanha
-- Empty state quando não há campanhas
-- Empty state no histórico
+### 🔜 6.3 — Listas e Campanhas configuráveis  ← PRÓXIMO
 
-#### 6.3 — Make: importação de contatos
+Substitui o conceito antigo (webhook Make + Google Sheets). O supervisor sobe um
+**mailing** (`.csv` ou `.xlsx`) direto na interface, e o DiscSiP importa os contatos.
+Sem dependência externa, sem `x-webhook-key`.
 
-Criar webhook endpoint `src/app/api/contacts/import/route.ts`:
-- Recebe lista de contatos via Make (Google Sheets → DiscSiP)
-- Adiciona à campanha especificada
-- Autenticação por header `x-webhook-key`
+#### Conceito: Listas vs Campanhas
 
-#### 6.4 — Make: notificação pós-chamada
+Duas entidades distintas:
 
-Cenário Make: quando disposição = "Interessado", enviar notificação (WhatsApp / email) para o gerente.
+- **Campanha** = a operação. Define **quem** disca (agentes participantes), **quando**
+  (horário de funcionamento) e **o que** o agente vê durante a ligação (campos visíveis).
+- **Lista** = um mailing bruto carregado dentro de uma campanha. Carrega os contatos +
+  as regras de **reciclagem**.
+
+Relação: **1 campanha → N listas**. Uma lista sempre pertence a uma campanha (não há lista
+"solta"). Para reaproveitar o mesmo mailing em outra campanha, basta subir o arquivo
+novamente nessa outra campanha — não há vínculo compartilhado entre campanhas.
+
+#### Fluxo de configuração
+
+```
+Criar Campanha → Configurar Campanha → Subir Lista → Configurar Lista → Rodar
+```
+
+1. **Criar Campanha** — nome.
+2. **Configurar Campanha** — horário de funcionamento (ex: 09h–18h), agentes
+   participantes, campos que o agente verá na tela de discagem.
+3. **Subir Lista** — upload do `.csv`/`.xlsx`. O sistema mostra um preview das colunas.
+4. **Configurar Lista** — mapear colunas (Nome / Telefone / Informação Adicional e
+   demais extras) e definir as regras de reciclagem.
+5. **Rodar** — a campanha entra em operação; agentes participantes passam a discar dentro
+   do horário.
+
+#### Formato do arquivo
+
+Colunas esperadas: **Nome + Telefone + Informação Adicional** (e quaisquer colunas extras).
+Detecção de cabeçalho case-insensitive; colunas não mapeadas como nome/telefone viram
+campos extras nomeados em `extra_data`. Telefones são normalizados (remove `()`, `-`,
+espaços, `+55`) e validados (10–11 dígitos com DDD); linhas inválidas entram num relatório
+de erro sem travar a importação. Duplicados (mesmo telefone já na campanha) são ignorados.
+
+Parsing via **`xlsx` (SheetJS)** no **cliente** (browser), com dynamic import para manter o
+`xlsx` fora do bundle do worker Cloudflare. A Server Action recebe os contatos já normalizados
+e apenas insere. Mesma API lê `.csv` e `.xlsx`.
+
+#### Mudanças de schema (Supabase)
+
+**`campaigns`** (novos campos)
+- `schedule_start`, `schedule_end` — horário de funcionamento
+- `visible_fields` (jsonb) — campos que o agente vê na discagem
+
+**`campaign_agents`** (nova tabela) — `campaign_id`, `agent_id`: quem participa
+
+**`lists`** (nova tabela)
+- `campaign_id` (fk, obrigatório)
+- `name`
+- `column_mapping` (jsonb) — qual coluna do arquivo = nome / telefone / extras nomeados
+- `recycle_enabled` (bool)
+- `recycle_statuses` (jsonb) — status que voltam à fila (ex: `no_answer`, `busy`)
+- `recycle_after_hours` (int) — espera antes de reciclar
+- `recycle_max_attempts` (int) — limite de tentativas
+
+**`campaign_contacts`** (novos campos)
+- `list_id` (fk)
+- `extra_data` (jsonb) — "Informação Adicional" + colunas extras do arquivo
+- `attempts` (int, default 0)
+
+**`ContactStatus`** ganha novo valor: `exhausted` — esgotou as tentativas de reciclagem,
+sai da fila permanentemente.
+
+#### Comportamento
+
+- **Horário fora da campanha** — botão "Iniciar discagem" bloqueado, com aviso
+  "Fora do horário desta campanha (09h–18h)".
+- **Participação** — `getCampaignsForAgent` lista apenas campanhas em que o agente participa.
+- **Campos visíveis** — `DialerTab` exibe os campos de `extra_data` conforme `visible_fields`.
+- **Reciclagem** — quando `getNextContact` não acha `pending`, busca contatos com status
+  reciclável, `dialed_at` mais antigo que `recycle_after_hours` e `attempts < max`, e os
+  recoloca como `pending` (incrementando `attempts`). Ao atingir `recycle_max_attempts`
+  sem sucesso, marca como `exhausted` e o contato sai da fila.
+
+#### Sub-sprints
+
+- **6.3a** — ✅ Migração de schema. SQL em `supabase/migrations/20260610_lists_and_campaigns.sql` (rodar no SQL Editor do Supabase) + types atualizados em `src/lib/types/database.ts` (`Campaign`, `CampaignAgent`, `List`, `ColumnMapping`, `CampaignContact`, status `exhausted`)
+- **6.3b** — ✅ Tela "Configurar Campanha". Rota `/campaigns` (lista + criar) e `/campaigns/[id]` (configurar). Actions: `getAgents`, `getCampaignConfig`, `updateCampaignConfig`, `setCampaignAgents`. Sidebar ganhou item "Campanhas". Seção "Listas" é um stub apontando para 6.3c
+- **6.3c** — ✅ Tela "Listas" dentro da campanha. Parsing **client-side** (`src/lib/mailing.ts` com `xlsx` via dynamic import — fica fora do bundle do worker). Componente `ListsSection` faz upload `.csv`/`.xlsx`, preview, auto-detecção e mapeamento de colunas (telefone/nome/extras), regras de reciclagem. Actions em `src/app/actions/lists.ts` (`getLists`, `createList` com dedup por campanha + insert em lotes de 500, `deleteList`). Campos extras das listas aparecem como toggles de campos visíveis na config da campanha
+- **6.3d** — ✅ Ajustes no Dialer. `getCampaignsForAgent` (lista só campanhas em que o agente participa); bloqueio de discagem fora do horário (banner + botão desabilitado, reavaliado a cada 30s); exibição de `extra_data` conforme `visible_fields` (rótulos via `getListFieldLabels`); `getNextContact` agora recicla (`recycleCampaign`: esgota quem bateu `recycle_max_attempts` → `exhausted`, revive quem ainda pode e já esperou `recycle_after_hours`) e incrementa `attempts` no claim. Removido o fluxo antigo de criar campanha / colar contatos do `DialerTab` (agora é supervisor-driven); `addContactsToCampaign` removida
+
+### ✅ 6.4 — Notificação pós-chamada (Make)
+
+Quando o agente registra um resultado, se a disposição estiver entre as configuradas na
+campanha, o DiscSiP faz um `POST` para o webhook do Make, que dispara email/WhatsApp.
+
+- **Canal**: webhook único do Make. URL em `MAKE_WEBHOOK_URL` (secret no Cloudflare). Sem a
+  var, a notificação é no-op. POST é **server-side** (`src/app/actions/notifications.ts`,
+  `sendDispositionNotification`), best-effort (falha não bloqueia a discagem).
+- **Gatilho por campanha**: campo `campaigns.notify_dispositions` (jsonb) — o supervisor marca
+  na tela de config quais disposições notificam. Migração:
+  `supabase/migrations/20260610_campaign_notify_dispositions.sql`.
+- **Disparo**: em `usePowerDialer.submitDisposition`, após salvar o resultado, checa
+  `campaign.notify_dispositions.includes(disposition)`.
+- **Payload**: `{ contact {name, phone_number, extra_data}, agent {name, extension},
+  campaign {id, name}, disposition {value, label}, occurred_at }`.
+- As disposições passaram a viver em `src/lib/dispositions.ts` (compartilhadas entre o
+  DialerTab e a config da campanha).
 
 ---
 
@@ -246,12 +307,29 @@ src/
 ├── app/
 │   ├── actions/
 │   │   ├── dialer.ts        Server Actions: login ramal, salvar chamada, histórico
-│   │   └── campaigns.ts     Server Actions: campanhas e contatos
+│   │   ├── campaigns.ts     Server Actions: campanhas, config, agentes, fila + reciclagem
+│   │   ├── lists.ts         Server Actions: listas/mailing (criar, importar, rótulos)
+│   │   └── supervisor.ts    Server Actions: métricas do dashboard
+│   ├── campaigns/          (supervisor) gestão e configuração de campanhas
+│   │   ├── page.tsx         Server Component: lista de campanhas
+│   │   ├── CampaignsListClient.tsx  Lista + criar campanha
+│   │   └── [id]/
+│   │       ├── page.tsx     Server Component: busca config, agentes e listas
+│   │       ├── ConfigureCampaignClient.tsx  Horário, agentes, campos visíveis
+│   │       └── ListsSection.tsx  Upload .csv/.xlsx, mapeamento, reciclagem
+│   ├── dashboard/
+│   │   ├── page.tsx         Server Component: busca dados e passa para o client
+│   │   ├── DashboardClient.tsx  Layout principal do dashboard
+│   │   ├── MetricCard.tsx   Card reutilizável de métrica
+│   │   ├── CallsChart.tsx   Gráfico de chamadas por hora (recharts)
+│   │   └── AgentList.tsx    Lista de agentes com status hoje
 │   └── softphone/
 │       ├── page.tsx         Wrapper SSR desabilitado
 │       ├── SoftphoneClient.tsx  Layout principal, login, banner de chamada
-│       ├── DialerTab.tsx    UI das campanhas e controles do dialer
+│       ├── DialerTab.tsx    UI das campanhas do agente e controles do dialer
 │       └── CallHistory.tsx  Histórico de chamadas do agente
+├── components/
+│   └── Sidebar.tsx          Navegação: Dialer, Dashboard, Campanhas
 ├── hooks/
 │   └── usePowerDialer.ts    Lógica da fila: dialNext, start, pause, submitDisposition
 ├── store/
@@ -259,8 +337,12 @@ src/
 │   └── dialerStore.ts       Estado da campanha e do dialer
 ├── lib/
 │   ├── constants.ts         HELPER_URL compartilhado
+│   ├── mailing.ts           Parsing client-side (.csv/.xlsx), normalização de telefone
 │   ├── types/database.ts    Types TypeScript das tabelas Supabase
-│   └── supabase/            Clientes Supabase (client e server)
+│   └── supabase/server.ts   Cliente Supabase (server, usado pelas Server Actions)
+supabase/
+└── migrations/
+    └── 20260610_lists_and_campaigns.sql   Migração Listas e Campanhas (6.3a)
 local-helper/
 ├── index.js                 Helper Node.js
 ├── package.json

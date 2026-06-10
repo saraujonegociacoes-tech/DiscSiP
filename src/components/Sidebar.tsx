@@ -5,7 +5,9 @@ import { usePathname } from 'next/navigation'
 import { useSoftphoneStore } from '@/store/softphoneStore'
 
 const NAV_ITEMS = [
-  { href: '/softphone', label: 'Softphone', icon: '☎' },
+  { href: '/softphone', label: 'Dialer', icon: '☎' },
+  { href: '/dashboard', label: 'Dashboard', icon: '◈' },
+  { href: '/campaigns', label: 'Campanhas', icon: '▤' },
 ]
 
 export function Sidebar() {
@@ -24,7 +26,7 @@ export function Sidebar() {
 
       <nav className="flex-1 px-3 py-4 space-y-1">
         {NAV_ITEMS.map((item) => {
-          const active = pathname === item.href
+          const active = pathname === item.href || pathname.startsWith(`${item.href}/`)
           return (
             <Link
               key={item.href}

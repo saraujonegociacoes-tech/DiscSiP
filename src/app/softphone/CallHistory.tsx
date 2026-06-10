@@ -55,14 +55,37 @@ export function CallHistory({ agentId }: CallHistoryProps) {
   }, [agentId])
 
   if (loading) {
-    return <p className="text-slate-500 text-sm text-center py-8">Carregando...</p>
+    return (
+      <div className="space-y-2">
+        {[1, 2, 3, 4].map((i) => (
+          <div
+            key={i}
+            className="flex items-center gap-3 bg-[#1e293b] border border-slate-800 rounded-xl px-4 py-3 animate-pulse"
+          >
+            <div className="w-4 h-4 bg-slate-700 rounded-full shrink-0" />
+            <div className="flex-1 space-y-2">
+              <div className="h-3 w-28 bg-slate-700 rounded-full" />
+              <div className="h-2.5 w-20 bg-slate-800 rounded-full" />
+            </div>
+            <div className="space-y-2 text-right">
+              <div className="h-3 w-16 bg-slate-700 rounded-full" />
+              <div className="h-2.5 w-10 bg-slate-800 rounded-full" />
+            </div>
+          </div>
+        ))}
+      </div>
+    )
   }
 
   if (logs.length === 0) {
     return (
-      <p className="text-slate-500 text-sm text-center py-8">
-        Nenhuma chamada registrada ainda.
-      </p>
+      <div className="flex flex-col items-center py-10 gap-3">
+        <span className="text-4xl opacity-20">📞</span>
+        <p className="text-slate-400 text-sm font-medium">Nenhuma chamada registrada</p>
+        <p className="text-slate-600 text-xs text-center max-w-xs">
+          O histórico aparece aqui após a primeira chamada discada.
+        </p>
+      </div>
     )
   }
 

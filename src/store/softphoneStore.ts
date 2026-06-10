@@ -32,11 +32,14 @@ export const useSoftphoneStore = create<AgentState>((set) => ({
   setAgent: (id, name, extension) => set({ agentId: id, agentName: name, extension }),
 
   setCallStatus: (status, number) =>
-    set({
+    set((state) => ({
       callStatus: status,
-      callNumber: number ?? null,
-      callStartedAt: status === 'calling' ? new Date() : null,
-    }),
+      callNumber: status === 'calling' ? (number ?? null) : state.callNumber,
+      // Preserva o início da chamada em 'ended' para a duração ser calculada na disposição;
+      // só zera ao voltar para 'idle'
+      callStartedAt:
+        status === 'calling' ? new Date() : status === 'idle' ? null : state.callStartedAt,
+    })),
 
   setHelperOnline: (online) => set({ helperOnline: online }),
 

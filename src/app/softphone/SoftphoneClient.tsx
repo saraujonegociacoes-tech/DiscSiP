@@ -13,7 +13,7 @@ type Tab = 'dialer' | 'history'
 
 export default function SoftphoneClient() {
   const {
-    agentId, agentName, extension,
+    agentId, extension,
     callStatus, callNumber,
     helperOnline,
     setAgent, setCallStatus, setHelperOnline, logout, resetCall,

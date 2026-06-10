@@ -5,22 +5,13 @@ import { useDialerStore } from '@/store/dialerStore'
 import { usePowerDialer } from '@/hooks/usePowerDialer'
 import { useSoftphoneStore } from '@/store/softphoneStore'
 import {
-  getCampaigns,
-  createCampaign,
-  addContactsToCampaign,
+  getCampaignsForAgent,
   getCampaignStats,
   updateCampaignStatus,
 } from '@/app/actions/campaigns'
-import type { Campaign, ContactStatus } from '@/lib/types/database'
-
-const DISPOSITIONS: Array<{ label: string; status: ContactStatus; value: string }> = [
-  { label: 'Interessado', status: 'answered', value: 'interested' },
-  { label: 'Sem Interesse', status: 'answered', value: 'not_interested' },
-  { label: 'Ligar Depois', status: 'no_answer', value: 'callback' },
-  { label: 'Não Atendeu', status: 'no_answer', value: 'no_answer' },
-  { label: 'Ocupado', status: 'busy', value: 'busy' },
-  { label: 'Não Perturbe', status: 'do_not_call', value: 'do_not_call' },
-]
+import { getListFieldLabels } from '@/app/actions/lists'
+import { DISPOSITIONS } from '@/lib/dispositions'
+import type { Campaign } from '@/lib/types/database'
 
 const STATUS_LABEL: Record<string, string> = {
   draft: 'Rascunho',
@@ -36,6 +27,17 @@ const STATUS_COLOR: Record<string, string> = {
   completed: 'text-blue-400',
 }
 
+const pad = (n: number) => String(n).padStart(2, '0')
+
+// Verifica se o horário atual está dentro da janela de funcionamento da campanha.
+// start/end são 'HH:MM:SS' (ou null = sem restrição). Trata janela que vira a noite.
+function isWithinSchedule(start: string | null, end: string | null): boolean {
+  if (!start || !end) return true
+  const d = new Date()
+  const now = `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
+  return start <= end ? now >= start && now <= end : now >= start || now <= end
+}
+
 type View = 'list' | 'campaign'
 
 export function DialerTab() {
@@ -48,25 +50,22 @@ export function DialerTab() {
     setCampaign,
     setPauseBetweenCalls,
   } = useDialerStore()
-  const { helperOnline, callStatus, callNumber } = useSoftphoneStore()
+  const { helperOnline, callStatus, callNumber, agentId } = useSoftphoneStore()
   const { start, pause, resume, submitDisposition } = usePowerDialer()
 
   const [view, setView] = useState<View>('list')
   const [campaigns, setCampaigns] = useState<Campaign[]>([])
   const [loadingCampaigns, setLoadingCampaigns] = useState(true)
-  const [newName, setNewName] = useState('')
-  const [creating, setCreating] = useState(false)
-  const [showAddContacts, setShowAddContacts] = useState(false)
-  const [contactsText, setContactsText] = useState('')
-  const [addingContacts, setAddingContacts] = useState(false)
-  const [addResult, setAddResult] = useState<string | null>(null)
   const [stats, setStats] = useState<Record<string, number> | null>(null)
+  const [fieldLabels, setFieldLabels] = useState<Record<string, string>>({})
+  const [withinHours, setWithinHours] = useState(true)
 
   const loadCampaigns = useCallback(async () => {
+    if (!agentId) return
     setLoadingCampaigns(true)
-    setCampaigns(await getCampaigns())
+    setCampaigns(await getCampaignsForAgent(agentId))
     setLoadingCampaigns(false)
-  }, [])
+  }, [agentId])
 
   useEffect(() => { loadCampaigns() }, [loadCampaigns])
 
@@ -76,76 +75,60 @@ export function DialerTab() {
 
   useEffect(() => { refreshStats() }, [refreshStats, dialerStatus, pendingDisposition])
 
+  // Reavalia o horário de funcionamento periodicamente
+  useEffect(() => {
+    const check = () =>
+      setWithinHours(isWithinSchedule(campaign?.schedule_start ?? null, campaign?.schedule_end ?? null))
+    check()
+    const interval = setInterval(check, 30000)
+    return () => clearInterval(interval)
+  }, [campaign])
+
   const handleSelect = (c: Campaign) => {
     setCampaign(c)
     setView('campaign')
     getCampaignStats(c.id).then(setStats)
-  }
-
-  const handleCreate = async () => {
-    if (!newName.trim()) return
-    setCreating(true)
-    const result = await createCampaign(newName.trim())
-    setCreating(false)
-    if ('error' in result) return
-    setNewName('')
-    await loadCampaigns()
-    handleSelect(result)
-  }
-
-  const handleAddContacts = async () => {
-    if (!campaign || !contactsText.trim()) return
-    setAddingContacts(true)
-    const result = await addContactsToCampaign(campaign.id, contactsText.split('\n'))
-    setAddingContacts(false)
-    if (result.error) {
-      setAddResult(`Erro: ${result.error}`)
-    } else {
-      setAddResult(`${result.added} contatos adicionados`)
-      setContactsText('')
-      setShowAddContacts(false)
-      refreshStats()
-    }
-    setTimeout(() => setAddResult(null), 4000)
+    getListFieldLabels(c.id).then(setFieldLabels)
   }
 
   const handleStart = async () => {
-    if (!campaign) return
+    if (!campaign || !withinHours) return
     await updateCampaignStatus(campaign.id, 'active')
     await start()
   }
+
+  const visibleFields = campaign?.visible_fields ?? ['name', 'phone_number']
+  const extraKeys = visibleFields.filter((k) => k !== 'name' && k !== 'phone_number')
 
   // ─── Lista de campanhas ──────────────────────────────────────────────────────
   if (view === 'list') {
     return (
       <div className="max-w-lg mx-auto">
-        <h2 className="text-white font-semibold mb-5">Campanhas</h2>
-
-        {/* Criar campanha */}
-        <div className="bg-[#1e293b] border border-slate-700/60 rounded-2xl p-4 mb-4">
-          <div className="flex gap-2">
-            <input
-              type="text"
-              value={newName}
-              onChange={(e) => setNewName(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && handleCreate()}
-              placeholder="Nome da nova campanha"
-              className="flex-1 bg-[#111827] border border-slate-600 rounded-xl px-3 py-2.5 text-white placeholder:text-slate-600 focus:outline-none focus:border-blue-500 transition-colors text-sm"
-            />
-            <button
-              onClick={handleCreate}
-              disabled={creating || !newName.trim()}
-              className="bg-blue-600 hover:bg-blue-500 disabled:bg-slate-700 disabled:text-slate-500 text-white px-4 rounded-xl text-sm font-medium transition-colors"
-            >
-              {creating ? '...' : 'Criar'}
-            </button>
-          </div>
-        </div>
+        <h2 className="text-white font-semibold mb-5">Minhas campanhas</h2>
 
         {loadingCampaigns ? (
-          <p className="text-slate-500 text-sm text-center py-6">Carregando...</p>
+          <div className="space-y-2">
+            {[1, 2, 3].map((i) => (
+              <div
+                key={i}
+                className="flex items-center justify-between bg-[#1e293b] border border-slate-800 rounded-xl px-4 py-3 animate-pulse"
+              >
+                <div className="space-y-2">
+                  <div className="h-3.5 w-32 bg-slate-700 rounded-full" />
+                  <div className="h-2.5 w-16 bg-slate-800 rounded-full" />
+                </div>
+                <div className="h-4 w-3 bg-slate-800 rounded-full" />
+              </div>
+            ))}
+          </div>
         ) : campaigns.length === 0 ? (
-          <p className="text-slate-500 text-sm text-center py-6">Nenhuma campanha criada.</p>
+          <div className="flex flex-col items-center py-10 gap-3">
+            <span className="text-4xl opacity-20">📋</span>
+            <p className="text-slate-400 text-sm font-medium">Nenhuma campanha disponível</p>
+            <p className="text-slate-600 text-xs text-center max-w-xs">
+              Você ainda não participa de nenhuma campanha. Peça ao supervisor para adicioná-lo.
+            </p>
+          </div>
         ) : (
           <div className="space-y-2">
             {campaigns.map((c) => (
@@ -216,7 +199,7 @@ export function DialerTab() {
             {DISPOSITIONS.map((d) => (
               <button
                 key={d.value}
-                onClick={() => submitDisposition(d.status, d.value)}
+                onClick={() => submitDisposition(d.status, d.value, d.label)}
                 className="bg-[#111827] hover:bg-slate-700 active:scale-95 text-white text-sm py-3 px-3 rounded-xl transition-all text-left"
               >
                 {d.label}
@@ -230,10 +213,22 @@ export function DialerTab() {
       {currentContact && dialerStatus === 'running' && !pendingDisposition && (
         <div className="bg-[#1e293b] border border-slate-700/60 rounded-2xl p-4">
           <p className="text-slate-400 text-xs uppercase tracking-wider mb-2">Contato atual</p>
-          {currentContact.name && (
+          {visibleFields.includes('name') && currentContact.name && (
             <p className="text-white font-medium">{currentContact.name}</p>
           )}
-          <p className="text-blue-400 font-mono text-lg">{currentContact.phone_number}</p>
+          {visibleFields.includes('phone_number') && (
+            <p className="text-blue-400 font-mono text-lg">{currentContact.phone_number}</p>
+          )}
+          {extraKeys.map((k) => {
+            const val = currentContact.extra_data?.[k]
+            if (!val) return null
+            return (
+              <p key={k} className="text-sm mt-1">
+                <span className="text-slate-500">{fieldLabels[k] ?? k}: </span>
+                <span className="text-slate-200">{val}</span>
+              </p>
+            )
+          })}
           <p className="text-xs mt-1.5">
             {callStatus === 'calling' && (
               <span className="text-yellow-400 animate-pulse">Chamando...</span>
@@ -247,11 +242,44 @@ export function DialerTab() {
 
       {/* Controles */}
       <div className="bg-[#1e293b] border border-slate-700/60 rounded-2xl p-4">
+        {/* Banner: helper offline */}
+        {!helperOnline && (
+          <div className="flex items-start gap-2 bg-red-900/30 border border-red-700/50 rounded-xl px-3 py-2.5 mb-3 text-sm text-red-300">
+            <span className="shrink-0 mt-0.5">⚠</span>
+            <span>
+              Helper offline. Abra o <strong>start.bat</strong> na pasta{' '}
+              <code className="text-red-200">local-helper</code> e aguarde o ícone ficar verde.
+            </span>
+          </div>
+        )}
+
+        {/* Banner: fora do horário da campanha */}
+        {helperOnline && !withinHours && dialerStatus !== 'running' && (
+          <div className="flex items-start gap-2 bg-yellow-900/30 border border-yellow-700/50 rounded-xl px-3 py-2.5 mb-3 text-sm text-yellow-300">
+            <span className="shrink-0 mt-0.5">🕒</span>
+            <span>
+              Fora do horário desta campanha
+              {campaign?.schedule_start && campaign?.schedule_end && (
+                <> ({campaign.schedule_start.slice(0, 5)}–{campaign.schedule_end.slice(0, 5)})</>
+              )}
+              . A discagem fica bloqueada até o horário de funcionamento.
+            </span>
+          </div>
+        )}
+
+        {/* Banner: campanha sem contatos pendentes */}
+        {helperOnline && withinHours && dialerStatus === 'idle' && stats && stats.pending === 0 && stats.total > 0 && (
+          <div className="flex items-center gap-2 bg-slate-700/40 border border-slate-600/50 rounded-xl px-3 py-2.5 mb-3 text-sm text-slate-300">
+            <span>✓</span>
+            <span>Todos os contatos desta campanha já foram discados.</span>
+          </div>
+        )}
+
         <div className="flex gap-2">
           {dialerStatus === 'idle' && (
             <button
               onClick={handleStart}
-              disabled={!helperOnline || !stats || stats.pending === 0}
+              disabled={!helperOnline || !withinHours || !stats || stats.pending === 0}
               className="flex-1 bg-green-600 hover:bg-green-500 active:bg-green-700 disabled:bg-slate-700 disabled:text-slate-500 text-white py-3 rounded-xl font-semibold text-sm transition-colors"
             >
               ▶ Iniciar discagem
@@ -268,7 +296,7 @@ export function DialerTab() {
           {dialerStatus === 'paused' && (
             <button
               onClick={resume}
-              disabled={!helperOnline}
+              disabled={!helperOnline || !withinHours}
               className="flex-1 bg-green-600 hover:bg-green-500 disabled:bg-slate-700 disabled:text-slate-500 text-white py-3 rounded-xl font-semibold text-sm transition-colors"
             >
               ▶ Retomar
@@ -297,47 +325,6 @@ export function DialerTab() {
             <span className="text-blue-400 text-sm tabular-nums w-8 text-right">
               {pauseBetweenCalls}s
             </span>
-          </div>
-        )}
-      </div>
-
-      {/* Adicionar contatos */}
-      <div className="bg-[#1e293b] border border-slate-700/60 rounded-2xl p-4">
-        <button
-          onClick={() => setShowAddContacts((v) => !v)}
-          className="w-full flex items-center justify-between text-sm text-slate-400 hover:text-white transition-colors"
-        >
-          <span>+ Adicionar contatos</span>
-          <span className="text-slate-600 text-xs">{showAddContacts ? '▲' : '▼'}</span>
-        </button>
-
-        {showAddContacts && (
-          <div className="mt-3">
-            <p className="text-xs text-slate-500 mb-2">
-              Um por linha:{' '}
-              <code className="text-slate-400">Número</code>
-              {' '}ou{' '}
-              <code className="text-slate-400">Nome,Número</code>
-            </p>
-            <textarea
-              value={contactsText}
-              onChange={(e) => setContactsText(e.target.value)}
-              placeholder={'11987654321\nMaria Silva,11976543210'}
-              rows={5}
-              className="w-full bg-[#111827] border border-slate-600 rounded-xl px-3 py-2.5 text-white placeholder:text-slate-600 focus:outline-none focus:border-blue-500 transition-colors text-sm font-mono resize-none"
-            />
-            {addResult && (
-              <p className={`text-xs mt-1.5 ${addResult.startsWith('Erro') ? 'text-red-400' : 'text-green-400'}`}>
-                {addResult}
-              </p>
-            )}
-            <button
-              onClick={handleAddContacts}
-              disabled={addingContacts || !contactsText.trim()}
-              className="w-full mt-2 bg-blue-600 hover:bg-blue-500 disabled:bg-slate-700 disabled:text-slate-500 text-white py-2.5 rounded-xl text-sm font-medium transition-colors"
-            >
-              {addingContacts ? 'Adicionando...' : 'Adicionar'}
-            </button>
           </div>
         )}
       </div>

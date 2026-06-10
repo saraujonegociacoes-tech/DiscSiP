@@ -7,11 +7,18 @@ Sistema web de discagem semi-automática para a equipe de vendas da Araujo Negoc
 
 ## Como funciona
 
-1. Agente abre o DiscSiP no browser e entra com seu ramal
-2. Seleciona uma campanha e clica **Iniciar discagem**
+**Supervisor** (em `/campaigns`):
+1. Cria uma campanha e a configura: horário de funcionamento, agentes participantes e campos visíveis ao agente
+2. Sobe o mailing (`.csv`/`.xlsx`), mapeia as colunas (nome/telefone/extras) e define as regras de reciclagem
+
+**Agente** (em `/softphone`):
+1. Entra com seu ramal e vê apenas as campanhas em que participa
+2. Seleciona uma campanha e clica **Iniciar discagem** (bloqueado fora do horário configurado)
 3. O sistema busca o próximo contato da fila e aciona o MicroSIP via helper local
 4. O MicroSIP disca automaticamente — agente só atende o telefone
-5. Ao encerrar, agente registra o resultado e o próximo contato é carregado
+5. Ao encerrar, o agente registra o resultado e o próximo contato é carregado
+
+Contatos sem sucesso podem voltar à fila automaticamente (reciclagem), até um limite de tentativas.
 
 ## Stack
 
@@ -59,3 +66,4 @@ O Cloudflare Pages detecta commits na branch `main` e faz o deploy automaticamen
 |----------|-----------|
 | `NEXT_PUBLIC_SUPABASE_URL` | URL do projeto Supabase |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Chave pública do Supabase |
+| `MAKE_WEBHOOK_URL` | (Opcional) Webhook do Make para notificação pós-chamada |

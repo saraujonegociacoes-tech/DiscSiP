@@ -9,8 +9,24 @@ import {
   updateCampaignStatus,
 } from '@/app/actions/campaigns'
 import { saveCallLog } from '@/app/actions/dialer'
+import { sendDispositionNotification } from '@/app/actions/notifications'
 import type { ContactStatus } from '@/lib/types/database'
 import { HELPER_URL } from '@/lib/constants'
+
+async function retryGetNextContact(
+  campaignId: string,
+  agentId: string,
+  retries = 3
+): Promise<Awaited<ReturnType<typeof getNextContact>>> {
+  for (let i = 0; i < retries; i++) {
+    try {
+      return await getNextContact(campaignId, agentId)
+    } catch {
+      if (i < retries - 1) await new Promise((r) => setTimeout(r, 1000))
+    }
+  }
+  return null
+}
 
 async function triggerMicroSIP(number: string): Promise<void> {
   const clean = number.replace(/\D/g, '')
@@ -36,7 +52,7 @@ export function usePowerDialer() {
     setPendingDisposition,
   } = useDialerStore()
 
-  const { agentId, extension, callStatus, callStartedAt, setCallStatus } =
+  const { agentId, agentName, extension, callStatus, callStartedAt, setCallStatus } =
     useSoftphoneStore()
 
   const pauseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -45,7 +61,7 @@ export function usePowerDialer() {
   const dialNext = useCallback(async () => {
     if (!campaign || !agentId) return
 
-    const contact = await getNextContact(campaign.id, agentId)
+    const contact = await retryGetNextContact(campaign.id, agentId)
 
     if (!contact) {
       setDialerStatus('completed')
@@ -96,7 +112,7 @@ export function usePowerDialer() {
   }, [campaign, setDialerStatus, dialNext])
 
   const submitDisposition = useCallback(
-    async (status: ContactStatus, disposition?: string) => {
+    async (status: ContactStatus, disposition?: string, label?: string) => {
       if (!currentContact || !agentId || !extension) return
 
       const durationSeconds = callStartedAt
@@ -121,6 +137,22 @@ export function usePowerDialer() {
       })
 
       await updateContactStatus(currentContact.id, status, disposition)
+
+      // Notifica o Make se a disposição estiver entre as que disparam aviso na campanha
+      if (disposition && campaign?.notify_dispositions?.includes(disposition)) {
+        await sendDispositionNotification({
+          contact: {
+            name: currentContact.name,
+            phone_number: currentContact.phone_number,
+            extra_data: currentContact.extra_data ?? {},
+          },
+          agent: { name: agentName, extension },
+          campaign: { id: campaign.id, name: campaign.name },
+          disposition: { value: disposition, label: label ?? disposition },
+          occurred_at: new Date().toISOString(),
+        })
+      }
+
       setPendingDisposition(false)
       setCallStatus('idle')
 
@@ -133,6 +165,7 @@ export function usePowerDialer() {
     [
       currentContact,
       agentId,
+      agentName,
       extension,
       campaign,
       callStartedAt,
