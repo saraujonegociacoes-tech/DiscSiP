@@ -1,6 +1,6 @@
 # DiscSiP — Documentação Técnica
 
-> Atualizado em: 2026-06-10 (Sprint 6.3 concluído — Listas e Campanhas; 6.4 em andamento)
+> Atualizado em: 2026-06-11 (Sprint 7 concluído — Autenticação e Permissões RBAC, 7a→7e)
 
 ---
 
@@ -154,6 +154,7 @@ pending → dialing → answered | no_answer | busy | failed | do_not_call
 | Sprint 4 | Power Dialer UI + Helper local MicroSIP | ✅ Concluído |
 | Sprint 5 | Supervisor Dashboard | ✅ Concluído |
 | Sprint 6 | Estados de erro, polish, Listas, Campanhas, Notificações | ✅ Concluído (6.1–6.4) |
+| Sprint 7 | Autenticação e Permissões (RBAC) | ✅ Concluído (7a–7e) |
 
 ---
 
@@ -300,16 +301,117 @@ campanha, o DiscSiP faz um `POST` para o webhook do Make, que dispara email/What
 
 ---
 
+## ⚡ SPRINT 7 — Autenticação e Permissões (RBAC)
+
+### Objetivo
+
+Trocar o login por ramal (sem senha) por **Supabase Auth (email/senha)** com controle de
+acesso por papel.
+
+### Papéis e escopo
+
+| Papel | Acesso |
+|-------|--------|
+| `pending` | Cadastrado, aguardando aprovação de um admin. Não acessa nada |
+| `agent` | Só os dados e métricas dele |
+| `supervisor` | Só o departamento dele |
+| `manager` (gerente) | Todo o negócio (todos os deptos, campanhas, métricas); não gerencia contas |
+| `admin` | Tudo + gestão de contas, papéis e departamentos |
+
+Cadastro: autosserviço (email/senha) → cai como `pending` → admin aprova atribuindo papel +
+departamento (+ ramal). Todos os papéis podem ter ramal e usar o discador.
+
+### Modelo de dados
+
+- `departments` (CRUD pelo admin)
+- `profiles` — **id = auth.users.id**; `name`, `role`, `department_id`, `extension` (opcional).
+  Substitui o papel de identidade da tabela `agents`; os FKs `agent_id` passam a apontar para
+  `profiles` (cutover no 7b).
+- `campaigns.department_id` — pro supervisor enxergar o seu departamento.
+- Trigger `handle_new_user` cria o perfil `pending` no cadastro.
+- Funções `current_profile_role()` / `current_profile_dept()` (SECURITY DEFINER) para as
+  políticas RLS sem recursão.
+
+### Sub-sprints
+
+- **7a** — ✅ Fundação de schema (aditiva, não-quebra). Migração
+  `supabase/migrations/20260611_auth_rbac_schema.sql`: `departments`, `profiles`, trigger de
+  cadastro, helpers de RLS, `campaigns.department_id`. Dependência `@supabase/ssr` instalada.
+  Types `Role`, `Department`, `Profile` + `Campaign.department_id`. RLS de `lists`/`campaign_agents`
+  destravado temporariamente (real vem no 7c). Login por ramal segue funcionando.
+- **7b** — ✅ Fluxo de auth + cutover de identidade. Entregue em duas passadas:
+  - **7b-i** — Clientes `@supabase/ssr`: `src/lib/supabase/client.ts` (browser), `server.ts`
+    refeito com cookies (async), `middleware.ts` (helper) + `src/middleware.ts` (gate: sem
+    sessão→`/login`, role `pending`→`/aguardando`, aprovado em tela de auth→`/softphone`).
+    Telas `/login`, `/cadastro`, `/verifique-email`, `/aguardando` + `/auth/confirm` (route
+    handler que aceita `code` do template **padrão** do Supabase — sem precisar de SMTP — ou
+    `token_hash` de template customizado). Actions `getCurrentProfile`/`signOut` em
+    `src/app/actions/auth.ts`. Identidade migrou do ramal para o `Profile` da sessão
+    (`softphoneStore.setProfile`); `getAgents`/`getAgentActivity` passaram a ler `profiles`;
+    `getAgentByExtension` removido; todas as Server Actions usam `await createServerClient()`.
+    Aviso "sem ramal" no Dialer pra quem não tem `extension`. Migração
+    `20260612_drop_agent_fks.sql` (solta FKs `agent_id→agents`, mantém `agents`).
+  - **7b-ii** — Migração destrutiva `20260613_drop_agents_repoint_fks.sql`: limpeza seletiva de
+    referências órfãs (call_logs.agent_id→null preservando histórico, remove campaign_agents
+    órfãos, desatribui/reseta contatos presos em `dialing`), repontou FKs `agent_id`/
+    `assigned_agent_id` → `profiles(id)` e dropou `agents`. Tipos `Agent`/`AgentRole` removidos;
+    `call_logs.agent_id` agora nullable.
+
+  **Config do Supabase (feita no painel):** Confirm email ligado; Site URL `https://discsip.pages.dev`;
+  Redirect URLs `https://discsip.pages.dev/**` (+ localhost se for testar dev). Template de
+  email padrão (não precisa editar nem SMTP — o `/auth/confirm` trata o `code`). Aprovação de
+  usuários e atribuição de papel/ramal/departamento é manual via SQL até o 7d.
+- **7c** — ✅ RLS por papel/departamento em todas as tabelas. Migração
+  `20260614_rls_policies.sql`: helpers SECURITY DEFINER (`is_campaign_participant`,
+  `campaign_dept`, `profile_dept`) + políticas em profiles/departments/campaigns/
+  campaign_agents/lists/campaign_contacts/call_logs; seed dos 3 departamentos. Decisões:
+  **flip de status pelo agente removido** (campanha só é alterada por supervisor/manager/admin;
+  o dialer não mexe mais em `campaigns`); **departamento da campanha** agora é configurável
+  (seletor na config; `createCampaign` herda o depto do criador). `profiles` só admin edita.
+  Como o usuário testa como admin (acesso total), o app não quebra; o escopo real de
+  supervisor/agent é validado trocando de papel. RLS já entrega parte do escopo do dashboard.
+- **7d** — ✅ Área do admin (`/admin`, só admin — gate no middleware + RLS). Aba **Usuários**:
+  lista perfis (pendentes destacados), edita papel/departamento/ramal inline → tira a aprovação
+  do SQL manual. Aba **Departamentos**: CRUD (criar/renomear/excluir). Actions em
+  `src/app/actions/admin.ts` (`getProfiles`, `updateProfile`, `createDepartment`,
+  `updateDepartment`, `deleteDepartment`). Migração `20260615_profiles_email.sql` espelha o
+  `email` de auth.users em `profiles` (trigger + backfill) pra listar usuários sem service_role.
+  Sidebar ganhou link "Admin" (só pro papel admin) + auto-hidratação do perfil da sessão
+  (funciona em qualquer página, não só no softphone).
+- **7e** — ✅ Navegação condicional + gate de rotas por papel. Sidebar mostra os itens conforme
+  o papel (agente: só Dialer; supervisor/manager: + Dashboard + Campanhas; admin: + Admin). O
+  middleware bloqueia o acesso direto: `/dashboard` e `/campaigns` exigem supervisor+, `/admin`
+  exige admin. O **escopo dos dados por departamento já vem do RLS** (supervisor só enxerga as
+  linhas do seu depto em qualquer query do dashboard/campanhas), sem mudança nas queries.
+- **7e** — Escopo nas queries/UI por papel + navegação condicional na Sidebar.
+
+### Bootstrap do primeiro admin
+
+Como o cadastro cai em `pending` e não há admin para aprovar o primeiro, após o 7b (quando o
+cadastro existir): cadastre-se pelo app e rode uma vez no SQL Editor do Supabase:
+
+```sql
+update public.profiles set role = 'admin'
+where id = (select id from auth.users where email = 'SEU_EMAIL');
+```
+
+---
+
 ## 8. Estrutura de Arquivos
 
 ```
 src/
 ├── app/
+│   ├── admin/              (admin) /admin: page.tsx + AdminClient.tsx (usuários + departamentos)
 │   ├── actions/
-│   │   ├── dialer.ts        Server Actions: login ramal, salvar chamada, histórico
-│   │   ├── campaigns.ts     Server Actions: campanhas, config, agentes, fila + reciclagem
+│   │   ├── auth.ts          Server Actions: getCurrentProfile, signOut
+│   │   ├── admin.ts         Server Actions: getProfiles, updateProfile, CRUD departamentos
+│   │   ├── dialer.ts        Server Actions: salvar chamada, histórico
+│   │   ├── campaigns.ts     Server Actions: campanhas, config, agentes (profiles), fila + reciclagem
 │   │   ├── lists.ts         Server Actions: listas/mailing (criar, importar, rótulos)
 │   │   └── supervisor.ts    Server Actions: métricas do dashboard
+│   ├── login/, cadastro/, verifique-email/, aguardando/  Telas de auth (Supabase)
+│   ├── auth/confirm/route.ts  Handler do link de confirmação de email (code | token_hash)
 │   ├── campaigns/          (supervisor) gestão e configuração de campanhas
 │   │   ├── page.tsx         Server Component: lista de campanhas
 │   │   ├── CampaignsListClient.tsx  Lista + criar campanha
@@ -335,14 +437,24 @@ src/
 ├── store/
 │   ├── softphoneStore.ts    Estado do agente e da chamada atual
 │   └── dialerStore.ts       Estado da campanha e do dialer
+├── middleware.ts            Gate de auth/role + refresh de sessão (@supabase/ssr)
 ├── lib/
 │   ├── constants.ts         HELPER_URL compartilhado
 │   ├── mailing.ts           Parsing client-side (.csv/.xlsx), normalização de telefone
 │   ├── types/database.ts    Types TypeScript das tabelas Supabase
-│   └── supabase/server.ts   Cliente Supabase (server, usado pelas Server Actions)
+│   └── supabase/
+│       ├── server.ts        Cliente server (cookies, async) — Server Actions/Components
+│       ├── client.ts        Cliente browser ('use client')
+│       └── middleware.ts    updateSession (refresh + gate) usado pelo middleware raiz
 supabase/
-└── migrations/
-    └── 20260610_lists_and_campaigns.sql   Migração Listas e Campanhas (6.3a)
+└── migrations/              SQL idempotente, rodado manualmente no Supabase
+    ├── 20260610_lists_and_campaigns.sql        Listas e Campanhas (6.3a)
+    ├── 20260610_campaign_notify_dispositions.sql  Notificação por disposição (6.4)
+    ├── 20260611_auth_rbac_schema.sql           Fundação RBAC: departments, profiles (7a)
+    ├── 20260612_drop_agent_fks.sql             Solta FKs agent_id→agents (7b-i)
+    ├── 20260613_drop_agents_repoint_fks.sql    Repont. FKs→profiles + drop agents (7b-ii)
+    ├── 20260614_rls_policies.sql               RLS por papel/depto + seed deptos (7c)
+    └── 20260615_profiles_email.sql             Espelha email em profiles + backfill (7d)
 local-helper/
 ├── index.js                 Helper Node.js
 ├── package.json

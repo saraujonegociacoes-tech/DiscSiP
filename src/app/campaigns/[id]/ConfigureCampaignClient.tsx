@@ -6,7 +6,7 @@ import { Sidebar } from '@/components/Sidebar'
 import { updateCampaignConfig, setCampaignAgents } from '@/app/actions/campaigns'
 import { ListsSection } from './ListsSection'
 import { DISPOSITIONS } from '@/lib/dispositions'
-import type { Agent, Campaign, List } from '@/lib/types/database'
+import type { Profile, Campaign, List, Department } from '@/lib/types/database'
 
 // Campos base que existem em toda campanha. Campos extras vêm das listas (column_mapping).
 const BASE_FIELDS: Array<{ key: string; label: string }> = [
@@ -31,7 +31,8 @@ function extraFieldsFromLists(lists: List[]): Array<{ key: string; label: string
 interface Props {
   campaign: Campaign
   initialAgentIds: string[]
-  agents: Pick<Agent, 'id' | 'name' | 'extension'>[]
+  agents: Pick<Profile, 'id' | 'name' | 'extension'>[]
+  departments: Department[]
   initialLists: List[]
 }
 
@@ -39,10 +40,12 @@ export function ConfigureCampaignClient({
   campaign,
   initialAgentIds,
   agents,
+  departments,
   initialLists,
 }: Props) {
   const [lists, setLists] = useState<List[]>(initialLists)
   const extraFields = extraFieldsFromLists(lists)
+  const [departmentId, setDepartmentId] = useState<string>(campaign.department_id ?? '')
   const [start, setStart] = useState(toInputTime(campaign.schedule_start))
   const [end, setEnd] = useState(toInputTime(campaign.schedule_end))
   const [visibleFields, setVisibleFields] = useState<string[]>(
@@ -84,6 +87,7 @@ export function ConfigureCampaignClient({
     setMessage(null)
 
     const configResult = await updateCampaignConfig(campaign.id, {
+      department_id: departmentId || null,
       schedule_start: start || null,
       schedule_end: end || null,
       visible_fields: visibleFields,
@@ -117,6 +121,26 @@ export function ConfigureCampaignClient({
             <span className="text-slate-700">/</span>
             <h1 className="text-white font-semibold truncate">{campaign.name}</h1>
           </div>
+
+          {/* Departamento */}
+          <section className="bg-[#1e293b] border border-slate-700/60 rounded-2xl p-5">
+            <h2 className="text-white text-sm font-medium">Departamento</h2>
+            <p className="text-slate-500 text-xs mt-1 mb-4">
+              Define qual supervisor enxerga e gerencia esta campanha.
+            </p>
+            <select
+              value={departmentId}
+              onChange={(e) => setDepartmentId(e.target.value)}
+              className="w-full bg-[#111827] border border-slate-600 rounded-xl px-3 py-2.5 text-white focus:outline-none focus:border-blue-500 transition-colors text-sm"
+            >
+              <option value="">Sem departamento</option>
+              {departments.map((d) => (
+                <option key={d.id} value={d.id}>
+                  {d.name}
+                </option>
+              ))}
+            </select>
+          </section>
 
           {/* Horário de funcionamento */}
           <section className="bg-[#1e293b] border border-slate-700/60 rounded-2xl p-5">
@@ -208,7 +232,9 @@ export function ConfigureCampaignClient({
                         className={`w-1.5 h-1.5 rounded-full shrink-0 ${on ? 'bg-blue-400' : 'bg-slate-600'}`}
                       />
                       <span className="truncate">{a.name}</span>
-                      <span className="text-slate-500 text-xs ml-auto">#{a.extension}</span>
+                      <span className="text-slate-500 text-xs ml-auto">
+                        {a.extension ? `#${a.extension}` : 'sem ramal'}
+                      </span>
                     </button>
                   )
                 })}

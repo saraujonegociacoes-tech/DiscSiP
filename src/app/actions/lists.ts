@@ -4,7 +4,7 @@ import { createServerClient } from '@/lib/supabase/server'
 import type { ColumnMapping, ContactStatus, List } from '@/lib/types/database'
 
 export async function getLists(campaignId: string): Promise<List[]> {
-  const supabase = createServerClient()
+  const supabase = await createServerClient()
   const { data } = await supabase
     .from('lists')
     .select('*')
@@ -15,7 +15,7 @@ export async function getLists(campaignId: string): Promise<List[]> {
 
 // Mapa chave → rótulo dos campos extras das listas (para o dialer exibir os extra_data)
 export async function getListFieldLabels(campaignId: string): Promise<Record<string, string>> {
-  const supabase = createServerClient()
+  const supabase = await createServerClient()
   const { data } = await supabase
     .from('lists')
     .select('column_mapping')
@@ -58,7 +58,7 @@ export async function createList(
   config: ListConfig,
   contacts: IncomingContact[]
 ): Promise<CreateListResult> {
-  const supabase = createServerClient()
+  const supabase = await createServerClient()
 
   const { data: list, error: listError } = await supabase
     .from('lists')
@@ -132,7 +132,7 @@ export async function createList(
 }
 
 export async function deleteList(listId: string): Promise<{ error?: string }> {
-  const supabase = createServerClient()
+  const supabase = await createServerClient()
   // Remove os contatos da lista e depois a lista
   await supabase.from('campaign_contacts').delete().eq('list_id', listId)
   const { error } = await supabase.from('lists').delete().eq('id', listId)

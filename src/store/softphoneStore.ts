@@ -1,6 +1,7 @@
 'use client'
 
 import { create } from 'zustand'
+import type { Profile, Role } from '@/lib/types/database'
 
 export type CallStatus = 'idle' | 'calling' | 'ended'
 
@@ -8,12 +9,14 @@ interface AgentState {
   agentId: string | null
   agentName: string | null
   extension: number | null
+  role: Role | null
+  departmentId: string | null
   callStatus: CallStatus
   callNumber: string | null
   callStartedAt: Date | null
   helperOnline: boolean
 
-  setAgent: (id: string, name: string, extension: number) => void
+  setProfile: (profile: Profile) => void
   setCallStatus: (status: CallStatus, number?: string) => void
   setHelperOnline: (online: boolean) => void
   resetCall: () => void
@@ -24,12 +27,21 @@ export const useSoftphoneStore = create<AgentState>((set) => ({
   agentId: null,
   agentName: null,
   extension: null,
+  role: null,
+  departmentId: null,
   callStatus: 'idle',
   callNumber: null,
   callStartedAt: null,
   helperOnline: false,
 
-  setAgent: (id, name, extension) => set({ agentId: id, agentName: name, extension }),
+  setProfile: (profile) =>
+    set({
+      agentId: profile.id,
+      agentName: profile.name,
+      extension: profile.extension,
+      role: profile.role,
+      departmentId: profile.department_id,
+    }),
 
   setCallStatus: (status, number) =>
     set((state) => ({
@@ -50,6 +62,8 @@ export const useSoftphoneStore = create<AgentState>((set) => ({
       agentId: null,
       agentName: null,
       extension: null,
+      role: null,
+      departmentId: null,
       callStatus: 'idle',
       callNumber: null,
       callStartedAt: null,

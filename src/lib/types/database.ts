@@ -1,4 +1,5 @@
-export type AgentRole = 'agent' | 'supervisor'
+// Papéis do RBAC (Sprint 7). 'pending' = cadastrado, aguardando aprovação do admin.
+export type Role = 'pending' | 'agent' | 'supervisor' | 'manager' | 'admin'
 export type CallDirection = 'inbound' | 'outbound'
 export type CallStatus = 'answered' | 'no_answer' | 'busy' | 'failed'
 export type CampaignStatus = 'draft' | 'active' | 'paused' | 'completed'
@@ -12,17 +13,26 @@ export type ContactStatus =
   | 'do_not_call'
   | 'exhausted'
 
-export interface Agent {
+export interface Department {
   id: string
   name: string
-  extension: number
-  role: AgentRole
+  created_at: string
+}
+
+// Identidade do app (1:1 com auth.users). Substitui o papel da tabela `agents`.
+export interface Profile {
+  id: string
+  name: string
+  email: string | null
+  role: Role
+  department_id: string | null
+  extension: number | null
   created_at: string
 }
 
 export interface CallLog {
   id: string
-  agent_id: string
+  agent_id: string | null
   extension: number
   phone_number: string
   direction: CallDirection
@@ -40,6 +50,7 @@ export interface Campaign {
   id: string
   name: string
   status: CampaignStatus
+  department_id: string | null
   // Horário de funcionamento ('HH:MM:SS'); null = sem restrição de horário
   schedule_start: string | null
   schedule_end: string | null

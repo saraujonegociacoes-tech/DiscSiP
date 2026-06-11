@@ -1,18 +1,41 @@
 'use client'
 
+import { useEffect } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useSoftphoneStore } from '@/store/softphoneStore'
+import { getCurrentProfile } from '@/app/actions/auth'
+import type { Role } from '@/lib/types/database'
 
-const NAV_ITEMS = [
-  { href: '/softphone', label: 'Dialer', icon: '☎' },
-  { href: '/dashboard', label: 'Dashboard', icon: '◈' },
-  { href: '/campaigns', label: 'Campanhas', icon: '▤' },
+const NAV_ITEMS: { href: string; label: string; icon: string; roles: Role[] }[] = [
+  { href: '/softphone', label: 'Dialer', icon: '☎', roles: ['agent', 'supervisor', 'manager', 'admin'] },
+  { href: '/dashboard', label: 'Dashboard', icon: '◈', roles: ['supervisor', 'manager', 'admin'] },
+  { href: '/campaigns', label: 'Campanhas', icon: '▤', roles: ['supervisor', 'manager', 'admin'] },
+  { href: '/admin', label: 'Admin', icon: '⚙', roles: ['admin'] },
 ]
+
+const ROLE_LABEL: Record<string, string> = {
+  agent: 'Agente',
+  supervisor: 'Supervisor',
+  manager: 'Gerente',
+  admin: 'Admin',
+}
 
 export function Sidebar() {
   const pathname = usePathname()
-  const { agentName, extension, helperOnline } = useSoftphoneStore()
+  const { agentId, agentName, extension, role, helperOnline, setProfile } = useSoftphoneStore()
+
+  // Hidrata o perfil da sessão se ainda não estiver no store (páginas que não são
+  // o softphone montam a Sidebar sem o perfil carregado)
+  useEffect(() => {
+    if (agentId) return
+    getCurrentProfile().then((p) => {
+      if (p) setProfile(p)
+    })
+  }, [agentId, setProfile])
+
+  // Enquanto o papel não carregou, mostra o mínimo (Dialer) pra não piscar links proibidos
+  const navItems = NAV_ITEMS.filter((item) => item.roles.includes(role ?? 'agent'))
 
   const helperDot = helperOnline ? 'bg-green-400' : 'bg-slate-500'
 
@@ -25,7 +48,7 @@ export function Sidebar() {
       </div>
 
       <nav className="flex-1 px-3 py-4 space-y-1">
-        {NAV_ITEMS.map((item) => {
+        {navItems.map((item) => {
           const active = pathname === item.href || pathname.startsWith(`${item.href}/`)
           return (
             <Link
@@ -50,7 +73,10 @@ export function Sidebar() {
             <span className={`w-2 h-2 rounded-full shrink-0 ${helperDot}`} />
             <span className="text-white text-sm font-medium truncate">{agentName}</span>
           </div>
-          <p className="text-slate-500 text-xs pl-4">Ramal {extension}</p>
+          <p className="text-slate-500 text-xs pl-4">
+            {(role && ROLE_LABEL[role]) ?? ''}
+            {extension ? `${role && ROLE_LABEL[role] ? ' · ' : ''}Ramal ${extension}` : ''}
+          </p>
         </div>
       )}
     </aside>

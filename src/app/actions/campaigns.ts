@@ -1,10 +1,10 @@
 'use server'
 
 import { createServerClient } from '@/lib/supabase/server'
-import type { Agent, Campaign, CampaignContact, CampaignStatus, ContactStatus } from '@/lib/types/database'
+import type { Profile, Campaign, CampaignContact, CampaignStatus, ContactStatus, Department } from '@/lib/types/database'
 
 export async function getCampaigns(): Promise<Campaign[]> {
-  const supabase = createServerClient()
+  const supabase = await createServerClient()
   const { data } = await supabase
     .from('campaigns')
     .select('*')
@@ -14,7 +14,7 @@ export async function getCampaigns(): Promise<Campaign[]> {
 
 // Apenas as campanhas em que o agente participa (campaign_agents)
 export async function getCampaignsForAgent(agentId: string): Promise<Campaign[]> {
-  const supabase = createServerClient()
+  const supabase = await createServerClient()
   const { data: links } = await supabase
     .from('campaign_agents')
     .select('campaign_id')
@@ -34,10 +34,26 @@ export async function getCampaignsForAgent(agentId: string): Promise<Campaign[]>
 export async function createCampaign(
   name: string
 ): Promise<Campaign | { error: string }> {
-  const supabase = createServerClient()
+  const supabase = await createServerClient()
+
+  // A campanha herda o departamento do criador (supervisor). Admin/manager não têm
+  // departamento → fica null e é atribuído depois na configuração.
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  let department_id: string | null = null
+  if (user) {
+    const { data: prof } = await supabase
+      .from('profiles')
+      .select('department_id')
+      .eq('id', user.id)
+      .single()
+    department_id = (prof?.department_id as string | null) ?? null
+  }
+
   const { data, error } = await supabase
     .from('campaigns')
-    .insert({ name })
+    .insert({ name, department_id })
     .select()
     .single()
   if (error) return { error: error.message }
@@ -48,7 +64,7 @@ export async function updateCampaignStatus(
   id: string,
   status: CampaignStatus
 ): Promise<{ error?: string }> {
-  const supabase = createServerClient()
+  const supabase = await createServerClient()
   const { error } = await supabase
     .from('campaigns')
     .update({ status, updated_at: new Date().toISOString() })
@@ -57,7 +73,7 @@ export async function updateCampaignStatus(
   return {}
 }
 
-type SupabaseClient = ReturnType<typeof createServerClient>
+type SupabaseClient = Awaited<ReturnType<typeof createServerClient>>
 
 async function findPending(supabase: SupabaseClient, campaignId: string) {
   const { data } = await supabase
@@ -110,7 +126,7 @@ export async function getNextContact(
   campaignId: string,
   agentId: string
 ): Promise<CampaignContact | null> {
-  const supabase = createServerClient()
+  const supabase = await createServerClient()
 
   let pending = await findPending(supabase, campaignId)
   if (!pending) {
@@ -142,7 +158,7 @@ export async function updateContactStatus(
   disposition?: string,
   callLogId?: string
 ): Promise<{ error?: string }> {
-  const supabase = createServerClient()
+  const supabase = await createServerClient()
   const { error } = await supabase
     .from('campaign_contacts')
     .update({
@@ -157,19 +173,27 @@ export async function updateContactStatus(
 
 // ─── Configuração de campanha (supervisor) ──────────────────────────────────
 
-export async function getAgents(): Promise<Pick<Agent, 'id' | 'name' | 'extension'>[]> {
-  const supabase = createServerClient()
+export async function getDepartments(): Promise<Department[]> {
+  const supabase = await createServerClient()
+  const { data } = await supabase.from('departments').select('*').order('name')
+  return (data ?? []) as Department[]
+}
+
+// Usuários aprovados (não 'pending') que podem participar de campanhas
+export async function getAgents(): Promise<Pick<Profile, 'id' | 'name' | 'extension'>[]> {
+  const supabase = await createServerClient()
   const { data } = await supabase
-    .from('agents')
+    .from('profiles')
     .select('id, name, extension')
-    .order('extension')
-  return (data ?? []) as Pick<Agent, 'id' | 'name' | 'extension'>[]
+    .neq('role', 'pending')
+    .order('name')
+  return (data ?? []) as Pick<Profile, 'id' | 'name' | 'extension'>[]
 }
 
 export async function getCampaignConfig(
   campaignId: string
 ): Promise<{ campaign: Campaign; agentIds: string[] } | null> {
-  const supabase = createServerClient()
+  const supabase = await createServerClient()
   const [{ data: campaign }, { data: links }] = await Promise.all([
     supabase.from('campaigns').select('*').eq('id', campaignId).single(),
     supabase.from('campaign_agents').select('agent_id').eq('campaign_id', campaignId),
@@ -184,16 +208,18 @@ export async function getCampaignConfig(
 export async function updateCampaignConfig(
   campaignId: string,
   config: {
+    department_id: string | null
     schedule_start: string | null
     schedule_end: string | null
     visible_fields: string[]
     notify_dispositions: string[]
   }
 ): Promise<{ error?: string }> {
-  const supabase = createServerClient()
+  const supabase = await createServerClient()
   const { error } = await supabase
     .from('campaigns')
     .update({
+      department_id: config.department_id,
       schedule_start: config.schedule_start,
       schedule_end: config.schedule_end,
       visible_fields: config.visible_fields,
@@ -210,7 +236,7 @@ export async function setCampaignAgents(
   campaignId: string,
   agentIds: string[]
 ): Promise<{ error?: string }> {
-  const supabase = createServerClient()
+  const supabase = await createServerClient()
   const { error: delError } = await supabase
     .from('campaign_agents')
     .delete()
@@ -235,7 +261,7 @@ export async function getCampaignStats(campaignId: string): Promise<{
   failed: number
   do_not_call: number
 }> {
-  const supabase = createServerClient()
+  const supabase = await createServerClient()
   const { data } = await supabase
     .from('campaign_contacts')
     .select('status')

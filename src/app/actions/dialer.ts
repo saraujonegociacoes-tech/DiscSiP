@@ -1,28 +1,7 @@
 'use server'
 
 import { createServerClient } from '@/lib/supabase/server'
-import type { Agent, CallLog } from '@/lib/types/database'
-
-type AgentResult = { agent: Agent } | { error: string }
-
-export async function getAgentByExtension(extension: number): Promise<AgentResult> {
-  if (extension < 5125 || extension > 5150) {
-    return { error: 'Ramal inválido. Use um ramal entre 5125 e 5150.' }
-  }
-
-  const supabase = createServerClient()
-  const { data: agent, error } = await supabase
-    .from('agents')
-    .select('*')
-    .eq('extension', extension)
-    .single()
-
-  if (error || !agent) {
-    return { error: 'Ramal não encontrado.' }
-  }
-
-  return { agent: agent as Agent }
-}
+import type { CallLog } from '@/lib/types/database'
 
 interface SaveCallLogInput {
   agentId: string
@@ -39,7 +18,7 @@ interface SaveCallLogInput {
 export async function saveCallLog(
   input: SaveCallLogInput
 ): Promise<{ id?: string; error?: string }> {
-  const supabase = createServerClient()
+  const supabase = await createServerClient()
   const { data, error } = await supabase
     .from('call_logs')
     .insert({
@@ -61,7 +40,7 @@ export async function saveCallLog(
 }
 
 export async function getCallHistory(agentId: string): Promise<CallLog[]> {
-  const supabase = createServerClient()
+  const supabase = await createServerClient()
   const { data } = await supabase
     .from('call_logs')
     .select('*')

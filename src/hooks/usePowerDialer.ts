@@ -3,11 +3,7 @@
 import { useCallback, useEffect, useRef } from 'react'
 import { useDialerStore } from '@/store/dialerStore'
 import { useSoftphoneStore } from '@/store/softphoneStore'
-import {
-  getNextContact,
-  updateContactStatus,
-  updateCampaignStatus,
-} from '@/app/actions/campaigns'
+import { getNextContact, updateContactStatus } from '@/app/actions/campaigns'
 import { saveCallLog } from '@/app/actions/dialer'
 import { sendDispositionNotification } from '@/app/actions/notifications'
 import type { ContactStatus } from '@/lib/types/database'
@@ -65,7 +61,6 @@ export function usePowerDialer() {
 
     if (!contact) {
       setDialerStatus('completed')
-      await updateCampaignStatus(campaign.id, 'completed')
       return
     }
 

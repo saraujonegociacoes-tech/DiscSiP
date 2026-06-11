@@ -4,11 +4,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useDialerStore } from '@/store/dialerStore'
 import { usePowerDialer } from '@/hooks/usePowerDialer'
 import { useSoftphoneStore } from '@/store/softphoneStore'
-import {
-  getCampaignsForAgent,
-  getCampaignStats,
-  updateCampaignStatus,
-} from '@/app/actions/campaigns'
+import { getCampaignsForAgent, getCampaignStats } from '@/app/actions/campaigns'
 import { getListFieldLabels } from '@/app/actions/lists'
 import { DISPOSITIONS } from '@/lib/dispositions'
 import type { Campaign } from '@/lib/types/database'
@@ -50,7 +46,7 @@ export function DialerTab() {
     setCampaign,
     setPauseBetweenCalls,
   } = useDialerStore()
-  const { helperOnline, callStatus, callNumber, agentId } = useSoftphoneStore()
+  const { helperOnline, callStatus, callNumber, agentId, extension } = useSoftphoneStore()
   const { start, pause, resume, submitDisposition } = usePowerDialer()
 
   const [view, setView] = useState<View>('list')
@@ -93,7 +89,6 @@ export function DialerTab() {
 
   const handleStart = async () => {
     if (!campaign || !withinHours) return
-    await updateCampaignStatus(campaign.id, 'active')
     await start()
   }
 
@@ -242,6 +237,16 @@ export function DialerTab() {
 
       {/* Controles */}
       <div className="bg-[#1e293b] border border-slate-700/60 rounded-2xl p-4">
+        {/* Banner: sem ramal atribuído */}
+        {!extension && (
+          <div className="flex items-start gap-2 bg-yellow-900/30 border border-yellow-700/50 rounded-xl px-3 py-2.5 mb-3 text-sm text-yellow-300">
+            <span className="shrink-0 mt-0.5">☎</span>
+            <span>
+              Você não tem ramal atribuído. Peça a um administrador para definir seu ramal antes de discar.
+            </span>
+          </div>
+        )}
+
         {/* Banner: helper offline */}
         {!helperOnline && (
           <div className="flex items-start gap-2 bg-red-900/30 border border-red-700/50 rounded-xl px-3 py-2.5 mb-3 text-sm text-red-300">
@@ -279,7 +284,7 @@ export function DialerTab() {
           {dialerStatus === 'idle' && (
             <button
               onClick={handleStart}
-              disabled={!helperOnline || !withinHours || !stats || stats.pending === 0}
+              disabled={!extension || !helperOnline || !withinHours || !stats || stats.pending === 0}
               className="flex-1 bg-green-600 hover:bg-green-500 active:bg-green-700 disabled:bg-slate-700 disabled:text-slate-500 text-white py-3 rounded-xl font-semibold text-sm transition-colors"
             >
               ▶ Iniciar discagem

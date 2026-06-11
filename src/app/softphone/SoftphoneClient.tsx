@@ -1,9 +1,10 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
 import { useSoftphoneStore } from '@/store/softphoneStore'
 import { useDialerStore } from '@/store/dialerStore'
-import { getAgentByExtension } from '@/app/actions/dialer'
+import { getCurrentProfile, signOut } from '@/app/actions/auth'
 import { CallHistory } from './CallHistory'
 import { DialerTab } from './DialerTab'
 import { Sidebar } from '@/components/Sidebar'
@@ -12,19 +13,35 @@ import { HELPER_URL } from '@/lib/constants'
 type Tab = 'dialer' | 'history'
 
 export default function SoftphoneClient() {
+  const router = useRouter()
   const {
     agentId, extension,
     callStatus, callNumber,
     helperOnline,
-    setAgent, setCallStatus, setHelperOnline, logout, resetCall,
+    setProfile, setCallStatus, setHelperOnline, logout, resetCall,
   } = useSoftphoneStore()
   const { reset: resetDialer } = useDialerStore()
 
-  const [extensionInput, setExtensionInput] = useState('')
-  const [loginError, setLoginError] = useState('')
-  const [isLoggingIn, setIsLoggingIn] = useState(false)
+  const [loadingProfile, setLoadingProfile] = useState(true)
   const [activeTab, setActiveTab] = useState<Tab>('dialer')
   const [callDuration, setCallDuration] = useState(0)
+
+  // Carrega o perfil da sessão (o middleware já garante sessão + aprovação aqui)
+  useEffect(() => {
+    let active = true
+    getCurrentProfile().then((profile) => {
+      if (!active) return
+      if (!profile) {
+        router.replace('/login')
+        return
+      }
+      setProfile(profile)
+      setLoadingProfile(false)
+    })
+    return () => {
+      active = false
+    }
+  }, [router, setProfile])
 
   // Verifica se o helper local está online a cada 10s
   useEffect(() => {
@@ -56,70 +73,18 @@ export default function SoftphoneClient() {
   const formatDuration = (s: number) =>
     `${Math.floor(s / 60).toString().padStart(2, '0')}:${(s % 60).toString().padStart(2, '0')}`
 
-  const handleLogin = async () => {
-    const ext = parseInt(extensionInput)
-    if (isNaN(ext)) {
-      setLoginError('Informe um número de ramal válido.')
-      return
-    }
-    setIsLoggingIn(true)
-    setLoginError('')
-
-    const result = await getAgentByExtension(ext)
-    if ('error' in result) {
-      setLoginError(result.error)
-      setIsLoggingIn(false)
-      return
-    }
-
-    setAgent(result.agent.id, result.agent.name, result.agent.extension)
-    setIsLoggingIn(false)
-  }
-
-  const handleLogout = () => {
+  const handleLogout = async () => {
     logout()
     resetCall()
     resetDialer()
-    setExtensionInput('')
+    await signOut()
   }
 
-  // ─── Tela de login ───────────────────────────────────────────────────────────
-  if (!agentId) {
+  // ─── Carregando o perfil ───────────────────────────────────────────────────────
+  if (loadingProfile || !agentId) {
     return (
-      <div className="min-h-screen bg-[#0f172a] flex items-center justify-center p-4">
-        <div className="w-full max-w-xs">
-          <div className="text-center mb-8">
-            <h1 className="text-3xl text-white tracking-tight">
-              <span className="font-medium">Disc</span><span className="font-bold text-blue-500">SiP</span>
-            </h1>
-            <p className="text-slate-500 text-sm mt-1">Power Dialer</p>
-          </div>
-          <div className="bg-[#1e293b] border border-slate-700/60 rounded-2xl p-8">
-            <label className="block text-xs text-slate-400 mb-2 uppercase tracking-wider">
-              Ramal
-            </label>
-            <input
-              type="number"
-              min={5125}
-              max={5150}
-              value={extensionInput}
-              onChange={(e) => setExtensionInput(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && handleLogin()}
-              placeholder="5125"
-              className="w-full bg-[#111827] border border-slate-600 rounded-xl px-4 py-3 text-white text-xl text-center placeholder:text-slate-600 focus:outline-none focus:border-blue-500 transition-colors"
-            />
-            {loginError && (
-              <p className="text-red-400 text-sm mt-2 text-center">{loginError}</p>
-            )}
-            <button
-              onClick={handleLogin}
-              disabled={isLoggingIn || !extensionInput}
-              className="w-full mt-4 bg-blue-600 hover:bg-blue-500 active:bg-blue-700 disabled:bg-slate-700 disabled:text-slate-500 text-white font-semibold py-3 rounded-xl transition-colors"
-            >
-              {isLoggingIn ? 'Carregando...' : 'Entrar'}
-            </button>
-          </div>
-        </div>
+      <div className="min-h-screen bg-[#0f172a] flex items-center justify-center">
+        <div className="w-8 h-8 border-2 border-slate-600 border-t-blue-500 rounded-full animate-spin" />
       </div>
     )
   }

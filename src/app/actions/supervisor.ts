@@ -35,7 +35,7 @@ export interface AgentActivity {
 }
 
 export async function getDashboardStats(): Promise<DashboardStats> {
-  const supabase = createServerClient()
+  const supabase = await createServerClient()
 
   const todayStart = new Date()
   todayStart.setHours(0, 0, 0, 0)
@@ -70,7 +70,7 @@ export async function getDashboardStats(): Promise<DashboardStats> {
 }
 
 export async function getCampaignsSummary(): Promise<CampaignSummary[]> {
-  const supabase = createServerClient()
+  const supabase = await createServerClient()
 
   const [campaignsRes, contactsRes] = await Promise.all([
     supabase.from('campaigns').select('*').order('created_at', { ascending: false }),
@@ -101,7 +101,7 @@ export async function getCampaignsSummary(): Promise<CampaignSummary[]> {
 }
 
 export async function getCallsByHour(): Promise<CallsByHour[]> {
-  const supabase = createServerClient()
+  const supabase = await createServerClient()
 
   const todayStart = new Date()
   todayStart.setHours(0, 0, 0, 0)
@@ -127,13 +127,18 @@ export async function getCallsByHour(): Promise<CallsByHour[]> {
 }
 
 export async function getAgentActivity(): Promise<AgentActivity[]> {
-  const supabase = createServerClient()
+  const supabase = await createServerClient()
 
   const todayStart = new Date()
   todayStart.setHours(0, 0, 0, 0)
 
   const [agentsRes, logsRes] = await Promise.all([
-    supabase.from('agents').select('id, name, extension').order('extension'),
+    // Quem tem ramal atribuído aparece como agente na atividade do dashboard
+    supabase
+      .from('profiles')
+      .select('id, name, extension')
+      .not('extension', 'is', null)
+      .order('extension'),
     supabase
       .from('call_logs')
       .select('agent_id, created_at, status')
@@ -141,7 +146,7 @@ export async function getAgentActivity(): Promise<AgentActivity[]> {
       .order('created_at', { ascending: false }),
   ])
 
-  const agents = agentsRes.data ?? []
+  const agents = (agentsRes.data ?? []) as { id: string; name: string; extension: number }[]
   const logs = (logsRes.data ?? []) as Pick<CallLog, 'agent_id' | 'created_at' | 'status'>[]
 
   return agents.map((a) => {
