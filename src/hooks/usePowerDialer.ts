@@ -89,6 +89,38 @@ export function usePowerDialer() {
     }
   }, [callStatus])
 
+  // Enquanto há chamada em andamento, observa os eventos reais do MicroSIP (via helper).
+  // Quando o MicroSIP avisa que a chamada terminou — não importa quem desligou (a outra ponta,
+  // o agente no MicroSIP, ou o botão Encerrar) — marca 'ended', o que dispara a tabulação.
+  useEffect(() => {
+    if (callStatus !== 'calling') return
+    let cancelled = false
+    // 1ª leitura só estabelece a baseline (ignora o evento da chamada anterior que ficou no helper)
+    let baseline: number | null = null
+    const poll = async () => {
+      try {
+        const res = await fetch(`${HELPER_URL}/events`, { signal: AbortSignal.timeout(2000) })
+        const ev = await res.json()
+        if (cancelled) return
+        if (baseline === null) {
+          baseline = ev.id
+          return
+        }
+        if (ev.id > baseline && (ev.type === 'call-end' || ev.type === 'call-busy')) {
+          setCallStatus('ended')
+        }
+      } catch {
+        // Helper offline — sem detecção automática; o botão Encerrar ainda funciona
+      }
+    }
+    poll()
+    const interval = setInterval(poll, 1000)
+    return () => {
+      cancelled = true
+      clearInterval(interval)
+    }
+  }, [callStatus, setCallStatus])
+
   const start = useCallback(async () => {
     if (!campaign) return
     setDialerStatus('running')

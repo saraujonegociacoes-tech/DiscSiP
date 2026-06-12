@@ -16,7 +16,15 @@ if errorlevel 1 (
 echo OK.
 echo.
 
-echo [2/2] Criando atalho na inicializacao do Windows...
+echo [2/3] Configurando hooks de evento do MicroSIP...
+powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0setup-hooks.ps1"
+if errorlevel 1 (
+  echo AVISO: nao foi possivel aplicar os hooks no microsip.ini agora.
+  echo Feche o MicroSIP e rode novamente: powershell -File "%~dp0setup-hooks.ps1"
+)
+echo.
+
+echo [3/3] Criando atalho na inicializacao do Windows...
 set STARTUP=%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup
 set BAT_PATH=%~dp0start.bat
 

@@ -55,10 +55,68 @@ function findMicroSIP() {
 
 const MICROSIP = findMicroSIP()
 
+// Último evento de chamada recebido do MicroSIP (via cmdCallStart/cmdCallEnd no microsip.ini).
+// O DiscSiP faz polling em /events para reagir (mostrar tabulação, cronômetro real).
+let lastEvent = { id: 0, type: 'idle', number: null, at: null }
+function recordEvent(type, number) {
+  lastEvent = {
+    id: lastEvent.id + 1,
+    type,
+    number: number || null,
+    at: new Date().toISOString(),
+  }
+  console.log(`[${new Date().toLocaleTimeString()}] Evento: ${type}${number ? ' ' + number : ''}`)
+}
+
+// Roda um comando de controle do MicroSIP (ex: "msip:hangupall"). A instância em execução
+// recebe via WM_COPYDATA e executa, sem trazer a janela para frente.
+function runMsip(arg) {
+  if (!MICROSIP) return false
+  try {
+    const child = spawn(MICROSIP, [arg], { detached: true, stdio: 'ignore' })
+    child.on('error', () => {})
+    child.unref()
+    return true
+  } catch {
+    return false
+  }
+}
+
 // Health check — usado pelo DiscSiP para saber se o helper está rodando
 app.get('/ping', (req, res) => {
   res.json({ ok: true, microsip: MICROSIP })
 })
+
+// Encerra a chamada ativa no MicroSIP — usado pelo botão "Encerrar" do DiscSiP
+app.post('/hangup', (req, res) => {
+  const ts = new Date().toLocaleTimeString()
+  if (runMsip('msip:hangupall')) {
+    console.log(`[${ts}] Encerrando chamada (msip:hangupall)`)
+    return res.json({ ok: true })
+  }
+  console.error(`[${ts}] ERRO ao encerrar: MicroSIP nao encontrado`)
+  res.status(500).json({ error: 'MicroSIP nao encontrado' })
+})
+
+// Eventos vindos do MicroSIP (configurados no microsip.ini: cmdCallStart / cmdCallEnd).
+// São GET porque o curl do MicroSIP usa GET por padrão.
+app.get('/event/call-start', (req, res) => {
+  recordEvent('call-start', req.query.number)
+  res.json({ ok: true })
+})
+app.get('/event/call-end', (req, res) => {
+  recordEvent('call-end', req.query.number)
+  res.json({ ok: true })
+})
+// Ligacao deu ocupado (486/600/603). O MicroSIP roteia esses casos para cmdCallBusy,
+// nao para cmdCallEnd — por isso o evento proprio, para o DiscSiP tambem tabular.
+app.get('/event/call-busy', (req, res) => {
+  recordEvent('call-busy', req.query.number)
+  res.json({ ok: true })
+})
+
+// O DiscSiP faz polling aqui para saber o último evento de chamada
+app.get('/events', (req, res) => res.json(lastEvent))
 
 // Aciona uma chamada no MicroSIP
 app.post('/call', (req, res) => {
@@ -99,7 +157,7 @@ app.post('/call', (req, res) => {
 
 app.listen(PORT, '127.0.0.1', () => {
   console.log('=================================')
-  console.log(` DiscSiP Helper v1.1`)
+  console.log(` DiscSiP Helper v1.2`)
   console.log(` http://localhost:${PORT}`)
   console.log('=================================')
   if (MICROSIP) {

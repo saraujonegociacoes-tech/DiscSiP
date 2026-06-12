@@ -73,6 +73,17 @@ export default function SoftphoneClient() {
   const formatDuration = (s: number) =>
     `${Math.floor(s / 60).toString().padStart(2, '0')}:${(s % 60).toString().padStart(2, '0')}`
 
+  // Encerrar pelo DiscSiP: desliga a chamada no MicroSIP (msip:hangupall, escondido) e marca 'ended'.
+  // O fim também chega via evento do MicroSIP, então setamos otimista para resposta imediata.
+  const handleHangup = async () => {
+    try {
+      await fetch(`${HELPER_URL}/hangup`, { method: 'POST' })
+    } catch {
+      // Helper offline — não dá para encerrar no MicroSIP; ainda assim avança a UI
+    }
+    setCallStatus('ended')
+  }
+
   const handleLogout = async () => {
     logout()
     resetCall()
@@ -145,7 +156,7 @@ export default function SoftphoneClient() {
               </span>
             </div>
             <button
-              onClick={() => setCallStatus('ended')}
+              onClick={handleHangup}
               className="bg-red-600 hover:bg-red-500 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors"
             >
               Encerrar
