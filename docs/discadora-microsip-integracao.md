@@ -100,9 +100,22 @@ Automatizado em `local-helper/setup-hooks.ps1` (chamado pelo `instalar.bat`). N�
   e PARA. Corrigir: distinguir "perdi a corrida" de "sem pendentes" — fazer loop de claim, só retornar
   null quando não há mais pendente.
 
-### Lançadores ocultos (Sub-sprint C)
-- MicroSIP iniciar escondido: `microsip.exe /minimized` (bandeja) ou `msip:minimize`. `enableMediaButtons` ficou 0.
-- Helper sem janela: lançador `.vbs` (window style 0) no startup, em vez do `start.bat` com console.
+### ✅ Lançadores ocultos (Sub-sprint C) — FEITO
+- MicroSIP escondido: chave `minimized=1` no ini (`settings.cpp:652`) faz nascer na bandeja —
+  o startup pula `ShowWindow(SW_SHOW)` (`mainDlg.cpp:2144`). Com `singleMode=1`, `MakeCall` seta
+  `doNotShowMessagesWindow` (`mainDlg.cpp:4279`) e `CommandLine`/`hangupall` retornam sem foco →
+  discar e encerrar NÃO mostram janela. Aplicado pelo `setup-hooks.ps1`. (`/minimized` só funciona se a
+  cmdline for EXATAMENTE "/minimized" — como o helper passa o número, a chave do ini é o caminho certo.)
+- Helper sem janela: `local-helper/start-hidden.vbs` (WScript.Shell Run com window style 0) roda o node
+  oculto; o `instalar.bat` registra o atalho de startup apontando pra ele (via wscript). O `start.bat`
+  com console fica pra debug.
+- ⚠️ GOTCHA: `minimized` só controla o NASCIMENTO. Se o MicroSIP já estiver aberto/visível (alguém clicou
+  no ícone da bandeja, restaurou a janela), ele FICA visível e discar não esconde. Provado empiricamente:
+  startup com `minimized=1` → `MainWindowHandle=0` (escondido); enviar comando (msip:/número) à instância
+  rodando → continua `MainWindowHandle=0`. Ou seja: deixe o MicroSIP só na bandeja; não abra a janela.
+- `bringToFrontOnIncoming=0` (defensivo, `mainDlg.cpp:482`) — só afeta recebidas/auto-atender, mas zerado.
+- Chaves relevantes no `[Settings]` do ini: `minimized`, `singleMode`, `bringToFrontOnIncoming`.
+  Na GUI do MicroSIP: Settings → "Minimize on Startup" e "Bring to Front on Incoming".
 
 ### Outros problemas relatados (ainda não feitos)
 1. **SQL `notify_dispositions`** — migração `20260610_campaign_notify_dispositions.sql` NÃO foi rodada.
