@@ -57,7 +57,7 @@ Aplicar/reproduzir com `local-helper/setup-hooks.ps1` (copia os .bat p/ a pasta 
 
 ---
 
-## 3. Helper local (`local-helper/`) — v1.2
+## 3. Helper local (`local-helper/`) — v1.3
 
 Express na porta 3001. Endpoints:
 - `GET /ping` → `{ ok, microsip }`
@@ -66,11 +66,24 @@ Express na porta 3001. Endpoints:
 - `GET /event/call-start?number=` e `GET /event/call-end?number=` → recebem do MicroSIP (via curl nos .bat)
 - `GET /events` → último evento `{ id, type, number, at }` (DiscSiP faz polling)
 
-Normalização de número (`formatNumber`): tira não-dígitos e `+55`; se DDD == `LOCAL_DDD` (default **11**),
-disca em formato LOCAL (sem DDD), como o agente faz manualmente; números de outros DDDs mantêm o DDD.
-Envs: `MICROSIP_PATH`, `LOCAL_DDD`, `DIAL_PREFIX`.
+Normalização de número (`formatNumber`): tira não-dígitos e o código de país (`+55`/`55`) e **sempre**
+prefixa o CSP `021`, discando `021 + DDD + número` (ex: `11952085529` → `02111952085529`,
+`33952085522` → `02133952085522`). Sem o `021` o MicroSIP não completa chamadas interurbanas.
+Vale para TODO número, inclusive DDD 11 (não disca mais local sem DDD).
+Envs: `MICROSIP_PATH`, `DIAL_PREFIX` (default **`021`**; só muda se trocar de operadora de longa distância).
+
+> **Histórico (até v1.2):** havia `LOCAL_DDD` (default 11) que discava o DDD local em formato LOCAL
+> (sem DDD) e `DIAL_PREFIX` vazio. Removido na v1.3 — outros estados não completavam sem o `021`.
 
 Arquivos novos: `on-call-start.bat`, `on-call-end.bat` (disparam `curl` não-bloqueante pro helper, `start /b`).
+
+### Atualização do helper nas máquinas (`atualizar.bat`)
+A regra de discagem vive no `index.js` (Opção A — cravada no código, não por máquina). Logo:
+- **Máquinas novas (26 agentes):** rodar o `instalar.bat` já nasce certo, zero config por máquina.
+- **Máquina já instalada:** levar o `index.js` novo pra pasta `local-helper` e rodar `atualizar.bat`,
+  que: `git pull` (se a pasta for repo) → para SÓ o `node` do helper (filtra `index.js` na cmdline,
+  não mata outros node) → `npm install` → sobe oculto via `start-hidden.vbs`. (Ou reiniciar o Windows.)
+  O `instalar.bat` roda da própria pasta e não copia o `atualizar.bat` — sem impacto.
 
 ### Cadeia de eventos — testada parcialmente
 - helper ↔ .bat ↔ curl ↔ /events: ✅ funciona (rodando o .bat manual, `/events` registra).

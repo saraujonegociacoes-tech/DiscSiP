@@ -6,23 +6,17 @@ const app = express()
 
 const PORT = 3001
 
-// Prefixo para linha externa do PABX, se necessário (ex: "0"). Configurável por env.
-const DIAL_PREFIX = process.env.DIAL_PREFIX || ''
-
-// DDD local do escritório. Números deste DDD são discados em formato LOCAL (sem o DDD),
-// como os agentes fazem manualmente. Números de outros DDDs mantêm o DDD.
-const LOCAL_DDD = process.env.LOCAL_DDD || '11'
+// Código de seleção de operadora (CSP) para discagem interurbana. Sem ele o MicroSIP
+// não completa chamadas para outros estados. Resultado: DIAL_PREFIX + DDD + número.
+// Configurável por env (default 021); muda só se trocar de operadora de longa distância.
+const DIAL_PREFIX = process.env.DIAL_PREFIX || '021'
 
 // Normaliza o número para o formato que o PABX espera:
 // - tira tudo que não é dígito e o código de país (+55 / 55)
-// - se for do DDD local, remove o DDD (disca local)
-// - aplica o prefixo de linha externa, se houver
+// - prefixa o CSP, sempre discando 021 + DDD + número (ex: 021 11 95208-5529)
 function formatNumber(raw) {
   let digits = String(raw).replace(/\D/g, '')
   if (digits.length > 11 && digits.startsWith('55')) digits = digits.slice(2)
-  if (LOCAL_DDD && (digits.length === 10 || digits.length === 11) && digits.startsWith(LOCAL_DDD)) {
-    digits = digits.slice(LOCAL_DDD.length)
-  }
   return DIAL_PREFIX + digits
 }
 
@@ -157,7 +151,7 @@ app.post('/call', (req, res) => {
 
 app.listen(PORT, '127.0.0.1', () => {
   console.log('=================================')
-  console.log(` DiscSiP Helper v1.2`)
+  console.log(` DiscSiP Helper v1.3`)
   console.log(` http://localhost:${PORT}`)
   console.log('=================================')
   if (MICROSIP) {
@@ -166,8 +160,7 @@ app.listen(PORT, '127.0.0.1', () => {
     console.log(' MicroSIP NAO encontrado no disco — usando protocolo tel: (fallback)')
     console.log(' Se a discagem nao funcionar, defina MICROSIP_PATH apontando para o microsip.exe')
   }
-  if (LOCAL_DDD) console.log(` DDD local (discado sem DDD): ${LOCAL_DDD}`)
-  if (DIAL_PREFIX) console.log(` Prefixo de discagem: "${DIAL_PREFIX}"`)
+  if (DIAL_PREFIX) console.log(` Prefixo de discagem (CSP): "${DIAL_PREFIX}" — disca ${DIAL_PREFIX} + DDD + numero`)
   console.log('Aguardando chamadas do DiscSiP...')
   console.log('')
 })
