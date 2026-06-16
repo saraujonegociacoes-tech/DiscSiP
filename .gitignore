@@ -56,6 +56,7 @@ supabase/functions/.env
 # helper — arquivos gerados em runtime em cada máquina
 local-helper/index.bak
 local-helper/helper-config.json
+local-helper/node_modules/
 
 # arquivos locais de projeto (não sobem para o repo público)
 .agents/

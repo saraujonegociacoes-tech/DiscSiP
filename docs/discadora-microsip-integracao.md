@@ -119,9 +119,13 @@ Automatizado em `local-helper/setup-hooks.ps1` (chamado pelo `instalar.bat`). N�
   `doNotShowMessagesWindow` (`mainDlg.cpp:4279`) e `CommandLine`/`hangupall` retornam sem foco →
   discar e encerrar NÃO mostram janela. Aplicado pelo `setup-hooks.ps1`. (`/minimized` só funciona se a
   cmdline for EXATAMENTE "/minimized" — como o helper passa o número, a chave do ini é o caminho certo.)
-- Helper sem janela: `local-helper/start-hidden.vbs` (WScript.Shell Run com window style 0) roda o node
-  oculto; o `instalar.bat` registra o atalho de startup apontando pra ele (via wscript). O `start.bat`
-  com console fica pra debug.
+- Helper sem janela: `local-helper/start-hidden.vbs` (WScript.Shell Run com window style 0) roda o
+  `start.bat hidden` oculto — NÃO o `node` direto. Isso é essencial: o `start.bat` tem o loop que
+  reinicia o node ao sair com código 42 (auto-atualização). Se o vbs chamasse `node index.js` direto,
+  o helper se atualizaria, sairia com 42 e nunca voltaria (ficaria offline até o próximo boot). O
+  `instalar.bat` registra o atalho de startup apontando pro vbs (via wscript) e, antes de criar,
+  apaga atalhos antigos de nomes divergentes (evita dois helpers brigando pela porta 3001). O
+  `start.bat` sem argumento (com console) fica pra debug.
 - ⚠️ GOTCHA: `minimized` só controla o NASCIMENTO. Se o MicroSIP já estiver aberto/visível (alguém clicou
   no ícone da bandeja, restaurou a janela), ele FICA visível e discar não esconde. Provado empiricamente:
   startup com `minimized=1` → `MainWindowHandle=0` (escondido); enviar comando (msip:/número) à instância
