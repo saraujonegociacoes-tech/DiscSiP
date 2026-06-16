@@ -53,6 +53,10 @@ supabase/functions/.env
 *.swp
 *.swo
 
+# helper — arquivos gerados em runtime em cada máquina
+local-helper/index.bak
+local-helper/helper-config.json
+
 # arquivos locais de projeto (não sobem para o repo público)
 .agents/
 .claude/

@@ -15,10 +15,11 @@ interface AgentState {
   callNumber: string | null
   callStartedAt: Date | null
   helperOnline: boolean
+  helperVersion: string | null
 
   setProfile: (profile: Profile) => void
   setCallStatus: (status: CallStatus, number?: string) => void
-  setHelperOnline: (online: boolean) => void
+  setHelperOnline: (online: boolean, version?: string | null) => void
   resetCall: () => void
   logout: () => void
 }
@@ -33,6 +34,7 @@ export const useSoftphoneStore = create<AgentState>((set) => ({
   callNumber: null,
   callStartedAt: null,
   helperOnline: false,
+  helperVersion: null,
 
   setProfile: (profile) =>
     set({
@@ -53,7 +55,11 @@ export const useSoftphoneStore = create<AgentState>((set) => ({
         status === 'calling' ? new Date() : status === 'idle' ? null : state.callStartedAt,
     })),
 
-  setHelperOnline: (online) => set({ helperOnline: online }),
+  setHelperOnline: (online, version) =>
+    set((state) => ({
+      helperOnline: online,
+      helperVersion: online ? (version ?? state.helperVersion) : null,
+    })),
 
   resetCall: () => set({ callStatus: 'idle', callNumber: null, callStartedAt: null }),
 
@@ -68,5 +74,6 @@ export const useSoftphoneStore = create<AgentState>((set) => ({
       callNumber: null,
       callStartedAt: null,
       helperOnline: false,
+      helperVersion: null,
     }),
 }))

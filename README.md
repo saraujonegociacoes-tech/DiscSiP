@@ -1,69 +1,302 @@
-# DiscSiP — Power Dialer
+# Blue Line — Power Dialer
 
-Sistema web de discagem semi-automática para a equipe de vendas da Araujo Negociações, integrado ao PABX Intelbras WidevoiceX via MicroSIP.
+Sistema web de discagem semi-automática para a equipe de vendas da **Araujo Negociações**, integrado ao PABX **Intelbras WidevoiceX** via **MicroSIP**. O DiscSiP gerencia filas de contatos, seleciona o próximo automaticamente e aciona o MicroSIP instalado na máquina do agente — o agente só atende e fala.
 
 - **App:** https://discsip.pages.dev
-- **Deploy:** Cloudflare Pages
+- **Deploy:** Cloudflare Pages (deploy automático no push para `main`)
+- **Repositório:** https://github.com/saraujonegociacoes-tech/DiscSiP
+- **PABX:** Intelbras WidevoiceX (`widevoice8.intelbras.com.br`) — ramais 5125–5150
+
+> Documentação técnica aprofundada (decisões, sprints, histórico): [`docs/arquitetura-e-proximos-passos.md`](docs/arquitetura-e-proximos-passos.md) e [`docs/discadora-microsip-integracao.md`](docs/discadora-microsip-integracao.md).
+
+---
+
+## Índice
+
+- [Visão geral](#visão-geral)
+- [Como funciona](#como-funciona)
+- [Papéis e permissões (RBAC)](#papéis-e-permissões-rbac)
+- [Arquitetura de discagem](#arquitetura-de-discagem)
+- [Helper local (máquinas dos agentes)](#helper-local-máquinas-dos-agentes)
+- [Stack](#stack)
+- [Estrutura do projeto](#estrutura-do-projeto)
+- [Banco de dados (Supabase)](#banco-de-dados-supabase)
+- [Server Actions](#server-actions)
+- [Ambiente de desenvolvimento](#ambiente-de-desenvolvimento)
+- [Build e deploy](#build-e-deploy)
+- [Variáveis de ambiente](#variáveis-de-ambiente)
+- [Configuração do Supabase](#configuração-do-supabase)
+
+---
+
+## Visão geral
+
+O servidor SIP da Intelbras só aceita WebSocket sem TLS (`ws://`), o que um app em HTTPS não pode usar (mixed content). Em vez de discar pelo browser, o DiscSiP aproveita o **MicroSIP** que os agentes já usam: um **helper local** (Node.js, porta 3001) rodando na máquina de cada agente recebe o número do navegador e aciona o MicroSIP, que disca via SIP no PABX. Sem proxy central, sem IP fixo, sem API Intelbras.
+
+O sistema é **dirigido pelo supervisor**: ele cria campanhas, sobe os mailings (`.csv`/`.xlsx`) e define quem disca, quando e o que o agente vê. O agente apenas seleciona uma campanha e inicia a discagem.
+
+---
 
 ## Como funciona
 
-**Supervisor** (em `/campaigns`):
-1. Cria uma campanha e a configura: horário de funcionamento, agentes participantes e campos visíveis ao agente
-2. Sobe o mailing (`.csv`/`.xlsx`), mapeia as colunas (nome/telefone/extras) e define as regras de reciclagem
+### Autenticação
 
-**Agente** (em `/softphone`):
-1. Entra com seu ramal e vê apenas as campanhas em que participa
-2. Seleciona uma campanha e clica **Iniciar discagem** (bloqueado fora do horário configurado)
-3. O sistema busca o próximo contato da fila e aciona o MicroSIP via helper local
-4. O MicroSIP disca automaticamente — agente só atende o telefone
-5. Ao encerrar, o agente registra o resultado e o próximo contato é carregado
+O acesso é por **Supabase Auth (email/senha)**. O cadastro é autosserviço: novos usuários entram como `pending` e ficam em `/aguardando` até um **admin** atribuir papel, departamento e (opcional) ramal. A confirmação de email está ligada — o link do template padrão do Supabase é tratado em `/auth/confirm`.
 
-Contatos sem sucesso podem voltar à fila automaticamente (reciclagem), até um limite de tentativas.
+### Fluxo do supervisor (em `/campaigns`)
+
+1. **Cria** uma campanha (nome + departamento).
+2. **Configura**: horário de funcionamento, agentes participantes, campos visíveis ao agente e quais disposições disparam notificação.
+3. **Sobe a lista** (mailing `.csv`/`.xlsx`): preview das colunas, mapeamento (nome / telefone / campos extras) e regras de reciclagem.
+4. **Roda**: a campanha entra em operação para os agentes participantes, dentro do horário.
+
+### Fluxo do agente (em `/softphone`)
+
+1. Vê apenas as campanhas em que participa e seleciona uma.
+2. Clica **Iniciar discagem** (bloqueado fora do horário configurado, reavaliado periodicamente).
+3. O sistema busca o próximo contato pendente da fila e aciona o MicroSIP via helper local.
+4. O MicroSIP disca automaticamente — o agente só atende o telefone.
+5. O fim da chamada é detectado em tempo real (eventos do MicroSIP via helper) ou pelo botão **Encerrar**.
+6. O agente registra o **resultado** (disposição); se ela estiver entre as configuradas, um webhook do Make é disparado (email/WhatsApp).
+7. O próximo contato carrega após uma pausa curta entre chamadas.
+
+Contatos sem sucesso voltam à fila automaticamente (**reciclagem**) após um intervalo, até um limite de tentativas — depois são marcados como `exhausted` e saem da fila.
+
+---
+
+## Papéis e permissões (RBAC)
+
+O escopo de dados é aplicado por **Row Level Security (RLS)** no Postgres, e o acesso às rotas é reforçado no `middleware.ts`.
+
+| Papel | Acesso |
+|-------|--------|
+| `pending` | Cadastrado, aguardando aprovação. Fica preso em `/aguardando`, não acessa o app |
+| `agent` | Apenas o discador (`/softphone`) e os próprios dados/métricas |
+| `supervisor` | Dialer + Dashboard + Campanhas — restrito ao **seu departamento** |
+| `manager` | Todo o negócio (todos os departamentos, campanhas e métricas); não gerencia contas |
+| `admin` | Tudo + área `/admin` (gestão de usuários, papéis e departamentos) |
+
+- Cadastro → `pending` → admin aprova atribuindo papel/depto/ramal pela tela `/admin`.
+- **Bootstrap do 1º admin** (manual, uma vez, após se cadastrar):
+  ```sql
+  update public.profiles set role = 'admin'
+  where id = (select id from auth.users where email = 'SEU_EMAIL');
+  ```
+
+---
+
+## Arquitetura de discagem
+
+```
+Browser (agente)
+  │  HTTPS                         ┌──────────────────────────────┐
+  ├────────────────────────────▶  │ Cloudflare Pages (Next.js)    │
+  │                                │  Server Actions, RLS, Supabase│
+  │                                └──────────────────────────────┘
+  │  fetch http://localhost:3001
+  ▼
+Helper Node.js (porta 3001)        ← roda na máquina do agente
+  │  spawn microsip.exe NUMERO  (ou fallback protocolo tel:)
+  ▼
+MicroSIP (softphone Windows)
+  │  SIP
+  ▼
+PABX Intelbras WidevoiceX
+```
+
+- O número é normalizado para `021 + DDD + número` (CSP da operadora, sem o qual o interurbano não completa).
+- O fim da chamada flui de volta: MicroSIP → hooks `cmdCallStart/End/Busy` (no `microsip.ini`) → helper (`/event/*`) → o app faz polling em `/events` para tabular automaticamente.
+
+---
+
+## Helper local (máquinas dos agentes)
+
+App Express (`local-helper/index.js`, **v1.3**) em `http://localhost:3001`. Endpoints:
+
+| Método | Rota | Função |
+|--------|------|--------|
+| `GET` | `/ping` | Health check (status "Helper online/offline" no app) |
+| `POST` | `/call` | Recebe `{ number }`, normaliza e disca via `microsip.exe` (ou fallback `tel:`) |
+| `POST` | `/hangup` | Encerra a chamada ativa (`msip:hangupall`) — botão "Encerrar" |
+| `GET` | `/events` | Último evento de chamada (o app faz polling aqui) |
+| `GET` | `/event/call-start` · `/event/call-end` · `/event/call-busy` | Recebem os eventos do MicroSIP |
+
+**Discagem:** prefixa o CSP `021` (configurável via `DIAL_PREFIX`), removendo `+55`/`55` e formatação. Sempre disca `021 + DDD + número` (ex.: `11952085529` → `02111952085529`). O `microsip.exe` é localizado automaticamente nos caminhos padrão (override via `MICROSIP_PATH`).
+
+### Arquivos do helper
+
+| Arquivo | Função |
+|---------|--------|
+| `instalar.bat` | Instalação completa (1× por máquina): `npm install` → configura hooks do MicroSIP → cria atalho de startup oculto |
+| `atualizar.bat` | Atualizador 1-clique: `git pull` (se for repo) → mata só o node do helper → `npm install` → sobe oculto |
+| `start.bat` | Inicia o helper manualmente com console (debug) |
+| `start-hidden.vbs` | Inicia o helper sem janela (usado no startup) |
+| `setup-hooks.ps1` | Copia os `on-call-*.bat` para `C:\Users\Public\discsip-helper` (caminho sem espaços) e grava os hooks `cmdCallStart/End/Busy` + `minimized=1` no `microsip.ini` |
+| `on-call-start/end/busy.bat` | Disparados pelo MicroSIP; fazem `curl` para os endpoints `/event/*` do helper |
+
+**Instalação (uma vez por máquina, com o MicroSIP fechado):**
+```
+local-helper/instalar.bat
+```
+Pré-requisito: Node.js instalado.
+
+---
 
 ## Stack
 
 | Camada | Tecnologia |
 |--------|-----------|
-| Frontend + Backend | Next.js 15 (App Router, Server Actions) |
-| Deploy | Cloudflare Pages (`@opennextjs/cloudflare`) |
-| Banco de dados | Supabase (PostgreSQL) |
+| Frontend + Backend | Next.js 15.5 (App Router, Server Actions, React 19) |
+| Deploy | Cloudflare Pages (Advanced Mode, `_worker.js`) via `@opennextjs/cloudflare` |
+| Banco de dados / Auth | Supabase (PostgreSQL + Auth + RLS), via `@supabase/ssr` |
 | Estado global | Zustand 5 |
 | Estilo | TailwindCSS 4 |
-| Discagem | MicroSIP + helper local Node.js |
+| Gráficos | Recharts |
+| Parse de mailing | `xlsx` (SheetJS), client-side com dynamic import |
+| Discagem | MicroSIP + helper local Node.js/Express |
 
-## Configuração do ambiente
+---
+
+## Estrutura do projeto
+
+```
+src/
+├── middleware.ts              Gate de auth/role + refresh de sessão (@supabase/ssr)
+├── app/
+│   ├── login/ · cadastro/ · verifique-email/ · aguardando/   Telas de auth
+│   ├── auth/confirm/route.ts  Handler do link de confirmação (code | token_hash)
+│   ├── actions/
+│   │   ├── auth.ts            getCurrentProfile, signOut
+│   │   ├── admin.ts           getProfiles, updateProfile, CRUD de departamentos
+│   │   ├── campaigns.ts       campanhas, config, fila + reciclagem, stats
+│   │   ├── lists.ts           listas/mailing (criar, importar, rótulos, excluir)
+│   │   ├── dialer.ts          saveCallLog, getCallHistory
+│   │   ├── supervisor.ts      métricas do dashboard
+│   │   └── notifications.ts   sendDispositionNotification (webhook Make)
+│   ├── softphone/             (agente) discador
+│   │   ├── SoftphoneClient.tsx   Layout, banner de chamada, tabs
+│   │   ├── DialerTab.tsx         Campanhas do agente, horário, extra_data, controles, disposição
+│   │   └── CallHistory.tsx       Histórico de chamadas
+│   ├── campaigns/             (supervisor) gestão e configuração
+│   │   ├── CampaignsListClient.tsx   Lista + criar campanha
+│   │   └── [id]/                     Config: horário, agentes, campos visíveis, listas
+│   ├── dashboard/             (supervisor+) métricas, gráfico, atividade dos agentes
+│   └── admin/                 (admin) usuários + departamentos
+├── components/Sidebar.tsx     Nav condicional por papel
+├── hooks/usePowerDialer.ts    Lógica da fila: dialNext, start/pause/resume, submitDisposition
+├── store/
+│   ├── softphoneStore.ts      Perfil da sessão + estado da chamada
+│   └── dialerStore.ts         Campanha, contato atual, status do dialer
+└── lib/
+    ├── constants.ts           HELPER_URL = http://localhost:3001
+    ├── dispositions.ts        DISPOSITIONS (compartilhado dialer + config)
+    ├── mailing.ts             parseMailingFile (xlsx), normalizePhone, slugify
+    ├── types/database.ts      Types das tabelas Supabase
+    └── supabase/              clientes server / client / middleware (@supabase/ssr)
+
+supabase/migrations/           SQL idempotente, rodado manualmente no Supabase
+local-helper/                  Helper Node.js + scripts de instalação (Windows)
+docs/                          Documentação técnica
+.github/workflows/             Keep-alive do Supabase Free (ping a cada 3 dias)
+```
+
+---
+
+## Banco de dados (Supabase)
+
+| Tabela | Descrição |
+|--------|-----------|
+| `departments` | Departamentos (CRUD pelo admin) |
+| `profiles` | Identidade do app (**id = `auth.users.id`**): `name`, `email`, `role`, `department_id`, `extension`. Trigger cria perfil `pending` no cadastro |
+| `campaigns` | Campanhas: `status`, `department_id`, `schedule_start/end`, `visible_fields` (jsonb), `notify_dispositions` (jsonb) |
+| `campaign_agents` | N:N campanha ↔ agente (quem participa) |
+| `lists` | Mailing dentro de uma campanha: `column_mapping` (jsonb) + regras `recycle_*` |
+| `campaign_contacts` | Contatos: `list_id`, `extra_data` (jsonb), `status`, `disposition`, `attempts`, `assigned_agent_id`, `dialed_at` |
+| `call_logs` | Histórico de chamadas (`agent_id` nullable, preserva histórico após troca de identidade) |
+
+Estados do contato (`ContactStatus`):
+```
+pending → dialing → answered | no_answer | busy | failed | do_not_call
+                  ↘ (reciclagem) volta a pending até recycle_max_attempts → exhausted
+```
+
+As migrações ficam em `supabase/migrations/` (prefixo `YYYYMMDD_`, idempotentes, rodadas manualmente no SQL Editor do Supabase):
+
+| Migração | Conteúdo |
+|----------|----------|
+| `20260610_lists_and_campaigns.sql` | Listas e campanhas (schema 6.3) |
+| `20260610_campaign_notify_dispositions.sql` | `campaigns.notify_dispositions` (6.4) |
+| `20260611_auth_rbac_schema.sql` | Fundação RBAC: `departments`, `profiles`, trigger, helpers (7a) |
+| `20260612_drop_agent_fks.sql` | Solta FKs `agent_id → agents` (7b-i) |
+| `20260613_drop_agents_repoint_fks.sql` | Repont. FKs → `profiles` + drop `agents` (7b-ii) |
+| `20260614_rls_policies.sql` | RLS por papel/departamento + seed dos departamentos (7c) |
+| `20260615_profiles_email.sql` | Espelha `email` em `profiles` + backfill (7d) |
+
+---
+
+## Server Actions
+
+Mutações e queries rodam como Server Actions (em `src/app/actions/`), sempre com `await createServerClient()` para que o RLS enxergue `auth.uid()`:
+
+- **auth** — `getCurrentProfile`, `signOut`
+- **admin** — `getProfiles`, `updateProfile`, `createDepartment`, `updateDepartment`, `deleteDepartment`
+- **campaigns** — `getCampaigns`, `getCampaignsForAgent`, `createCampaign`, `updateCampaignStatus`, `getNextContact` (+ reciclagem), `updateContactStatus`, `getDepartments`, `getAgents`, `getCampaignConfig`, `updateCampaignConfig`, `setCampaignAgents`, `getCampaignStats`
+- **lists** — `getLists`, `getListFieldLabels`, `createList` (dedup + lotes de 500), `deleteList`
+- **dialer** — `saveCallLog`, `getCallHistory`
+- **supervisor** — `getDashboardStats`, `getCampaignsSummary`, `getCallsByHour`, `getAgentActivity`
+- **notifications** — `sendDispositionNotification` (POST best-effort para `MAKE_WEBHOOK_URL`)
+
+---
+
+## Ambiente de desenvolvimento
 
 ```bash
-cp .env.example .env.local
-# preencha com suas credenciais Supabase
+cp .env.example .env.local   # preencha com as credenciais do Supabase
 npm install
-npm run dev
+npm run dev                  # Next.js com Turbopack
 ```
 
-## Helper local (máquinas dos agentes)
-
-O helper é um script Node.js que roda em background em cada PC de agente e aciona o MicroSIP via protocolo `tel:`.
-
-**Instalação (uma vez por máquina):**
-
-```
-local-helper/instalar.bat
+Para testar o discador localmente, rode também o helper:
+```bash
+cd local-helper && npm install && npm start
 ```
 
-Requisito: Node.js instalado na máquina.
+---
 
 ## Build e deploy
 
 ```bash
-npm run build:cf   # build para Cloudflare Pages
+npm run build:cf   # build para Cloudflare Pages (OpenNext + pós-processamento)
+npm run preview    # build + wrangler pages dev (preview local do worker)
 ```
 
-O Cloudflare Pages detecta commits na branch `main` e faz o deploy automaticamente.
+O `build:cf` faz o build com `@opennextjs/cloudflare` e, em seguida: renomeia `worker.js` → `_worker.js`, copia `assets/*` para a raiz do output e ativa `__ASSETS_RUN_WORKER_FIRST__`. O Cloudflare Pages detecta commits em `main` e faz o deploy automaticamente.
 
-## Variáveis de ambiente (Cloudflare Pages dashboard)
+**Configuração no dashboard do Cloudflare Pages:**
+- Build command: `npm run build:cf`
+- Build output: `.open-next`
+- Node.js: 22 · Branch: `main`
+- `wrangler.toml`: `pages_build_output_dir = ".open-next"` + `compatibility_flags = ["nodejs_compat"]`
 
-| Variável | Descrição |
-|----------|-----------|
-| `NEXT_PUBLIC_SUPABASE_URL` | URL do projeto Supabase |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Chave pública do Supabase |
-| `MAKE_WEBHOOK_URL` | (Opcional) Webhook do Make para notificação pós-chamada |
+---
+
+## Variáveis de ambiente
+
+| Variável | Onde | Descrição |
+|----------|------|-----------|
+| `NEXT_PUBLIC_SUPABASE_URL` | `.env.local` + Cloudflare (Secret) | URL do projeto Supabase |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | `.env.local` + Cloudflare (Secret) | Chave pública (anon) do Supabase |
+| `MAKE_WEBHOOK_URL` | Cloudflare (Secret, opcional) | Webhook do Make para notificação pós-chamada; sem ela, no-op |
+
+Variáveis do helper (opcionais, na máquina do agente): `DIAL_PREFIX` (default `021`), `MICROSIP_PATH`.
+
+---
+
+## Configuração do Supabase
+
+No painel do projeto:
+- **Authentication → Confirm email:** ligado
+- **Site URL:** `https://discsip.pages.dev`
+- **Redirect URLs:** `https://discsip.pages.dev/**` (+ `localhost` se for testar em dev)
+- Template de email **padrão** basta (sem SMTP nem edição — o `/auth/confirm` trata o `code`)
+- **Keep-alive:** o plano Free pausa após 7 dias inativo; o workflow `.github/workflows/supabase-keepalive.yml` faz ping a cada 3 dias (requer os secrets `SUPABASE_URL` e `SUPABASE_ANON_KEY` no GitHub)

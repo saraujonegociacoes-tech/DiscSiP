@@ -17,7 +17,7 @@ export default function SoftphoneClient() {
   const {
     agentId, extension,
     callStatus, callNumber,
-    helperOnline,
+    helperOnline, helperVersion,
     setProfile, setCallStatus, setHelperOnline, logout, resetCall,
   } = useSoftphoneStore()
   const { reset: resetDialer } = useDialerStore()
@@ -25,6 +25,11 @@ export default function SoftphoneClient() {
   const [loadingProfile, setLoadingProfile] = useState(true)
   const [activeTab, setActiveTab] = useState<Tab>('dialer')
   const [callDuration, setCallDuration] = useState(0)
+  // Versão mais nova do helper publicada pelo DiscSiP (public/helper/version.json)
+  const [latestVersion, setLatestVersion] = useState<string | null>(null)
+  const [updating, setUpdating] = useState(false)
+  const helperOutdated =
+    helperOnline && !!helperVersion && !!latestVersion && helperVersion !== latestVersion
 
   // Carrega o perfil da sessão (o middleware já garante sessão + aprovação aqui)
   useEffect(() => {
@@ -43,14 +48,23 @@ export default function SoftphoneClient() {
     }
   }, [router, setProfile])
 
-  // Verifica se o helper local está online a cada 10s
+  // Versão mais nova do helper publicada pelo DiscSiP — para detectar helper desatualizado
+  useEffect(() => {
+    fetch('/helper/version.json', { cache: 'no-store' })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => d?.version && setLatestVersion(d.version))
+      .catch(() => {})
+  }, [])
+
+  // Verifica se o helper local está online a cada 10s (e lê a versão dele no /ping)
   useEffect(() => {
     const check = async () => {
       try {
         const res = await fetch(`${HELPER_URL}/ping`, {
           signal: AbortSignal.timeout(2000),
         })
-        setHelperOnline(res.ok)
+        const data = res.ok ? await res.json().catch(() => null) : null
+        setHelperOnline(res.ok, data?.version ?? null)
       } catch {
         setHelperOnline(false)
       }
@@ -59,6 +73,39 @@ export default function SoftphoneClient() {
     const interval = setInterval(check, 10000)
     return () => clearInterval(interval)
   }, [setHelperOnline])
+
+  // Dispara a auto-atualização do helper: ele baixa o código novo de /helper/index.js
+  // (passamos nossa origem), sobrescreve a si mesmo e reinicia. Ficamos esperando voltar.
+  const handleUpdateHelper = async () => {
+    setUpdating(true)
+    try {
+      const res = await fetch(`${HELPER_URL}/update`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ source: window.location.origin }),
+      })
+      if (!res.ok) throw new Error('update falhou')
+      // O helper reinicia (cai por alguns segundos). Espera ele voltar já na versão nova.
+      const deadline = Date.now() + 20000
+      while (Date.now() < deadline) {
+        await new Promise((r) => setTimeout(r, 1500))
+        try {
+          const ping = await fetch(`${HELPER_URL}/ping`, { signal: AbortSignal.timeout(2000) })
+          const data = ping.ok ? await ping.json() : null
+          if (data?.version) {
+            setHelperOnline(true, data.version)
+            if (data.version === latestVersion) break
+          }
+        } catch {
+          // ainda reiniciando
+        }
+      }
+    } catch {
+      // helper offline ou versão antiga (sem /update) — nada a fazer pela UI
+    } finally {
+      setUpdating(false)
+    }
+  }
 
   // Cronômetro: conta a partir do momento que a chamada foi disparada
   useEffect(() => {
@@ -132,7 +179,20 @@ export default function SoftphoneClient() {
               />
               <span className="text-xs text-slate-400">
                 {helperOnline ? 'Helper online' : 'Helper offline'}
+                {helperOnline && helperVersion && (
+                  <span className="text-slate-500"> v{helperVersion}</span>
+                )}
               </span>
+              {helperOutdated && (
+                <button
+                  onClick={handleUpdateHelper}
+                  disabled={updating}
+                  title={`Atualizar helper para v${latestVersion}`}
+                  className="text-xs font-medium px-2 py-0.5 rounded-md bg-amber-500/15 text-amber-300 border border-amber-500/30 hover:bg-amber-500/25 disabled:opacity-60 transition-colors"
+                >
+                  {updating ? 'Atualizando…' : `Atualizar → v${latestVersion}`}
+                </button>
+              )}
             </div>
             <button
               onClick={handleLogout}
