@@ -2,22 +2,20 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Sidebar } from '@/components/Sidebar'
-import { createCampaign } from '@/app/actions/campaigns'
+import { Plus, Trash2, Megaphone } from 'lucide-react'
+import { AppShell } from '@/components/blueline/AppShell'
+import { PageHeader } from '@/components/blueline/PageHeader'
+import { StatusBadge, type CallStatus } from '@/components/blueline/StatusBadge'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { createCampaign, deleteCampaign } from '@/app/actions/campaigns'
 import type { Campaign } from '@/lib/types/database'
 
-const STATUS_LABEL: Record<string, string> = {
-  draft: 'Rascunho',
-  active: 'Ativa',
-  paused: 'Pausada',
-  completed: 'Concluída',
-}
-
-const STATUS_COLOR: Record<string, string> = {
-  draft: 'text-slate-400 bg-slate-700/50',
-  active: 'text-green-400 bg-green-900/40',
-  paused: 'text-yellow-400 bg-yellow-900/40',
-  completed: 'text-blue-400 bg-blue-900/40',
+const STATUS_BADGE: Record<string, { status: CallStatus; label: string }> = {
+  draft: { status: 'offline', label: 'Rascunho' },
+  active: { status: 'available', label: 'Ativa' },
+  paused: { status: 'paused', label: 'Pausada' },
+  completed: { status: 'in-call', label: 'Concluída' },
 }
 
 interface Props {
@@ -30,6 +28,9 @@ export function CampaignsListClient({ initialCampaigns }: Props) {
   const [newName, setNewName] = useState('')
   const [creating, setCreating] = useState(false)
   const [error, setError] = useState('')
+  // Campanha aguardando confirmação de exclusão (mostra confirmar/cancelar na linha)
+  const [confirmingId, setConfirmingId] = useState<string | null>(null)
+  const [deletingId, setDeletingId] = useState<string | null>(null)
 
   const handleCreate = async () => {
     if (!newName.trim()) return
@@ -46,77 +47,132 @@ export function CampaignsListClient({ initialCampaigns }: Props) {
     router.push(`/campaigns/${result.id}`)
   }
 
+  const handleDelete = async (id: string) => {
+    setDeletingId(id)
+    setError('')
+    const result = await deleteCampaign(id)
+    setDeletingId(null)
+    setConfirmingId(null)
+    if (result.error) {
+      setError(result.error)
+      return
+    }
+    setCampaigns((prev) => prev.filter((c) => c.id !== id))
+  }
+
   return (
-    <div className="min-h-screen bg-[#0f172a] flex">
-      <Sidebar />
-      <div className="flex-1 p-6 overflow-y-auto">
-        <div className="max-w-2xl mx-auto space-y-5">
-          <div>
-            <h1 className="text-white text-xl font-semibold">Campanhas</h1>
-            <p className="text-slate-500 text-sm mt-1">
-              Crie uma campanha, configure-a, suba as listas e coloque para rodar.
+    <AppShell>
+      <PageHeader
+        title="Campanhas"
+        description="Crie uma campanha, configure-a, suba as listas e coloque para rodar."
+      />
+
+      <div className="mx-auto max-w-3xl space-y-6">
+        {/* Criar campanha */}
+        <div className="rounded-2xl border border-border bg-gradient-card p-5 shadow-card">
+          <label className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+            Nova campanha
+          </label>
+          <div className="mt-2 flex gap-2">
+            <Input
+              type="text"
+              value={newName}
+              onChange={(e) => setNewName(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && handleCreate()}
+              placeholder="Ex: Inadimplentes Junho"
+              className="flex-1"
+            />
+            <Button
+              onClick={handleCreate}
+              disabled={creating || !newName.trim()}
+              className="bg-primary hover:bg-primary/90"
+            >
+              <Plus className="mr-2 h-4 w-4" />
+              {creating ? '...' : 'Criar'}
+            </Button>
+          </div>
+          {error && <p className="mt-2 text-xs text-destructive">{error}</p>}
+        </div>
+
+        {/* Lista */}
+        {campaigns.length === 0 ? (
+          <div className="flex flex-col items-center gap-3 rounded-2xl border border-border bg-gradient-card py-14 shadow-card">
+            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-muted text-muted-foreground">
+              <Megaphone className="h-6 w-6" />
+            </div>
+            <p className="text-sm font-medium text-foreground">Nenhuma campanha criada</p>
+            <p className="max-w-xs text-center text-xs text-muted-foreground">
+              Crie a primeira campanha acima para começar a configurar.
             </p>
           </div>
-
-          {/* Criar campanha */}
-          <div className="bg-[#1e293b] border border-slate-700/60 rounded-2xl p-4">
-            <label className="block text-xs text-slate-400 mb-2 uppercase tracking-wider">
-              Nova campanha
-            </label>
-            <div className="flex gap-2">
-              <input
-                type="text"
-                value={newName}
-                onChange={(e) => setNewName(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && handleCreate()}
-                placeholder="Ex: Inadimplentes Junho"
-                className="flex-1 bg-[#111827] border border-slate-600 rounded-xl px-3 py-2.5 text-white placeholder:text-slate-600 focus:outline-none focus:border-blue-500 transition-colors text-sm"
-              />
-              <button
-                onClick={handleCreate}
-                disabled={creating || !newName.trim()}
-                className="bg-blue-600 hover:bg-blue-500 disabled:bg-slate-700 disabled:text-slate-500 text-white px-5 rounded-xl text-sm font-medium transition-colors"
-              >
-                {creating ? '...' : 'Criar'}
-              </button>
-            </div>
-            {error && <p className="text-red-400 text-xs mt-2">{error}</p>}
+        ) : (
+          <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-card">
+            <table className="w-full text-sm">
+              <thead className="bg-background/40 text-xs uppercase tracking-wider text-muted-foreground">
+                <tr>
+                  <th className="px-5 py-3 text-left font-medium">Campanha</th>
+                  <th className="px-5 py-3 text-left font-medium">Status</th>
+                  <th className="px-5 py-3 text-right font-medium">Ações</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {campaigns.map((c) => {
+                  const badge = STATUS_BADGE[c.status] ?? { status: 'offline' as CallStatus, label: c.status }
+                  return (
+                    <tr key={c.id} className="transition-colors hover:bg-accent/40">
+                      <td className="px-5 py-4">
+                        <button
+                          onClick={() => router.push(`/campaigns/${c.id}`)}
+                          className="font-medium text-foreground transition-colors hover:text-primary"
+                        >
+                          {c.name}
+                        </button>
+                      </td>
+                      <td className="px-5 py-4">
+                        <StatusBadge status={badge.status} label={badge.label} />
+                      </td>
+                      <td className="px-5 py-4">
+                        <div className="flex items-center justify-end gap-2">
+                          {confirmingId === c.id ? (
+                            <>
+                              <span className="text-xs text-muted-foreground">Excluir tudo?</span>
+                              <Button
+                                size="sm"
+                                onClick={() => handleDelete(c.id)}
+                                disabled={deletingId === c.id}
+                                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                              >
+                                {deletingId === c.id ? 'Excluindo...' : 'Excluir'}
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => setConfirmingId(null)}
+                                disabled={deletingId === c.id}
+                              >
+                                Cancelar
+                              </Button>
+                            </>
+                          ) : (
+                            <button
+                              onClick={() => setConfirmingId(c.id)}
+                              title="Excluir campanha"
+                              aria-label={`Excluir campanha ${c.name}`}
+                              className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
           </div>
-
-          {/* Lista */}
-          {campaigns.length === 0 ? (
-            <div className="flex flex-col items-center py-12 gap-3">
-              <span className="text-4xl opacity-20">▤</span>
-              <p className="text-slate-400 text-sm font-medium">Nenhuma campanha criada</p>
-              <p className="text-slate-600 text-xs text-center max-w-xs">
-                Crie a primeira campanha acima para começar a configurar.
-              </p>
-            </div>
-          ) : (
-            <div className="space-y-2">
-              {campaigns.map((c) => (
-                <button
-                  key={c.id}
-                  onClick={() => router.push(`/campaigns/${c.id}`)}
-                  className="w-full flex items-center justify-between bg-[#1e293b] border border-slate-800 hover:border-slate-600 rounded-xl px-4 py-3.5 transition-colors text-left group"
-                >
-                  <div className="flex items-center gap-3">
-                    <span className="text-white text-sm font-medium">{c.name}</span>
-                    <span
-                      className={`text-xs px-2 py-0.5 rounded-full font-medium ${STATUS_COLOR[c.status] ?? ''}`}
-                    >
-                      {STATUS_LABEL[c.status] ?? c.status}
-                    </span>
-                  </div>
-                  <span className="text-slate-600 group-hover:text-slate-400 text-sm transition-colors">
-                    Configurar ›
-                  </span>
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
+        )}
       </div>
-    </div>
+    </AppShell>
   )
 }

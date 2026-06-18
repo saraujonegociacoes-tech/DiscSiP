@@ -2,12 +2,15 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
+import { PhoneOff, RefreshCw, LogOut, Wifi, WifiOff } from 'lucide-react'
 import { useSoftphoneStore } from '@/store/softphoneStore'
 import { useDialerStore } from '@/store/dialerStore'
 import { getCurrentProfile, signOut } from '@/app/actions/auth'
 import { CallHistory } from './CallHistory'
 import { DialerTab } from './DialerTab'
-import { Sidebar } from '@/components/Sidebar'
+import { AppShell } from '@/components/blueline/AppShell'
+import { Button } from '@/components/ui/button'
+import { cn } from '@/lib/utils'
 import { HELPER_URL } from '@/lib/constants'
 
 type Tab = 'dialer' | 'history'
@@ -25,7 +28,7 @@ export default function SoftphoneClient() {
   const [loadingProfile, setLoadingProfile] = useState(true)
   const [activeTab, setActiveTab] = useState<Tab>('dialer')
   const [callDuration, setCallDuration] = useState(0)
-  // Versão mais nova do helper publicada pelo DiscSiP (public/helper/version.json)
+  // Versão mais nova do helper publicada pelo Blue Line (public/helper/version.json)
   const [latestVersion, setLatestVersion] = useState<string | null>(null)
   const [updating, setUpdating] = useState(false)
   const helperOutdated =
@@ -48,7 +51,7 @@ export default function SoftphoneClient() {
     }
   }, [router, setProfile])
 
-  // Versão mais nova do helper publicada pelo DiscSiP — para detectar helper desatualizado
+  // Versão mais nova do helper publicada pelo Blue Line — para detectar helper desatualizado
   useEffect(() => {
     fetch('/helper/version.json', { cache: 'no-store' })
       .then((r) => (r.ok ? r.json() : null))
@@ -120,7 +123,7 @@ export default function SoftphoneClient() {
   const formatDuration = (s: number) =>
     `${Math.floor(s / 60).toString().padStart(2, '0')}:${(s % 60).toString().padStart(2, '0')}`
 
-  // Encerrar pelo DiscSiP: desliga a chamada no MicroSIP (msip:hangupall, escondido) e marca 'ended'.
+  // Encerrar pelo Blue Line: desliga a chamada no MicroSIP (msip:hangupall, escondido) e marca 'ended'.
   // O fim também chega via evento do MicroSIP, então setamos otimista para resposta imediata.
   const handleHangup = async () => {
     try {
@@ -141,109 +144,111 @@ export default function SoftphoneClient() {
   // ─── Carregando o perfil ───────────────────────────────────────────────────────
   if (loadingProfile || !agentId) {
     return (
-      <div className="min-h-screen bg-[#0f172a] flex items-center justify-center">
-        <div className="w-8 h-8 border-2 border-slate-600 border-t-blue-500 rounded-full animate-spin" />
+      <div className="flex min-h-screen items-center justify-center bg-background bg-gradient-mesh">
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-border border-t-primary" />
       </div>
     )
   }
 
-  // ─── Layout principal ────────────────────────────────────────────────────────
-  return (
-    <div className="min-h-screen bg-[#0f172a] flex">
-      <Sidebar />
+  const header = (
+    <>
+      {/* Abas */}
+      <div className="flex items-center gap-1 rounded-lg border border-border bg-card/60 p-0.5 shadow-card">
+        {(['dialer', 'history'] as Tab[]).map((tab) => (
+          <button
+            key={tab}
+            onClick={() => setActiveTab(tab)}
+            className={cn(
+              'rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
+              activeTab === tab
+                ? 'bg-gradient-primary text-primary-foreground shadow-glow'
+                : 'text-muted-foreground hover:text-foreground'
+            )}
+          >
+            {tab === 'dialer' ? 'Discador' : 'Histórico'}
+          </button>
+        ))}
+      </div>
 
-      <div className="flex-1 flex flex-col min-w-0">
-        {/* Top bar */}
-        <header className="flex items-center justify-between px-6 py-3 border-b border-slate-800 shrink-0">
-          <div className="flex gap-1">
-            {(['dialer', 'history'] as Tab[]).map((tab) => (
-              <button
-                key={tab}
-                onClick={() => setActiveTab(tab)}
-                className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-                  activeTab === tab
-                    ? 'bg-slate-700 text-white'
-                    : 'text-slate-400 hover:text-white'
-                }`}
-              >
-                {tab === 'dialer' ? 'Dialer' : 'Histórico'}
-              </button>
-            ))}
-          </div>
-          <div className="flex items-center gap-4">
-            <div className="flex items-center gap-2">
-              <span
-                className={`w-2 h-2 rounded-full shrink-0 ${
-                  helperOnline ? 'bg-green-400' : 'bg-red-500 animate-pulse'
-                }`}
-              />
-              <span className="text-xs text-slate-400">
-                {helperOnline ? 'Helper online' : 'Helper offline'}
-                {helperOnline && helperVersion && (
-                  <span className="text-slate-500"> v{helperVersion}</span>
-                )}
-              </span>
-              {helperOutdated && (
-                <button
-                  onClick={handleUpdateHelper}
-                  disabled={updating}
-                  title={`Atualizar helper para v${latestVersion}`}
-                  className="text-xs font-medium px-2 py-0.5 rounded-md bg-amber-500/15 text-amber-300 border border-amber-500/30 hover:bg-amber-500/25 disabled:opacity-60 transition-colors"
-                >
-                  {updating ? 'Atualizando…' : `Atualizar → v${latestVersion}`}
-                </button>
-              )}
-            </div>
-            <button
-              onClick={handleLogout}
-              className="text-slate-500 hover:text-slate-300 text-xs transition-colors"
-            >
-              Sair
-            </button>
-          </div>
-        </header>
+      <div className="ml-auto flex items-center gap-3">
+        {/* Status do helper */}
+        <span
+          className={cn(
+            'inline-flex items-center gap-2 rounded-full border px-2.5 py-1 text-xs font-medium',
+            helperOnline
+              ? 'border-success/30 bg-success/10 text-success'
+              : 'border-destructive/30 bg-destructive/10 text-destructive'
+          )}
+        >
+          {helperOnline ? <Wifi className="h-3.5 w-3.5" /> : <WifiOff className="h-3.5 w-3.5" />}
+          {helperOnline ? 'Helper online' : 'Helper offline'}
+          {helperOnline && helperVersion && (
+            <span className="opacity-70">v{helperVersion}</span>
+          )}
+        </span>
 
-        {/* Banner de chamada ativa */}
-        {callStatus === 'calling' && (
-          <div className="bg-[#0a1f0a] border-b border-green-800/50 px-6 py-3 flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
-              <span className="text-green-400 text-sm font-medium">
-                Em chamada — {callNumber}
-              </span>
-              <span className="text-slate-400 text-sm tabular-nums">
-                {formatDuration(callDuration)}
-              </span>
-            </div>
-            <button
-              onClick={handleHangup}
-              className="bg-red-600 hover:bg-red-500 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors"
-            >
-              Encerrar
-            </button>
-          </div>
+        {helperOutdated && (
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={handleUpdateHelper}
+            disabled={updating}
+            title={`Atualizar helper para v${latestVersion}`}
+            className="border-warning/40 bg-warning/10 text-warning hover:bg-warning/20"
+          >
+            <RefreshCw className={cn('mr-1.5 h-3.5 w-3.5', updating && 'animate-spin')} />
+            {updating ? 'Atualizando…' : `v${latestVersion}`}
+          </Button>
         )}
 
-        <main className="flex-1 p-6 overflow-y-auto">
-          {/* Aba Dialer — sempre montada para manter o hook ativo */}
-          <div className={activeTab === 'dialer' ? 'block' : 'hidden'}>
-            <DialerTab />
-          </div>
-
-          {/* Aba Histórico */}
-          {activeTab === 'history' && agentId && (
-            <div className="max-w-lg mx-auto">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-white font-semibold">Histórico de chamadas</h2>
-                <span className="text-slate-500 text-xs">
-                  Ramal {extension} · últimas 20
-                </span>
-              </div>
-              <CallHistory agentId={agentId} key={agentId} />
-            </div>
-          )}
-        </main>
+        <button
+          onClick={handleLogout}
+          title="Sair"
+          className="inline-flex items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
+        >
+          <LogOut className="h-4 w-4" />
+        </button>
       </div>
-    </div>
+    </>
+  )
+
+  return (
+    <AppShell header={header}>
+      {/* Banner de chamada ativa */}
+      {callStatus === 'calling' && (
+        <div className="mb-6 flex items-center justify-between overflow-hidden rounded-2xl border border-success/30 bg-success/10 px-5 py-3 shadow-card">
+          <div className="flex items-center gap-3">
+            <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-success shadow-glow" />
+            <span className="text-sm font-medium text-success">Em chamada — {callNumber}</span>
+            <span className="font-mono text-sm tabular-nums text-muted-foreground">
+              {formatDuration(callDuration)}
+            </span>
+          </div>
+          <Button
+            size="sm"
+            onClick={handleHangup}
+            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+          >
+            <PhoneOff className="mr-1.5 h-4 w-4" /> Encerrar
+          </Button>
+        </div>
+      )}
+
+      {/* Aba Discador — sempre montada para manter o hook ativo */}
+      <div className={activeTab === 'dialer' ? 'block' : 'hidden'}>
+        <DialerTab />
+      </div>
+
+      {/* Aba Histórico */}
+      {activeTab === 'history' && agentId && (
+        <div className="mx-auto max-w-2xl">
+          <div className="mb-4 flex items-center justify-between">
+            <h2 className="text-lg font-semibold text-foreground">Histórico de chamadas</h2>
+            <span className="text-xs text-muted-foreground">Ramal {extension} · últimas 20</span>
+          </div>
+          <CallHistory agentId={agentId} key={agentId} />
+        </div>
+      )}
+    </AppShell>
   )
 }

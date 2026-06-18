@@ -1,8 +1,10 @@
 'use client'
 
 import { useState } from 'react'
+import { Upload, Trash2, Plus } from 'lucide-react'
 import { createList, deleteList, getLists } from '@/app/actions/lists'
 import { parseMailingFile, normalizePhone, slugify } from '@/lib/mailing'
+import { cn } from '@/lib/utils'
 import type { ContactStatus, List } from '@/lib/types/database'
 
 const RECYCLE_OPTIONS: Array<{ value: ContactStatus; label: string }> = [
@@ -13,6 +15,10 @@ const RECYCLE_OPTIONS: Array<{ value: ContactStatus; label: string }> = [
 
 const PHONE_HINT = /tel|fone|phone|celular|whats|contato|numero|número/i
 const NAME_HINT = /nome|name|cliente|raz/i
+
+// estilo compartilhado para inputs/selects nativos
+const fieldClass =
+  'w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm text-foreground outline-none transition-colors focus:border-primary focus:ring-2 focus:ring-primary/15'
 
 interface ExtraField {
   column: string
@@ -161,15 +167,15 @@ export function ListsSection({ campaignId, lists, onListsChange }: Props) {
   if (configuring) {
     const previewRows = rows.slice(0, 5)
     return (
-      <section className="bg-[#1e293b] border border-slate-700/60 rounded-2xl p-5 space-y-4">
+      <section className="space-y-4 rounded-2xl border border-border bg-gradient-card p-5 shadow-card">
         <div className="flex items-center justify-between">
-          <h2 className="text-white text-sm font-medium">Nova lista</h2>
+          <h2 className="text-sm font-semibold text-foreground">Nova lista</h2>
           <button
             onClick={() => {
               setConfiguring(false)
               resetForm()
             }}
-            className="text-slate-400 hover:text-white text-xs transition-colors"
+            className="text-xs text-muted-foreground transition-colors hover:text-foreground"
           >
             Cancelar
           </button>
@@ -178,12 +184,12 @@ export function ListsSection({ campaignId, lists, onListsChange }: Props) {
         {/* Upload */}
         {headers.length === 0 ? (
           <div>
-            <label className="flex flex-col items-center justify-center gap-2 border border-dashed border-slate-600 rounded-xl py-8 cursor-pointer hover:border-blue-500 transition-colors">
-              <span className="text-3xl opacity-30">⬆</span>
-              <span className="text-slate-300 text-sm font-medium">
+            <label className="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-border py-8 transition-colors hover:border-primary">
+              <Upload className="h-7 w-7 text-muted-foreground/50" />
+              <span className="text-sm font-medium text-foreground">
                 {parsing ? 'Lendo arquivo...' : 'Selecionar arquivo .csv ou .xlsx'}
               </span>
-              <span className="text-slate-600 text-xs">
+              <span className="text-xs text-muted-foreground">
                 Primeira linha deve conter os títulos das colunas
               </span>
               <input
@@ -193,42 +199,42 @@ export function ListsSection({ campaignId, lists, onListsChange }: Props) {
                 onChange={(e) => e.target.files?.[0] && handleFile(e.target.files[0])}
               />
             </label>
-            {parseError && <p className="text-red-400 text-xs mt-2">{parseError}</p>}
+            {parseError && <p className="mt-2 text-xs text-destructive">{parseError}</p>}
           </div>
         ) : (
           <>
             {/* Nome da lista */}
             <div>
-              <label className="block text-xs text-slate-400 mb-1.5">Nome da lista</label>
+              <label className="mb-1.5 block text-xs text-muted-foreground">Nome da lista</label>
               <input
                 type="text"
                 value={listName}
                 onChange={(e) => setListName(e.target.value)}
-                className="w-full bg-[#111827] border border-slate-600 rounded-xl px-3 py-2.5 text-white focus:outline-none focus:border-blue-500 transition-colors text-sm"
+                className={fieldClass}
               />
             </div>
 
             {/* Preview */}
             <div>
-              <p className="text-xs text-slate-400 mb-2">
+              <p className="mb-2 text-xs text-muted-foreground">
                 Prévia — {rows.length} linha{rows.length !== 1 ? 's' : ''}
               </p>
-              <div className="overflow-x-auto border border-slate-700 rounded-xl">
+              <div className="overflow-x-auto rounded-xl border border-border">
                 <table className="w-full text-xs">
                   <thead>
-                    <tr className="bg-[#111827] text-slate-400">
+                    <tr className="bg-background/40 text-muted-foreground">
                       {headers.map((h) => (
-                        <th key={h} className="text-left px-3 py-2 font-medium whitespace-nowrap">
-                          {h || <span className="text-slate-600 italic">sem título</span>}
+                        <th key={h} className="whitespace-nowrap px-3 py-2 text-left font-medium">
+                          {h || <span className="italic text-muted-foreground/60">sem título</span>}
                         </th>
                       ))}
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-800">
+                  <tbody className="divide-y divide-border">
                     {previewRows.map((r, i) => (
-                      <tr key={i} className="text-slate-300">
+                      <tr key={i} className="text-foreground/80">
                         {headers.map((h) => (
-                          <td key={h} className="px-3 py-1.5 whitespace-nowrap">{r[h]}</td>
+                          <td key={h} className="whitespace-nowrap px-3 py-1.5">{r[h]}</td>
                         ))}
                       </tr>
                     ))}
@@ -240,14 +246,8 @@ export function ListsSection({ campaignId, lists, onListsChange }: Props) {
             {/* Mapeamento */}
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="block text-xs text-slate-400 mb-1.5">
-                  Coluna do telefone *
-                </label>
-                <select
-                  value={phoneCol}
-                  onChange={(e) => setPhoneCol(e.target.value)}
-                  className="w-full bg-[#111827] border border-slate-600 rounded-xl px-3 py-2.5 text-white focus:outline-none focus:border-blue-500 transition-colors text-sm"
-                >
+                <label className="mb-1.5 block text-xs text-muted-foreground">Coluna do telefone *</label>
+                <select value={phoneCol} onChange={(e) => setPhoneCol(e.target.value)} className={fieldClass}>
                   <option value="">Selecione…</option>
                   {headers.map((h) => (
                     <option key={h} value={h}>{h || '(sem título)'}</option>
@@ -255,12 +255,8 @@ export function ListsSection({ campaignId, lists, onListsChange }: Props) {
                 </select>
               </div>
               <div>
-                <label className="block text-xs text-slate-400 mb-1.5">Coluna do nome</label>
-                <select
-                  value={nameCol}
-                  onChange={(e) => setNameCol(e.target.value)}
-                  className="w-full bg-[#111827] border border-slate-600 rounded-xl px-3 py-2.5 text-white focus:outline-none focus:border-blue-500 transition-colors text-sm"
-                >
+                <label className="mb-1.5 block text-xs text-muted-foreground">Coluna do nome</label>
+                <select value={nameCol} onChange={(e) => setNameCol(e.target.value)} className={fieldClass}>
                   <option value="">(nenhuma)</option>
                   {headers.map((h) => (
                     <option key={h} value={h}>{h || '(sem título)'}</option>
@@ -272,7 +268,7 @@ export function ListsSection({ campaignId, lists, onListsChange }: Props) {
             {/* Campos extras */}
             {extras.length > 0 && (
               <div>
-                <p className="text-xs text-slate-400 mb-2">
+                <p className="mb-2 text-xs text-muted-foreground">
                   Campos adicionais (ficam disponíveis ao agente)
                 </p>
                 <div className="space-y-2">
@@ -282,10 +278,10 @@ export function ListsSection({ campaignId, lists, onListsChange }: Props) {
                         type="checkbox"
                         checked={ex.enabled}
                         onChange={(e) => updateExtra(ex.column, { enabled: e.target.checked })}
-                        className="accent-blue-500 w-4 h-4 shrink-0"
+                        className="h-4 w-4 shrink-0 accent-primary"
                       />
-                      <span className="text-slate-500 text-xs w-28 truncate shrink-0">{ex.column}</span>
-                      <span className="text-slate-600 text-xs shrink-0">→</span>
+                      <span className="w-28 shrink-0 truncate text-xs text-muted-foreground">{ex.column}</span>
+                      <span className="shrink-0 text-xs text-muted-foreground/60">→</span>
                       <input
                         type="text"
                         value={ex.label}
@@ -296,7 +292,7 @@ export function ListsSection({ campaignId, lists, onListsChange }: Props) {
                             key: slugify(e.target.value),
                           })
                         }
-                        className="flex-1 bg-[#111827] border border-slate-700 rounded-lg px-2.5 py-1.5 text-white text-xs focus:outline-none focus:border-blue-500 transition-colors disabled:opacity-40"
+                        className="flex-1 rounded-lg border border-input bg-transparent px-2.5 py-1.5 text-xs text-foreground outline-none transition-colors focus:border-primary disabled:opacity-40"
                       />
                     </div>
                   ))}
@@ -305,24 +301,24 @@ export function ListsSection({ campaignId, lists, onListsChange }: Props) {
             )}
 
             {/* Reciclagem */}
-            <div className="border-t border-slate-700/60 pt-4">
-              <label className="flex items-center gap-2 cursor-pointer">
+            <div className="border-t border-border pt-4">
+              <label className="flex cursor-pointer items-center gap-2">
                 <input
                   type="checkbox"
                   checked={recycleEnabled}
                   onChange={(e) => setRecycleEnabled(e.target.checked)}
-                  className="accent-blue-500 w-4 h-4"
+                  className="h-4 w-4 accent-primary"
                 />
-                <span className="text-white text-sm font-medium">Reciclar contatos</span>
+                <span className="text-sm font-medium text-foreground">Reciclar contatos</span>
               </label>
-              <p className="text-slate-500 text-xs mt-1 ml-6">
+              <p className="ml-6 mt-1 text-xs text-muted-foreground">
                 Recoloca na fila contatos com certos resultados, até um limite de tentativas.
               </p>
 
               {recycleEnabled && (
                 <div className="ml-6 mt-3 space-y-3">
                   <div>
-                    <p className="text-xs text-slate-400 mb-1.5">Reciclar quando o resultado for:</p>
+                    <p className="mb-1.5 text-xs text-muted-foreground">Reciclar quando o resultado for:</p>
                     <div className="flex flex-wrap gap-2">
                       {RECYCLE_OPTIONS.map((o) => {
                         const on = recycleStatuses.includes(o.value)
@@ -330,11 +326,12 @@ export function ListsSection({ campaignId, lists, onListsChange }: Props) {
                           <button
                             key={o.value}
                             onClick={() => toggleStatus(o.value)}
-                            className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors border ${
+                            className={cn(
+                              'rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors',
                               on
-                                ? 'bg-blue-600 border-blue-500 text-white'
-                                : 'bg-[#111827] border-slate-700 text-slate-400 hover:text-white'
-                            }`}
+                                ? 'border-primary bg-primary text-primary-foreground'
+                                : 'border-border bg-background/40 text-muted-foreground hover:text-foreground'
+                            )}
                           >
                             {o.label}
                           </button>
@@ -344,23 +341,23 @@ export function ListsSection({ campaignId, lists, onListsChange }: Props) {
                   </div>
                   <div className="flex gap-3">
                     <div className="flex-1">
-                      <label className="block text-xs text-slate-400 mb-1.5">Esperar (horas)</label>
+                      <label className="mb-1.5 block text-xs text-muted-foreground">Esperar (horas)</label>
                       <input
                         type="number"
                         min={1}
                         value={afterHours}
                         onChange={(e) => setAfterHours(Math.max(1, Number(e.target.value)))}
-                        className="w-full bg-[#111827] border border-slate-600 rounded-xl px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500 transition-colors"
+                        className={fieldClass}
                       />
                     </div>
                     <div className="flex-1">
-                      <label className="block text-xs text-slate-400 mb-1.5">Máx. tentativas</label>
+                      <label className="mb-1.5 block text-xs text-muted-foreground">Máx. tentativas</label>
                       <input
                         type="number"
                         min={1}
                         value={maxAttempts}
                         onChange={(e) => setMaxAttempts(Math.max(1, Number(e.target.value)))}
-                        className="w-full bg-[#111827] border border-slate-600 rounded-xl px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500 transition-colors"
+                        className={fieldClass}
                       />
                     </div>
                   </div>
@@ -371,11 +368,12 @@ export function ListsSection({ campaignId, lists, onListsChange }: Props) {
             {/* Resultado / ação */}
             {result && (
               <div
-                className={`rounded-xl px-3 py-2.5 text-sm ${
+                className={cn(
+                  'rounded-xl border px-3 py-2.5 text-sm',
                   result.error
-                    ? 'bg-red-900/30 border border-red-700/50 text-red-300'
-                    : 'bg-green-900/20 border border-green-700/40 text-green-300'
-                }`}
+                    ? 'border-destructive/50 bg-destructive/10 text-destructive'
+                    : 'border-success/40 bg-success/10 text-success'
+                )}
               >
                 {result.error ? (
                   <>Erro: {result.error} (inseridos: {result.inserted})</>
@@ -395,7 +393,7 @@ export function ListsSection({ campaignId, lists, onListsChange }: Props) {
                     setConfiguring(false)
                     resetForm()
                   }}
-                  className="flex-1 bg-slate-700 hover:bg-slate-600 text-white py-2.5 rounded-xl text-sm font-medium transition-colors"
+                  className="flex-1 rounded-xl bg-muted py-2.5 text-sm font-medium text-foreground transition-colors hover:bg-accent"
                 >
                   Concluir
                 </button>
@@ -403,7 +401,7 @@ export function ListsSection({ campaignId, lists, onListsChange }: Props) {
                 <button
                   onClick={handleImport}
                   disabled={importing || !phoneCol || !listName.trim()}
-                  className="flex-1 bg-blue-600 hover:bg-blue-500 disabled:bg-slate-700 disabled:text-slate-500 text-white py-2.5 rounded-xl text-sm font-semibold transition-colors"
+                  className="flex-1 rounded-xl bg-primary py-2.5 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground"
                 >
                   {importing ? 'Importando...' : `Importar ${rows.length} contatos`}
                 </button>
@@ -417,19 +415,19 @@ export function ListsSection({ campaignId, lists, onListsChange }: Props) {
 
   // ─── Modo visualização (listas existentes) ─────────────────────────────────
   return (
-    <section className="bg-[#1e293b] border border-slate-700/60 rounded-2xl p-5">
-      <div className="flex items-center justify-between mb-4">
-        <h2 className="text-white text-sm font-medium">Listas (mailing)</h2>
+    <section className="rounded-2xl border border-border bg-gradient-card p-5 shadow-card">
+      <div className="mb-4 flex items-center justify-between">
+        <h2 className="text-sm font-semibold text-foreground">Listas (mailing)</h2>
         <button
           onClick={() => setConfiguring(true)}
-          className="bg-blue-600 hover:bg-blue-500 text-white text-xs font-medium px-3 py-1.5 rounded-lg transition-colors"
+          className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90"
         >
-          + Adicionar lista
+          <Plus className="h-3.5 w-3.5" /> Adicionar lista
         </button>
       </div>
 
       {lists.length === 0 ? (
-        <p className="text-slate-500 text-sm py-2">
+        <p className="py-2 text-sm text-muted-foreground">
           Nenhuma lista. Suba um arquivo .csv/.xlsx para popular a campanha com contatos.
         </p>
       ) : (
@@ -437,11 +435,11 @@ export function ListsSection({ campaignId, lists, onListsChange }: Props) {
           {lists.map((l) => (
             <div
               key={l.id}
-              className="flex items-center justify-between bg-[#111827] border border-slate-800 rounded-xl px-4 py-3"
+              className="flex items-center justify-between rounded-xl border border-border bg-background/40 px-4 py-3"
             >
               <div className="min-w-0">
-                <p className="text-white text-sm font-medium truncate">{l.name}</p>
-                <p className="text-slate-500 text-xs mt-0.5">
+                <p className="truncate text-sm font-medium text-foreground">{l.name}</p>
+                <p className="mt-0.5 text-xs text-muted-foreground">
                   {l.recycle_enabled
                     ? `Reciclagem: ${l.recycle_statuses.length} status · até ${l.recycle_max_attempts}x`
                     : 'Sem reciclagem'}
@@ -449,9 +447,10 @@ export function ListsSection({ campaignId, lists, onListsChange }: Props) {
               </div>
               <button
                 onClick={() => handleDelete(l.id)}
-                className="text-slate-500 hover:text-red-400 text-xs transition-colors shrink-0 ml-3"
+                title="Excluir lista"
+                className="ml-3 shrink-0 rounded-lg p-2 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
               >
-                Excluir
+                <Trash2 className="h-4 w-4" />
               </button>
             </div>
           ))}

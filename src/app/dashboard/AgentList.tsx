@@ -1,3 +1,4 @@
+import { cn } from '@/lib/utils'
 import type { AgentActivity } from '@/app/actions/supervisor'
 
 const STATUS_LABEL: Record<string, string> = {
@@ -8,10 +9,10 @@ const STATUS_LABEL: Record<string, string> = {
 }
 
 const STATUS_COLOR: Record<string, string> = {
-  answered: 'text-green-400',
-  no_answer: 'text-yellow-400',
-  busy: 'text-orange-400',
-  failed: 'text-red-400',
+  answered: 'text-success',
+  no_answer: 'text-warning',
+  busy: 'text-warning',
+  failed: 'text-destructive',
 }
 
 interface AgentListProps {
@@ -22,28 +23,34 @@ export function AgentList({ agents }: AgentListProps) {
   const active = agents.filter((a) => a.callsToday > 0)
 
   return (
-    <div className="bg-[#1e293b] rounded-xl p-5">
-      <h2 className="text-white text-sm font-medium mb-4">
+    <div className="relative h-full overflow-hidden rounded-2xl border border-border bg-gradient-card p-5 shadow-elevated">
+      <div className="pointer-events-none absolute -bottom-16 -right-10 h-44 w-44 rounded-full bg-success/15 blur-3xl" />
+      <h2 className="text-sm font-semibold text-foreground">
         Agentes ativos hoje{' '}
-        <span className="text-slate-500 font-normal">({active.length}/{agents.length})</span>
+        <span className="font-normal text-muted-foreground">
+          ({active.length}/{agents.length})
+        </span>
       </h2>
-      <div className="space-y-2">
+      <div className="mt-4 space-y-2">
         {agents.map((a) => (
           <div
             key={a.agentId}
-            className="flex items-center justify-between py-2 border-b border-slate-700/50 last:border-0"
+            className="flex items-center justify-between rounded-xl border border-border bg-background/40 px-3 py-2.5 transition-colors hover:bg-accent/40"
           >
-            <div className="flex items-center gap-2">
+            <div className="flex min-w-0 items-center gap-2">
               <span
-                className={`w-2 h-2 rounded-full shrink-0 ${a.callsToday > 0 ? 'bg-green-400' : 'bg-slate-600'}`}
+                className={cn(
+                  'h-2 w-2 shrink-0 rounded-full',
+                  a.callsToday > 0 ? 'bg-success' : 'bg-muted-foreground'
+                )}
               />
-              <span className="text-white text-sm">{a.name}</span>
-              <span className="text-slate-500 text-xs">#{a.extension}</span>
+              <span className="truncate text-sm text-foreground">{a.name}</span>
+              <span className="text-xs text-muted-foreground">#{a.extension}</span>
             </div>
-            <div className="flex items-center gap-3 text-right">
-              <span className="text-slate-400 text-xs">{a.callsToday} chamadas</span>
+            <div className="flex shrink-0 items-center gap-3 text-right">
+              <span className="text-xs text-muted-foreground">{a.callsToday} chamadas</span>
               {a.lastStatus && (
-                <span className={`text-xs ${STATUS_COLOR[a.lastStatus] ?? 'text-slate-400'}`}>
+                <span className={cn('text-xs', STATUS_COLOR[a.lastStatus] ?? 'text-muted-foreground')}>
                   {STATUS_LABEL[a.lastStatus] ?? a.lastStatus}
                 </span>
               )}
@@ -51,7 +58,7 @@ export function AgentList({ agents }: AgentListProps) {
           </div>
         ))}
         {agents.length === 0 && (
-          <p className="text-slate-500 text-sm text-center py-4">Nenhum agente cadastrado</p>
+          <p className="py-4 text-center text-sm text-muted-foreground">Nenhum agente cadastrado</p>
         )}
       </div>
     </div>

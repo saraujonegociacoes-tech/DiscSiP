@@ -1,7 +1,10 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { PhoneIncoming, PhoneOutgoing, Phone } from 'lucide-react'
 import { getCallHistory } from '@/app/actions/dialer'
+import { Skeleton } from '@/components/ui/skeleton'
+import { cn } from '@/lib/utils'
 import type { CallLog } from '@/lib/types/database'
 
 interface CallHistoryProps {
@@ -32,15 +35,10 @@ const STATUS_LABEL: Record<string, string> = {
 }
 
 const STATUS_COLOR: Record<string, string> = {
-  answered: 'text-green-400',
-  no_answer: 'text-yellow-400',
-  busy: 'text-orange-400',
-  failed: 'text-red-400',
-}
-
-const DIRECTION_ICON: Record<string, string> = {
-  inbound: '↙',
-  outbound: '↗',
+  answered: 'text-success',
+  no_answer: 'text-warning',
+  busy: 'text-warning',
+  failed: 'text-destructive',
 }
 
 export function CallHistory({ agentId }: CallHistoryProps) {
@@ -60,16 +58,16 @@ export function CallHistory({ agentId }: CallHistoryProps) {
         {[1, 2, 3, 4].map((i) => (
           <div
             key={i}
-            className="flex items-center gap-3 bg-[#1e293b] border border-slate-800 rounded-xl px-4 py-3 animate-pulse"
+            className="flex items-center gap-3 rounded-2xl border border-border bg-gradient-card px-4 py-3 shadow-card"
           >
-            <div className="w-4 h-4 bg-slate-700 rounded-full shrink-0" />
+            <Skeleton className="h-8 w-8 shrink-0 rounded-xl" />
             <div className="flex-1 space-y-2">
-              <div className="h-3 w-28 bg-slate-700 rounded-full" />
-              <div className="h-2.5 w-20 bg-slate-800 rounded-full" />
+              <Skeleton className="h-3 w-28" />
+              <Skeleton className="h-2.5 w-20" />
             </div>
             <div className="space-y-2 text-right">
-              <div className="h-3 w-16 bg-slate-700 rounded-full" />
-              <div className="h-2.5 w-10 bg-slate-800 rounded-full" />
+              <Skeleton className="ml-auto h-3 w-16" />
+              <Skeleton className="ml-auto h-2.5 w-10" />
             </div>
           </div>
         ))}
@@ -79,10 +77,12 @@ export function CallHistory({ agentId }: CallHistoryProps) {
 
   if (logs.length === 0) {
     return (
-      <div className="flex flex-col items-center py-10 gap-3">
-        <span className="text-4xl opacity-20">📞</span>
-        <p className="text-slate-400 text-sm font-medium">Nenhuma chamada registrada</p>
-        <p className="text-slate-600 text-xs text-center max-w-xs">
+      <div className="flex flex-col items-center gap-3 rounded-2xl border border-border bg-gradient-card py-12 shadow-card">
+        <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-muted text-muted-foreground">
+          <Phone className="h-6 w-6" />
+        </div>
+        <p className="text-sm font-medium text-foreground">Nenhuma chamada registrada</p>
+        <p className="max-w-xs text-center text-xs text-muted-foreground">
           O histórico aparece aqui após a primeira chamada discada.
         </p>
       </div>
@@ -94,20 +94,24 @@ export function CallHistory({ agentId }: CallHistoryProps) {
       {logs.map((log) => (
         <div
           key={log.id}
-          className="flex items-center gap-3 bg-[#1e293b] border border-slate-800 rounded-xl px-4 py-3"
+          className="flex items-center gap-3 rounded-2xl border border-border bg-gradient-card px-4 py-3 shadow-card"
         >
-          <span className="text-slate-500 text-sm w-4 shrink-0">
-            {DIRECTION_ICON[log.direction]}
-          </span>
-          <div className="flex-1 min-w-0">
-            <p className="text-white text-sm font-mono truncate">{log.phone_number}</p>
-            <p className="text-slate-500 text-xs mt-0.5">{formatDate(log.created_at)}</p>
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-muted text-muted-foreground">
+            {log.direction === 'inbound' ? (
+              <PhoneIncoming className="h-4 w-4" />
+            ) : (
+              <PhoneOutgoing className="h-4 w-4" />
+            )}
           </div>
-          <div className="text-right shrink-0">
-            <p className={`text-xs font-medium ${STATUS_COLOR[log.status]}`}>
+          <div className="min-w-0 flex-1">
+            <p className="truncate font-mono text-sm text-foreground">{log.phone_number}</p>
+            <p className="mt-0.5 text-xs text-muted-foreground">{formatDate(log.created_at)}</p>
+          </div>
+          <div className="shrink-0 text-right">
+            <p className={cn('text-xs font-medium', STATUS_COLOR[log.status])}>
               {STATUS_LABEL[log.status]}
             </p>
-            <p className="text-slate-500 text-xs mt-0.5">{formatDuration(log.duration_seconds)}</p>
+            <p className="mt-0.5 text-xs text-muted-foreground">{formatDuration(log.duration_seconds)}</p>
           </div>
         </div>
       ))}

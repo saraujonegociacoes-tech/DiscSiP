@@ -1,8 +1,8 @@
 @echo off
-title Instalacao DiscSiP Helper
+title Instalacao Blue Line Helper
 cd /d "%~dp0"
 
-echo DiscSiP Helper - Instalacao
+echo Blue Line Helper - Instalacao
 echo ============================
 echo.
 
@@ -30,9 +30,12 @@ REM IMPORTANTE: apaga QUALQUER atalho antigo do helper antes de criar o novo.
 REM Versoes anteriores criavam nomes diferentes ("DiscSiP Helper.lnk" com espaco,
 REM apontando para start.bat). Se ambos existissem, DOIS helpers subiam no boot e
 REM brigavam pela porta 3001 (EADDRINUSE) — fonte de "helper offline" intermitente.
+REM Apaga tambem os atalhos do nome antigo (DiscSiP) ao migrar para Blue Line.
 del "%STARTUP%\DiscSiP-Helper.lnk" 2>nul
 del "%STARTUP%\DiscSiP Helper.lnk" 2>nul
-powershell -NoProfile -Command "$ws = New-Object -ComObject WScript.Shell; $s = $ws.CreateShortcut('%STARTUP%\DiscSiP-Helper.lnk'); $s.TargetPath = 'wscript.exe'; $s.Arguments = '\"%~dp0start-hidden.vbs\"'; $s.WindowStyle = 7; $s.WorkingDirectory = '%~dp0'; $s.Save()"
+del "%STARTUP%\BlueLine-Helper.lnk" 2>nul
+del "%STARTUP%\BlueLine Helper.lnk" 2>nul
+powershell -NoProfile -Command "$ws = New-Object -ComObject WScript.Shell; $s = $ws.CreateShortcut('%STARTUP%\BlueLine-Helper.lnk'); $s.TargetPath = 'wscript.exe'; $s.Arguments = '\"%~dp0start-hidden.vbs\"'; $s.WindowStyle = 7; $s.WorkingDirectory = '%~dp0'; $s.Save()"
 echo OK. O helper vai iniciar automaticamente com o Windows, sem janela.
 echo.
 

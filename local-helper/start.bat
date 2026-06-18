@@ -1,5 +1,5 @@
 @echo off
-title DiscSiP Helper
+title Blue Line Helper
 cd /d "%~dp0"
 
 :loop

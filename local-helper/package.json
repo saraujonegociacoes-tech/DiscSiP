@@ -1,7 +1,7 @@
 {
-  "name": "discsip-helper",
+  "name": "blueline-helper",
   "version": "1.0.0",
-  "description": "Helper local do DiscSiP — aciona MicroSIP via protocolo tel:",
+  "description": "Helper local do Blue Line — aciona MicroSIP via protocolo tel:",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"

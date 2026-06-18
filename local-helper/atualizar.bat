@@ -1,8 +1,8 @@
 @echo off
-title Atualizar DiscSiP Helper
+title Atualizar Blue Line Helper
 cd /d "%~dp0"
 
-echo DiscSiP Helper - Atualizacao
+echo Blue Line Helper - Atualizacao
 echo ============================
 echo.
 

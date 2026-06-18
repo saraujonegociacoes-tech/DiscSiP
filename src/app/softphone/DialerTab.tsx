@@ -1,12 +1,17 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
+import {
+  Play, Pause, Check, AlertTriangle, Clock, Phone, ChevronRight, ArrowLeft, PhoneCall,
+} from 'lucide-react'
 import { useDialerStore } from '@/store/dialerStore'
 import { usePowerDialer } from '@/hooks/usePowerDialer'
 import { useSoftphoneStore } from '@/store/softphoneStore'
 import { getCampaignsForAgent, getCampaignStats } from '@/app/actions/campaigns'
 import { getListFieldLabels } from '@/app/actions/lists'
 import { DISPOSITIONS } from '@/lib/dispositions'
+import { Skeleton } from '@/components/ui/skeleton'
+import { cn } from '@/lib/utils'
 import type { Campaign } from '@/lib/types/database'
 
 const STATUS_LABEL: Record<string, string> = {
@@ -17,10 +22,10 @@ const STATUS_LABEL: Record<string, string> = {
 }
 
 const STATUS_COLOR: Record<string, string> = {
-  draft: 'text-slate-400',
-  active: 'text-green-400',
-  paused: 'text-yellow-400',
-  completed: 'text-blue-400',
+  draft: 'text-muted-foreground',
+  active: 'text-success',
+  paused: 'text-warning',
+  completed: 'text-primary',
 }
 
 const pad = (n: number) => String(n).padStart(2, '0')
@@ -98,29 +103,31 @@ export function DialerTab() {
   // ─── Lista de campanhas ──────────────────────────────────────────────────────
   if (view === 'list') {
     return (
-      <div className="max-w-lg mx-auto">
-        <h2 className="text-white font-semibold mb-5">Minhas campanhas</h2>
+      <div className="mx-auto max-w-2xl">
+        <h2 className="mb-5 text-lg font-semibold text-foreground">Minhas campanhas</h2>
 
         {loadingCampaigns ? (
           <div className="space-y-2">
             {[1, 2, 3].map((i) => (
               <div
                 key={i}
-                className="flex items-center justify-between bg-[#1e293b] border border-slate-800 rounded-xl px-4 py-3 animate-pulse"
+                className="flex items-center justify-between rounded-2xl border border-border bg-gradient-card px-4 py-4 shadow-card"
               >
                 <div className="space-y-2">
-                  <div className="h-3.5 w-32 bg-slate-700 rounded-full" />
-                  <div className="h-2.5 w-16 bg-slate-800 rounded-full" />
+                  <Skeleton className="h-3.5 w-32" />
+                  <Skeleton className="h-2.5 w-16" />
                 </div>
-                <div className="h-4 w-3 bg-slate-800 rounded-full" />
+                <Skeleton className="h-4 w-4 rounded-full" />
               </div>
             ))}
           </div>
         ) : campaigns.length === 0 ? (
-          <div className="flex flex-col items-center py-10 gap-3">
-            <span className="text-4xl opacity-20">📋</span>
-            <p className="text-slate-400 text-sm font-medium">Nenhuma campanha disponível</p>
-            <p className="text-slate-600 text-xs text-center max-w-xs">
+          <div className="flex flex-col items-center gap-3 rounded-2xl border border-border bg-gradient-card py-12 shadow-card">
+            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-muted text-muted-foreground">
+              <PhoneCall className="h-6 w-6" />
+            </div>
+            <p className="text-sm font-medium text-foreground">Nenhuma campanha disponível</p>
+            <p className="max-w-xs text-center text-xs text-muted-foreground">
               Você ainda não participa de nenhuma campanha. Peça ao supervisor para adicioná-lo.
             </p>
           </div>
@@ -130,15 +137,20 @@ export function DialerTab() {
               <button
                 key={c.id}
                 onClick={() => handleSelect(c)}
-                className="w-full flex items-center justify-between bg-[#1e293b] border border-slate-800 hover:border-slate-600 rounded-xl px-4 py-3 transition-colors text-left group"
+                className="group flex w-full items-center justify-between rounded-2xl border border-border bg-gradient-card px-4 py-4 text-left shadow-card transition-colors hover:bg-accent/40"
               >
-                <div>
-                  <p className="text-white text-sm font-medium">{c.name}</p>
-                  <p className={`text-xs mt-0.5 ${STATUS_COLOR[c.status]}`}>
-                    {STATUS_LABEL[c.status]}
-                  </p>
+                <div className="flex items-center gap-3">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-primary text-primary-foreground shadow-glow transition-transform group-hover:scale-105">
+                    <PhoneCall className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-foreground">{c.name}</p>
+                    <p className={cn('mt-0.5 text-xs', STATUS_COLOR[c.status])}>
+                      {STATUS_LABEL[c.status]}
+                    </p>
+                  </div>
                 </div>
-                <span className="text-slate-600 group-hover:text-slate-400 text-lg transition-colors">›</span>
+                <ChevronRight className="h-5 w-5 text-muted-foreground transition-colors group-hover:text-foreground" />
               </button>
             ))}
           </div>
@@ -149,36 +161,34 @@ export function DialerTab() {
 
   // ─── Campanha selecionada ────────────────────────────────────────────────────
   return (
-    <div className="max-w-lg mx-auto space-y-3">
+    <div className="mx-auto max-w-2xl space-y-3">
       {/* Header */}
       <div className="flex items-center gap-3">
         <button
           onClick={() => { setView('list'); setCampaign(null) }}
-          className="text-slate-400 hover:text-white transition-colors text-sm shrink-0"
+          className="inline-flex shrink-0 items-center gap-1 text-sm text-muted-foreground transition-colors hover:text-foreground"
         >
-          ← Campanhas
+          <ArrowLeft className="h-4 w-4" /> Campanhas
         </button>
-        <span className="text-slate-700">/</span>
-        <h2 className="text-white font-semibold truncate">{campaign?.name}</h2>
+        <span className="text-border">/</span>
+        <h2 className="truncate text-lg font-semibold text-foreground">{campaign?.name}</h2>
       </div>
 
       {/* Stats */}
       {stats && (
         <div className="grid grid-cols-4 gap-2">
           {[
-            { label: 'Total', key: 'total', color: 'text-white' },
-            { label: 'Pendentes', key: 'pending', color: 'text-blue-400' },
-            { label: 'Atendidas', key: 'answered', color: 'text-green-400' },
-            { label: 'Não Atend.', key: 'no_answer', color: 'text-yellow-400' },
+            { label: 'Total', key: 'total', color: 'text-foreground' },
+            { label: 'Pendentes', key: 'pending', color: 'text-primary' },
+            { label: 'Atendidas', key: 'answered', color: 'text-success' },
+            { label: 'Não Atend.', key: 'no_answer', color: 'text-warning' },
           ].map((s) => (
             <div
               key={s.key}
-              className="bg-[#1e293b] border border-slate-800 rounded-xl p-3 text-center"
+              className="rounded-2xl border border-border bg-gradient-card p-3 text-center shadow-card"
             >
-              <p className={`text-2xl font-bold tabular-nums ${s.color}`}>
-                {stats[s.key] ?? 0}
-              </p>
-              <p className="text-slate-500 text-xs mt-0.5">{s.label}</p>
+              <p className={cn('text-2xl font-semibold tabular-nums', s.color)}>{stats[s.key] ?? 0}</p>
+              <p className="mt-0.5 text-xs text-muted-foreground">{s.label}</p>
             </div>
           ))}
         </div>
@@ -186,8 +196,8 @@ export function DialerTab() {
 
       {/* Disposição após chamada */}
       {pendingDisposition && (
-        <div className="bg-[#1e293b] border border-blue-500/40 rounded-2xl p-5">
-          <p className="text-blue-400 text-xs font-medium uppercase tracking-wider mb-3">
+        <div className="rounded-2xl border border-primary/40 bg-gradient-card p-5 shadow-elevated">
+          <p className="mb-3 text-xs font-medium uppercase tracking-wider text-primary">
             Resultado — {callNumber ?? currentContact?.phone_number}
           </p>
           <div className="grid grid-cols-2 gap-2">
@@ -195,7 +205,7 @@ export function DialerTab() {
               <button
                 key={d.value}
                 onClick={() => submitDisposition(d.status, d.value, d.label)}
-                className="bg-[#111827] hover:bg-slate-700 active:scale-95 text-white text-sm py-3 px-3 rounded-xl transition-all text-left"
+                className="rounded-xl border border-border bg-background/40 px-3 py-3 text-left text-sm text-foreground transition-all hover:bg-accent/60 active:scale-95"
               >
                 {d.label}
               </button>
@@ -206,41 +216,61 @@ export function DialerTab() {
 
       {/* Contato atual */}
       {currentContact && dialerStatus === 'running' && !pendingDisposition && (
-        <div className="bg-[#1e293b] border border-slate-700/60 rounded-2xl p-4">
-          <p className="text-slate-400 text-xs uppercase tracking-wider mb-2">Contato atual</p>
+        <div
+          className={cn(
+            'overflow-hidden rounded-2xl border p-5 shadow-elevated',
+            callStatus === 'calling'
+              ? 'border-border bg-gradient-premium text-white'
+              : 'border-border bg-gradient-card'
+          )}
+        >
+          <p
+            className={cn(
+              'mb-2 text-xs uppercase tracking-wider',
+              callStatus === 'calling' ? 'text-white/70' : 'text-muted-foreground'
+            )}
+          >
+            Contato atual
+          </p>
           {visibleFields.includes('name') && currentContact.name && (
-            <p className="text-white font-medium">{currentContact.name}</p>
+            <p className={cn('text-lg font-semibold', callStatus === 'calling' ? 'text-white' : 'text-foreground')}>
+              {currentContact.name}
+            </p>
           )}
           {visibleFields.includes('phone_number') && (
-            <p className="text-blue-400 font-mono text-lg">{currentContact.phone_number}</p>
+            <p className={cn('font-mono text-xl', callStatus === 'calling' ? 'text-white' : 'text-primary')}>
+              {currentContact.phone_number}
+            </p>
           )}
           {extraKeys.map((k) => {
             const val = currentContact.extra_data?.[k]
             if (!val) return null
             return (
-              <p key={k} className="text-sm mt-1">
-                <span className="text-slate-500">{fieldLabels[k] ?? k}: </span>
-                <span className="text-slate-200">{val}</span>
+              <p key={k} className="mt-1 text-sm">
+                <span className={callStatus === 'calling' ? 'text-white/60' : 'text-muted-foreground'}>
+                  {fieldLabels[k] ?? k}:{' '}
+                </span>
+                <span className={callStatus === 'calling' ? 'text-white' : 'text-foreground'}>{val}</span>
               </p>
             )
           })}
-          <p className="text-xs mt-1.5">
+          <p className="mt-2 text-xs">
             {callStatus === 'calling' && (
-              <span className="text-yellow-400 animate-pulse">Chamando...</span>
+              <span className="animate-pulse font-medium text-white/90">Chamando...</span>
             )}
             {(callStatus === 'idle' || callStatus === 'ended') && (
-              <span className="text-slate-500">Aguardando próximo...</span>
+              <span className="text-muted-foreground">Aguardando próximo...</span>
             )}
           </p>
         </div>
       )}
 
       {/* Controles */}
-      <div className="bg-[#1e293b] border border-slate-700/60 rounded-2xl p-4">
+      <div className="rounded-2xl border border-border bg-gradient-card p-5 shadow-card">
         {/* Banner: sem ramal atribuído */}
         {!extension && (
-          <div className="flex items-start gap-2 bg-yellow-900/30 border border-yellow-700/50 rounded-xl px-3 py-2.5 mb-3 text-sm text-yellow-300">
-            <span className="shrink-0 mt-0.5">☎</span>
+          <div className="mb-3 flex items-start gap-2 rounded-xl border border-warning/40 bg-warning/10 px-3 py-2.5 text-sm text-warning">
+            <Phone className="mt-0.5 h-4 w-4 shrink-0" />
             <span>
               Você não tem ramal atribuído. Peça a um administrador para definir seu ramal antes de discar.
             </span>
@@ -249,19 +279,19 @@ export function DialerTab() {
 
         {/* Banner: helper offline */}
         {!helperOnline && (
-          <div className="flex items-start gap-2 bg-red-900/30 border border-red-700/50 rounded-xl px-3 py-2.5 mb-3 text-sm text-red-300">
-            <span className="shrink-0 mt-0.5">⚠</span>
+          <div className="mb-3 flex items-start gap-2 rounded-xl border border-destructive/40 bg-destructive/10 px-3 py-2.5 text-sm text-destructive">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
             <span>
               Helper offline. Abra o <strong>start.bat</strong> na pasta{' '}
-              <code className="text-red-200">local-helper</code> e aguarde o ícone ficar verde.
+              <code className="rounded bg-destructive/15 px-1">local-helper</code> e aguarde o ícone ficar verde.
             </span>
           </div>
         )}
 
         {/* Banner: fora do horário da campanha */}
         {helperOnline && !withinHours && dialerStatus !== 'running' && (
-          <div className="flex items-start gap-2 bg-yellow-900/30 border border-yellow-700/50 rounded-xl px-3 py-2.5 mb-3 text-sm text-yellow-300">
-            <span className="shrink-0 mt-0.5">🕒</span>
+          <div className="mb-3 flex items-start gap-2 rounded-xl border border-warning/40 bg-warning/10 px-3 py-2.5 text-sm text-warning">
+            <Clock className="mt-0.5 h-4 w-4 shrink-0" />
             <span>
               Fora do horário desta campanha
               {campaign?.schedule_start && campaign?.schedule_end && (
@@ -274,8 +304,8 @@ export function DialerTab() {
 
         {/* Banner: campanha sem contatos pendentes */}
         {helperOnline && withinHours && dialerStatus === 'idle' && stats && stats.pending === 0 && stats.total > 0 && (
-          <div className="flex items-center gap-2 bg-slate-700/40 border border-slate-600/50 rounded-xl px-3 py-2.5 mb-3 text-sm text-slate-300">
-            <span>✓</span>
+          <div className="mb-3 flex items-center gap-2 rounded-xl border border-border bg-muted/40 px-3 py-2.5 text-sm text-muted-foreground">
+            <Check className="h-4 w-4 shrink-0" />
             <span>Todos os contatos desta campanha já foram discados.</span>
           </div>
         )}
@@ -285,38 +315,38 @@ export function DialerTab() {
             <button
               onClick={handleStart}
               disabled={!extension || !helperOnline || !withinHours || !stats || stats.pending === 0}
-              className="flex-1 bg-green-600 hover:bg-green-500 active:bg-green-700 disabled:bg-slate-700 disabled:text-slate-500 text-white py-3 rounded-xl font-semibold text-sm transition-colors"
+              className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-success py-3 text-sm font-semibold text-success-foreground transition-colors hover:bg-success/90 disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground"
             >
-              ▶ Iniciar discagem
+              <Play className="h-4 w-4" /> Iniciar discagem
             </button>
           )}
           {dialerStatus === 'running' && !pendingDisposition && (
             <button
               onClick={pause}
-              className="flex-1 bg-yellow-600 hover:bg-yellow-500 active:bg-yellow-700 text-white py-3 rounded-xl font-semibold text-sm transition-colors"
+              className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-warning py-3 text-sm font-semibold text-warning-foreground transition-colors hover:bg-warning/90"
             >
-              ⏸ Pausar
+              <Pause className="h-4 w-4" /> Pausar
             </button>
           )}
           {dialerStatus === 'paused' && (
             <button
               onClick={resume}
               disabled={!helperOnline || !withinHours}
-              className="flex-1 bg-green-600 hover:bg-green-500 disabled:bg-slate-700 disabled:text-slate-500 text-white py-3 rounded-xl font-semibold text-sm transition-colors"
+              className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-success py-3 text-sm font-semibold text-success-foreground transition-colors hover:bg-success/90 disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground"
             >
-              ▶ Retomar
+              <Play className="h-4 w-4" /> Retomar
             </button>
           )}
           {dialerStatus === 'completed' && (
-            <div className="flex-1 text-center py-3 text-green-400 font-medium text-sm">
-              ✓ Campanha concluída
+            <div className="flex flex-1 items-center justify-center gap-2 py-3 text-sm font-medium text-success">
+              <Check className="h-4 w-4" /> Campanha concluída
             </div>
           )}
         </div>
 
         {(dialerStatus === 'idle' || dialerStatus === 'paused') && (
-          <div className="flex items-center gap-3 mt-3">
-            <label className="text-xs text-slate-400 whitespace-nowrap shrink-0">
+          <div className="mt-3 flex items-center gap-3">
+            <label className="shrink-0 whitespace-nowrap text-xs text-muted-foreground">
               Pausa entre chamadas
             </label>
             <input
@@ -325,11 +355,9 @@ export function DialerTab() {
               max={30}
               value={pauseBetweenCalls}
               onChange={(e) => setPauseBetweenCalls(Number(e.target.value))}
-              className="flex-1 accent-blue-500"
+              className="flex-1 accent-primary"
             />
-            <span className="text-blue-400 text-sm tabular-nums w-8 text-right">
-              {pauseBetweenCalls}s
-            </span>
+            <span className="w-8 text-right text-sm tabular-nums text-primary">{pauseBetweenCalls}s</span>
           </div>
         )}
       </div>

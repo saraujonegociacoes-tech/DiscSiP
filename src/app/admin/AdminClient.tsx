@@ -2,7 +2,12 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Sidebar } from '@/components/Sidebar'
+import { Plus } from 'lucide-react'
+import { AppShell } from '@/components/blueline/AppShell'
+import { PageHeader } from '@/components/blueline/PageHeader'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { cn } from '@/lib/utils'
 import {
   updateProfile,
   createDepartment,
@@ -19,6 +24,10 @@ const ROLE_OPTIONS: { value: Role; label: string }[] = [
   { value: 'admin', label: 'Admin' },
 ]
 
+// estilo compartilhado para selects/inputs nativos
+const fieldClass =
+  'w-full rounded-lg border border-input bg-transparent px-2 py-1.5 text-sm text-foreground outline-none transition-colors focus:border-primary focus:ring-2 focus:ring-primary/15'
+
 type Tab = 'users' | 'departments'
 
 interface Props {
@@ -30,32 +39,34 @@ export function AdminClient({ profiles, departments }: Props) {
   const [tab, setTab] = useState<Tab>('users')
 
   return (
-    <div className="min-h-screen bg-[#0f172a] flex">
-      <Sidebar />
-      <div className="flex-1 p-6 overflow-y-auto">
-        <div className="max-w-3xl mx-auto space-y-5">
-          <div className="flex items-center gap-1">
-            {(['users', 'departments'] as Tab[]).map((t) => (
-              <button
-                key={t}
-                onClick={() => setTab(t)}
-                className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-                  tab === t ? 'bg-slate-700 text-white' : 'text-slate-400 hover:text-white'
-                }`}
-              >
-                {t === 'users' ? 'Usuários' : 'Departamentos'}
-              </button>
-            ))}
-          </div>
+    <AppShell>
+      <PageHeader title="Administração" description="Usuários, papéis, ramais e departamentos." />
 
-          {tab === 'users' ? (
-            <UsersTab profiles={profiles} departments={departments} />
-          ) : (
-            <DepartmentsTab departments={departments} />
-          )}
+      <div className="mx-auto max-w-3xl space-y-5">
+        <div className="inline-flex items-center gap-1 rounded-lg border border-border bg-card/60 p-0.5 shadow-card">
+          {(['users', 'departments'] as Tab[]).map((t) => (
+            <button
+              key={t}
+              onClick={() => setTab(t)}
+              className={cn(
+                'rounded-md px-4 py-1.5 text-sm font-medium transition-colors',
+                tab === t
+                  ? 'bg-gradient-primary text-primary-foreground shadow-glow'
+                  : 'text-muted-foreground hover:text-foreground'
+              )}
+            >
+              {t === 'users' ? 'Usuários' : 'Departamentos'}
+            </button>
+          ))}
         </div>
+
+        {tab === 'users' ? (
+          <UsersTab profiles={profiles} departments={departments} />
+        ) : (
+          <DepartmentsTab departments={departments} />
+        )}
       </div>
-    </div>
+    </AppShell>
   )
 }
 
@@ -69,8 +80,8 @@ function UsersTab({ profiles, departments }: Props) {
     <div className="space-y-5">
       {pending.length > 0 && (
         <section>
-          <h2 className="text-white text-sm font-medium mb-3">
-            Aguardando aprovação <span className="text-yellow-400">({pending.length})</span>
+          <h2 className="mb-3 text-sm font-semibold text-foreground">
+            Aguardando aprovação <span className="text-warning">({pending.length})</span>
           </h2>
           <div className="space-y-2">
             {pending.map((p) => (
@@ -81,11 +92,11 @@ function UsersTab({ profiles, departments }: Props) {
       )}
 
       <section>
-        <h2 className="text-white text-sm font-medium mb-3">
-          Usuários <span className="text-slate-500">({others.length})</span>
+        <h2 className="mb-3 text-sm font-semibold text-foreground">
+          Usuários <span className="text-muted-foreground">({others.length})</span>
         </h2>
         {others.length === 0 ? (
-          <p className="text-slate-500 text-sm py-2">Nenhum usuário aprovado ainda.</p>
+          <p className="py-2 text-sm text-muted-foreground">Nenhum usuário aprovado ainda.</p>
         ) : (
           <div className="space-y-2">
             {others.map((p) => (
@@ -139,32 +150,30 @@ function UserRow({
 
   return (
     <div
-      className={`bg-[#1e293b] border rounded-xl p-4 ${
-        highlight ? 'border-yellow-700/50' : 'border-slate-800'
-      }`}
+      className={cn(
+        'rounded-2xl border bg-gradient-card p-4 shadow-card',
+        highlight ? 'border-warning/50' : 'border-border'
+      )}
     >
-      <div className="flex items-center justify-between gap-3 mb-3">
+      <div className="mb-3 flex items-center justify-between gap-3">
         <div className="min-w-0">
-          <p className="text-white text-sm font-medium truncate">{profile.name}</p>
-          <p className="text-slate-500 text-xs truncate">{profile.email ?? '—'}</p>
+          <p className="truncate text-sm font-medium text-foreground">{profile.name}</p>
+          <p className="truncate text-xs text-muted-foreground">{profile.email ?? '—'}</p>
         </div>
-        <button
+        <Button
+          size="sm"
           onClick={handleSave}
           disabled={saving || !dirty}
-          className="shrink-0 bg-blue-600 hover:bg-blue-500 disabled:bg-slate-700 disabled:text-slate-500 text-white text-xs font-semibold px-4 py-2 rounded-lg transition-colors"
+          className="shrink-0 bg-primary hover:bg-primary/90"
         >
           {saving ? 'Salvando...' : 'Salvar'}
-        </button>
+        </Button>
       </div>
 
       <div className="grid grid-cols-3 gap-2">
         <div>
-          <label className="block text-[11px] text-slate-500 mb-1">Papel</label>
-          <select
-            value={role}
-            onChange={(e) => setRole(e.target.value as Role)}
-            className="w-full bg-[#111827] border border-slate-700 rounded-lg px-2 py-1.5 text-white text-sm focus:outline-none focus:border-blue-500"
-          >
+          <label className="mb-1 block text-[11px] text-muted-foreground">Papel</label>
+          <select value={role} onChange={(e) => setRole(e.target.value as Role)} className={fieldClass}>
             {ROLE_OPTIONS.map((r) => (
               <option key={r.value} value={r.value}>
                 {r.label}
@@ -173,12 +182,8 @@ function UserRow({
           </select>
         </div>
         <div>
-          <label className="block text-[11px] text-slate-500 mb-1">Departamento</label>
-          <select
-            value={departmentId}
-            onChange={(e) => setDepartmentId(e.target.value)}
-            className="w-full bg-[#111827] border border-slate-700 rounded-lg px-2 py-1.5 text-white text-sm focus:outline-none focus:border-blue-500"
-          >
+          <label className="mb-1 block text-[11px] text-muted-foreground">Departamento</label>
+          <select value={departmentId} onChange={(e) => setDepartmentId(e.target.value)} className={fieldClass}>
             <option value="">—</option>
             {departments.map((d) => (
               <option key={d.id} value={d.id}>
@@ -188,7 +193,7 @@ function UserRow({
           </select>
         </div>
         <div>
-          <label className="block text-[11px] text-slate-500 mb-1">Ramal</label>
+          <label className="mb-1 block text-[11px] text-muted-foreground">Ramal</label>
           <input
             type="number"
             min={5125}
@@ -196,12 +201,12 @@ function UserRow({
             value={extension}
             onChange={(e) => setExtension(e.target.value)}
             placeholder="—"
-            className="w-full bg-[#111827] border border-slate-700 rounded-lg px-2 py-1.5 text-white text-sm placeholder:text-slate-600 focus:outline-none focus:border-blue-500"
+            className={fieldClass}
           />
         </div>
       </div>
 
-      {error && <p className="text-red-400 text-xs mt-2">{error}</p>}
+      {error && <p className="mt-2 text-xs text-destructive">{error}</p>}
     </div>
   )
 }
@@ -230,30 +235,30 @@ function DepartmentsTab({ departments }: { departments: Department[] }) {
 
   return (
     <div className="space-y-4">
-      <section className="bg-[#1e293b] border border-slate-700/60 rounded-2xl p-5">
-        <h2 className="text-white text-sm font-medium mb-3">Novo departamento</h2>
+      <section className="rounded-2xl border border-border bg-gradient-card p-5 shadow-card">
+        <h2 className="mb-3 text-sm font-semibold text-foreground">Novo departamento</h2>
         <div className="flex gap-2">
-          <input
+          <Input
             value={newName}
             onChange={(e) => setNewName(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && handleCreate()}
             placeholder="Nome do departamento"
-            className="flex-1 bg-[#111827] border border-slate-600 rounded-xl px-3 py-2.5 text-white text-sm placeholder:text-slate-600 focus:outline-none focus:border-blue-500"
+            className="flex-1"
           />
-          <button
+          <Button
             onClick={handleCreate}
             disabled={creating || !newName.trim()}
-            className="bg-blue-600 hover:bg-blue-500 disabled:bg-slate-700 disabled:text-slate-500 text-white text-sm font-semibold px-5 rounded-xl transition-colors"
+            className="bg-primary hover:bg-primary/90"
           >
-            Adicionar
-          </button>
+            <Plus className="mr-2 h-4 w-4" /> Adicionar
+          </Button>
         </div>
-        {error && <p className="text-red-400 text-xs mt-2">{error}</p>}
+        {error && <p className="mt-2 text-xs text-destructive">{error}</p>}
       </section>
 
       <div className="space-y-2">
         {departments.length === 0 ? (
-          <p className="text-slate-500 text-sm py-2">Nenhum departamento cadastrado.</p>
+          <p className="py-2 text-sm text-muted-foreground">Nenhum departamento cadastrado.</p>
         ) : (
           departments.map((d) => <DepartmentRow key={d.id} department={d} />)
         )}
@@ -289,27 +294,27 @@ function DepartmentRow({ department }: { department: Department }) {
   }
 
   return (
-    <div className="bg-[#1e293b] border border-slate-800 rounded-xl p-3">
+    <div className="rounded-2xl border border-border bg-gradient-card p-3 shadow-card">
       <div className="flex items-center gap-2">
         <input
           value={name}
           onChange={(e) => setName(e.target.value)}
           onBlur={handleRename}
           onKeyDown={(e) => e.key === 'Enter' && handleRename()}
-          className="flex-1 bg-[#111827] border border-slate-700 rounded-lg px-3 py-1.5 text-white text-sm focus:outline-none focus:border-blue-500"
+          className="flex-1 rounded-lg border border-input bg-transparent px-3 py-1.5 text-sm text-foreground outline-none transition-colors focus:border-primary focus:ring-2 focus:ring-primary/15"
         />
         {confirming ? (
           <>
             <button
               onClick={handleDelete}
               disabled={busy}
-              className="text-red-400 hover:text-red-300 text-xs font-semibold px-2 transition-colors"
+              className="px-2 text-xs font-semibold text-destructive transition-colors hover:text-destructive/80"
             >
               Confirmar
             </button>
             <button
               onClick={() => setConfirming(false)}
-              className="text-slate-500 hover:text-slate-300 text-xs px-1 transition-colors"
+              className="px-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
             >
               Cancelar
             </button>
@@ -318,13 +323,13 @@ function DepartmentRow({ department }: { department: Department }) {
           <button
             onClick={() => setConfirming(true)}
             disabled={busy}
-            className="text-slate-500 hover:text-red-400 text-xs px-2 transition-colors"
+            className="px-2 text-xs text-muted-foreground transition-colors hover:text-destructive"
           >
             Excluir
           </button>
         )}
       </div>
-      {error && <p className="text-red-400 text-xs mt-2">{error}</p>}
+      {error && <p className="mt-2 text-xs text-destructive">{error}</p>}
     </div>
   )
 }

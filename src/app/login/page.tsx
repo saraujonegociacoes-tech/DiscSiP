@@ -4,6 +4,10 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import { BlueLineLogo } from '@/components/brand/BlueLineLogo'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 
 export default function LoginPage() {
   const router = useRouter()
@@ -38,57 +42,78 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#0f172a] flex items-center justify-center p-4">
-      <div className="w-full max-w-xs">
-        <div className="text-center mb-8">
-          <h1 className="text-3xl text-white tracking-tight">
-            <span className="font-medium">Disc</span><span className="font-bold text-blue-500">SiP</span>
-          </h1>
-          <p className="text-slate-500 text-sm mt-1">Power Dialer</p>
+    <div className="grid min-h-screen bg-background bg-gradient-mesh lg:grid-cols-2">
+      {/* Hero — gradiente premium */}
+      <div className="relative hidden overflow-hidden lg:block bg-gradient-premium">
+        <div className="absolute inset-0 opacity-30 [background-image:radial-gradient(circle_at_30%_20%,white,transparent_40%)]" />
+        <div className="relative flex h-full flex-col justify-between p-10 text-white">
+          <BlueLineLogo />
+          <div className="max-w-md">
+            <h2 className="text-4xl font-semibold leading-tight tracking-tight">
+              Conectando conversas que geram resultados.
+            </h2>
+            <p className="mt-4 text-sm text-white/70">
+              Operação comercial em tempo real. Filas inteligentes, agentes focados,
+              indicadores que importam.
+            </p>
+          </div>
+          <div className="text-xs uppercase tracking-[0.32em] text-white/60">
+            Power Dialer Platform
+          </div>
         </div>
+      </div>
 
-        <div className="bg-[#1e293b] border border-slate-700/60 rounded-2xl p-8 space-y-4">
-          <div>
-            <label className="block text-xs text-slate-400 mb-2 uppercase tracking-wider">Email</label>
-            <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && handleLogin()}
-              placeholder="voce@empresa.com"
-              className="w-full bg-[#111827] border border-slate-600 rounded-xl px-4 py-3 text-white placeholder:text-slate-600 focus:outline-none focus:border-blue-500 transition-colors"
-            />
+      {/* Formulário */}
+      <div className="flex items-center justify-center px-6 py-12">
+        <div className="w-full max-w-sm">
+          <div className="mb-8 flex justify-center lg:hidden">
+            <BlueLineLogo />
+          </div>
+          <h1 className="text-2xl font-semibold tracking-tight text-foreground">Entrar na plataforma</h1>
+          <p className="mt-2 text-sm text-muted-foreground">Use suas credenciais corporativas.</p>
+
+          <div className="mt-8 space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="email">E-mail</Label>
+              <Input
+                id="email"
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleLogin()}
+                placeholder="voce@empresa.com.br"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="password">Senha</Label>
+              <Input
+                id="password"
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleLogin()}
+                placeholder="••••••••"
+              />
+            </div>
+
+            {error && <p className="text-sm text-destructive">{error}</p>}
+
+            <Button
+              onClick={handleLogin}
+              disabled={loading || !email || !password}
+              className="w-full bg-primary hover:bg-primary/90"
+            >
+              {loading ? 'Entrando...' : 'Acessar painel'}
+            </Button>
           </div>
 
-          <div>
-            <label className="block text-xs text-slate-400 mb-2 uppercase tracking-wider">Senha</label>
-            <input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && handleLogin()}
-              placeholder="••••••••"
-              className="w-full bg-[#111827] border border-slate-600 rounded-xl px-4 py-3 text-white placeholder:text-slate-600 focus:outline-none focus:border-blue-500 transition-colors"
-            />
-          </div>
-
-          {error && <p className="text-red-400 text-sm text-center">{error}</p>}
-
-          <button
-            onClick={handleLogin}
-            disabled={loading || !email || !password}
-            className="w-full bg-blue-600 hover:bg-blue-500 active:bg-blue-700 disabled:bg-slate-700 disabled:text-slate-500 text-white font-semibold py-3 rounded-xl transition-colors"
-          >
-            {loading ? 'Entrando...' : 'Entrar'}
-          </button>
+          <p className="mt-6 text-center text-sm text-muted-foreground">
+            Não tem conta?{' '}
+            <Link href="/cadastro" className="text-primary hover:underline">
+              Cadastre-se
+            </Link>
+          </p>
         </div>
-
-        <p className="text-center text-slate-500 text-sm mt-6">
-          Não tem conta?{' '}
-          <Link href="/cadastro" className="text-blue-400 hover:text-blue-300 transition-colors">
-            Cadastre-se
-          </Link>
-        </p>
       </div>
     </div>
   )

@@ -1,31 +1,36 @@
 'use client'
 
 import { useRouter } from 'next/navigation'
+import { Clock } from 'lucide-react'
 import { signOut } from '@/app/actions/auth'
+import { BlueLineLogo } from '@/components/brand/BlueLineLogo'
+import { Button } from '@/components/ui/button'
 
 export default function AguardandoPage() {
   const router = useRouter()
 
   return (
-    <div className="min-h-screen bg-[#0f172a] flex items-center justify-center p-4">
-      <div className="w-full max-w-sm text-center">
-        <div className="text-3xl mb-4">⏳</div>
-        <h1 className="text-white text-xl font-semibold mb-2">Aguardando aprovação</h1>
-        <p className="text-slate-400 text-sm leading-relaxed">
+    <div className="flex min-h-screen items-center justify-center bg-background bg-gradient-mesh p-4">
+      <div className="w-full max-w-md rounded-2xl border border-border bg-gradient-card p-8 text-center shadow-elevated">
+        <div className="mb-6 flex justify-center">
+          <BlueLineLogo />
+        </div>
+        <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-primary text-primary-foreground shadow-glow">
+          <Clock className="h-6 w-6" />
+        </div>
+        <h1 className="text-xl font-semibold text-foreground">Aguardando aprovação</h1>
+        <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
           Sua conta foi criada e confirmada. Um administrador precisa aprovar seu acesso e
-          atribuir seu papel (e ramal, se for discar) antes de você usar o DiscSiP.
+          atribuir seu papel (e ramal, se for discar) antes de você usar o Blue Line.
         </p>
 
-        <div className="flex flex-col gap-2 mt-6">
-          <button
-            onClick={() => router.refresh()}
-            className="bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white font-semibold py-2.5 rounded-xl text-sm transition-colors"
-          >
+        <div className="mt-6 flex flex-col gap-2">
+          <Button onClick={() => router.refresh()} className="w-full bg-primary hover:bg-primary/90">
             Já fui aprovado — verificar
-          </button>
+          </Button>
           <button
             onClick={() => signOut()}
-            className="text-slate-500 hover:text-slate-300 text-xs transition-colors py-1"
+            className="py-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
           >
             Sair
           </button>

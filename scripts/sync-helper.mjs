@@ -1,4 +1,4 @@
-// Copia o helper local para public/ para que o DiscSiP sirva a versão mais nova em
+// Copia o helper local para public/ para que o Blue Line sirva a versão mais nova em
 // /helper/index.js (código que o helper baixa) e /helper/version.json (só a versão,
 // usada pela UI para saber se está desatualizado). Fonte única: local-helper/index.js.
 // Roda automaticamente no build (script "prebuild") e pode ser rodado à mão.

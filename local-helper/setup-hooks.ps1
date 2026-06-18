@@ -1,12 +1,12 @@
 # Configura os hooks de evento do MicroSIP (cmdCallStart/End/Busy) num caminho SEM espacos
-# (C:\Users\Public\discsip-helper). Isso contorna um bug do MicroSIP: ele guarda o valor do
+# (C:\Users\Public\blueline-helper). Isso contorna um bug do MicroSIP: ele guarda o valor do
 # hook entre aspas no ini, mas ao ler com GetPrivateProfileString as aspas sao removidas e, se o
 # caminho tiver espaco (ex: "Filipe Crepaldi"), CommandLineToArgvW quebra no espaco e o hook
 # nunca roda. Caminho sem espaco resolve em qualquer maquina/usuario.
 $ErrorActionPreference = 'Stop'
 
 $src  = $PSScriptRoot
-$dest = 'C:\Users\Public\discsip-helper'
+$dest = 'C:\Users\Public\blueline-helper'
 $bats = 'on-call-start.bat', 'on-call-end.bat', 'on-call-busy.bat'
 
 New-Item -ItemType Directory -Force -Path $dest | Out-Null

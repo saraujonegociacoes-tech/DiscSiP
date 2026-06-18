@@ -60,6 +60,24 @@ export async function createCampaign(
   return data as Campaign
 }
 
+// Exclui a campanha e tudo que depende dela. Removemos os filhos explicitamente
+// (não dependemos de ON DELETE CASCADE no schema): contatos e listas primeiro,
+// depois os vínculos de agentes, e por fim a própria campanha.
+export async function deleteCampaign(id: string): Promise<{ error?: string }> {
+  const supabase = await createServerClient()
+
+  for (const step of [
+    () => supabase.from('campaign_contacts').delete().eq('campaign_id', id),
+    () => supabase.from('lists').delete().eq('campaign_id', id),
+    () => supabase.from('campaign_agents').delete().eq('campaign_id', id),
+    () => supabase.from('campaigns').delete().eq('id', id),
+  ]) {
+    const { error } = await step()
+    if (error) return { error: error.message }
+  }
+  return {}
+}
+
 export async function updateCampaignStatus(
   id: string,
   status: CampaignStatus

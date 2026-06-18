@@ -6,9 +6,9 @@ const app = express()
 
 const PORT = 3001
 
-// Versão do helper. É o que o DiscSiP compara para saber se está desatualizado e
+// Versão do helper. É o que o Blue Line compara para saber se está desatualizado e
 // oferecer o botão "Atualizar". Suba este número a cada correção no helper.
-const HELPER_VERSION = '1.4'
+const HELPER_VERSION = '1.5'
 
 // Código de seleção de operadora (CSP) para discagem interurbana. Sem ele o MicroSIP
 // não completa chamadas para outros estados. Resultado: DIAL_PREFIX + DDD + número.
@@ -16,7 +16,7 @@ const HELPER_VERSION = '1.4'
 const DIAL_PREFIX = process.env.DIAL_PREFIX || '021'
 
 // Onde o helper busca a versão nova de si mesmo. Em runtime preferimos a origem que o
-// próprio DiscSiP manda no header Origin (persistida em helper-config.json) — assim não
+// próprio Blue Line manda no header Origin (persistida em helper-config.json) — assim não
 // precisa fixar o domínio aqui. Este env é só fallback para a auto-atualização no start.
 const CONFIG_PATH = path.join(__dirname, 'helper-config.json')
 
@@ -35,9 +35,9 @@ function writeConfig(patch) {
   }
 }
 
-// Base do DiscSiP para auto-atualização: env > último Origin visto > nada.
-function discsipBaseUrl() {
-  return process.env.DISCSIP_URL || readConfig().origin || null
+// Base do Blue Line para auto-atualização: env > último Origin visto > nada.
+function bluelineBaseUrl() {
+  return process.env.BLUELINE_URL || readConfig().origin || null
 }
 
 // Normaliza o número para o formato que o PABX espera:
@@ -51,8 +51,8 @@ function formatNumber(raw) {
 
 app.use(express.json())
 
-// CORS para permitir chamadas do DiscSiP (HTTPS → localhost). De quebra, todo request
-// do navegador traz o header Origin = domínio do DiscSiP: guardamos para a auto-atualização.
+// CORS para permitir chamadas do Blue Line (HTTPS → localhost). De quebra, todo request
+// do navegador traz o header Origin = domínio do Blue Line: guardamos para a auto-atualização.
 app.use((req, res, next) => {
   res.header('Access-Control-Allow-Origin', '*')
   res.header('Access-Control-Allow-Private-Network', 'true')
@@ -84,7 +84,7 @@ function findMicroSIP() {
 const MICROSIP = findMicroSIP()
 
 // Último evento de chamada recebido do MicroSIP (via cmdCallStart/cmdCallEnd no microsip.ini).
-// O DiscSiP faz polling em /events para reagir (mostrar tabulação, cronômetro real).
+// O Blue Line faz polling em /events para reagir (mostrar tabulação, cronômetro real).
 let lastEvent = { id: 0, type: 'idle', number: null, at: null }
 function recordEvent(type, number) {
   lastEvent = {
@@ -111,7 +111,7 @@ function runMsip(arg) {
 }
 
 // ─── Auto-atualização ──────────────────────────────────────────────────────────
-// Baixa o código novo do DiscSiP, valida, faz backup e sobrescreve este próprio arquivo.
+// Baixa o código novo do Blue Line, valida, faz backup e sobrescreve este próprio arquivo.
 // Quem reinicia no código novo é o start.bat: ao sairmos com código 42, ele reabre o node.
 const UPDATE_EXIT_CODE = 42
 
@@ -134,18 +134,18 @@ function applyUpdate(code) {
   fs.writeFileSync(__filename, code)
 }
 
-// Health check — usado pelo DiscSiP para saber se o helper está rodando e qual a versão
+// Health check — usado pelo Blue Line para saber se o helper está rodando e qual a versão
 app.get('/ping', (req, res) => {
   res.json({ ok: true, version: HELPER_VERSION, microsip: MICROSIP })
 })
 
-// Atualiza o helper sob demanda (botão "Atualizar helper" no DiscSiP).
+// Atualiza o helper sob demanda (botão "Atualizar helper" no Blue Line).
 // O navegador manda { source } = sua própria origem; usamos ela para baixar o código.
 app.post('/update', async (req, res) => {
   const ts = new Date().toLocaleTimeString()
-  const base = (req.body && req.body.source) || discsipBaseUrl()
+  const base = (req.body && req.body.source) || bluelineBaseUrl()
   if (!base) {
-    return res.status(400).json({ error: 'origem do DiscSiP desconhecida' })
+    return res.status(400).json({ error: 'origem do Blue Line desconhecida' })
   }
   try {
     const { code, version } = await fetchLatest(base)
@@ -163,7 +163,7 @@ app.post('/update', async (req, res) => {
   }
 })
 
-// Encerra a chamada ativa no MicroSIP — usado pelo botão "Encerrar" do DiscSiP
+// Encerra a chamada ativa no MicroSIP — usado pelo botão "Encerrar" do Blue Line
 app.post('/hangup', (req, res) => {
   const ts = new Date().toLocaleTimeString()
   if (runMsip('msip:hangupall')) {
@@ -185,13 +185,13 @@ app.get('/event/call-end', (req, res) => {
   res.json({ ok: true })
 })
 // Ligacao deu ocupado (486/600/603). O MicroSIP roteia esses casos para cmdCallBusy,
-// nao para cmdCallEnd — por isso o evento proprio, para o DiscSiP tambem tabular.
+// nao para cmdCallEnd — por isso o evento proprio, para o Blue Line tambem tabular.
 app.get('/event/call-busy', (req, res) => {
   recordEvent('call-busy', req.query.number)
   res.json({ ok: true })
 })
 
-// O DiscSiP faz polling aqui para saber o último evento de chamada
+// O Blue Line faz polling aqui para saber o último evento de chamada
 app.get('/events', (req, res) => res.json(lastEvent))
 
 // Aciona uma chamada no MicroSIP
@@ -231,11 +231,11 @@ app.post('/call', (req, res) => {
   })
 })
 
-// No start, antes de subir o servidor, tenta se atualizar sozinho contra o DiscSiP.
+// No start, antes de subir o servidor, tenta se atualizar sozinho contra o Blue Line.
 // Se houver versão nova, sobrescreve e sai com 42 — o start.bat reabre no código novo.
 // Como após o restart HELPER_VERSION passa a bater com o remoto, não há loop.
 async function maybeAutoUpdate() {
-  const base = discsipBaseUrl()
+  const base = bluelineBaseUrl()
   if (!base) return
   try {
     const { code, version } = await fetchLatest(base)
@@ -245,7 +245,7 @@ async function maybeAutoUpdate() {
       process.exit(UPDATE_EXIT_CODE)
     }
   } catch {
-    // sem rede / DiscSiP fora do ar / origem ainda não conhecida — segue com a versão atual
+    // sem rede / Blue Line fora do ar / origem ainda não conhecida — segue com a versão atual
   }
 }
 
@@ -254,7 +254,7 @@ async function main() {
 
   const server = app.listen(PORT, '127.0.0.1', () => {
     console.log('=================================')
-    console.log(` DiscSiP Helper v${HELPER_VERSION}`)
+    console.log(` Blue Line Helper v${HELPER_VERSION}`)
     console.log(` http://localhost:${PORT}`)
     console.log('=================================')
     if (MICROSIP) {
@@ -264,7 +264,7 @@ async function main() {
       console.log(' Se a discagem nao funcionar, defina MICROSIP_PATH apontando para o microsip.exe')
     }
     if (DIAL_PREFIX) console.log(` Prefixo de discagem (CSP): "${DIAL_PREFIX}" — disca ${DIAL_PREFIX} + DDD + numero`)
-    console.log('Aguardando chamadas do DiscSiP...')
+    console.log('Aguardando chamadas do Blue Line...')
     console.log('')
   })
 
