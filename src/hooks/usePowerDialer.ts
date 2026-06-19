@@ -7,7 +7,7 @@ import { getNextContact, updateContactStatus } from '@/app/actions/campaigns'
 import { saveCallLog } from '@/app/actions/dialer'
 import { sendDispositionNotification } from '@/app/actions/notifications'
 import type { ContactStatus } from '@/lib/types/database'
-import { HELPER_URL } from '@/lib/constants'
+import { helperFetch } from '@/lib/constants'
 
 async function retryGetNextContact(
   campaignId: string,
@@ -27,7 +27,7 @@ async function retryGetNextContact(
 async function triggerMicroSIP(number: string): Promise<void> {
   const clean = number.replace(/\D/g, '')
   try {
-    await fetch(`${HELPER_URL}/call`, {
+    await helperFetch('/call', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ number: clean }),
@@ -99,7 +99,7 @@ export function usePowerDialer() {
     let baseline: number | null = null
     const poll = async () => {
       try {
-        const res = await fetch(`${HELPER_URL}/events`, { signal: AbortSignal.timeout(2000) })
+        const res = await helperFetch('/events', { signal: AbortSignal.timeout(2000) })
         const ev = await res.json()
         if (cancelled) return
         if (baseline === null) {

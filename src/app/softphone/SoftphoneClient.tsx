@@ -11,7 +11,7 @@ import { DialerTab } from './DialerTab'
 import { AppShell } from '@/components/blueline/AppShell'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
-import { HELPER_URL } from '@/lib/constants'
+import { helperFetch } from '@/lib/constants'
 
 type Tab = 'dialer' | 'history'
 
@@ -63,7 +63,7 @@ export default function SoftphoneClient() {
   useEffect(() => {
     const check = async () => {
       try {
-        const res = await fetch(`${HELPER_URL}/ping`, {
+        const res = await helperFetch('/ping', {
           signal: AbortSignal.timeout(2000),
         })
         const data = res.ok ? await res.json().catch(() => null) : null
@@ -82,7 +82,7 @@ export default function SoftphoneClient() {
   const handleUpdateHelper = async () => {
     setUpdating(true)
     try {
-      const res = await fetch(`${HELPER_URL}/update`, {
+      const res = await helperFetch('/update', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ source: window.location.origin }),
@@ -93,7 +93,7 @@ export default function SoftphoneClient() {
       while (Date.now() < deadline) {
         await new Promise((r) => setTimeout(r, 1500))
         try {
-          const ping = await fetch(`${HELPER_URL}/ping`, { signal: AbortSignal.timeout(2000) })
+          const ping = await helperFetch('/ping', { signal: AbortSignal.timeout(2000) })
           const data = ping.ok ? await ping.json() : null
           if (data?.version) {
             setHelperOnline(true, data.version)
@@ -127,7 +127,7 @@ export default function SoftphoneClient() {
   // O fim também chega via evento do MicroSIP, então setamos otimista para resposta imediata.
   const handleHangup = async () => {
     try {
-      await fetch(`${HELPER_URL}/hangup`, { method: 'POST' })
+      await helperFetch('/hangup', { method: 'POST' })
     } catch {
       // Helper offline — não dá para encerrar no MicroSIP; ainda assim avança a UI
     }
