@@ -11,12 +11,14 @@ interface DialerState {
   dialerStatus: DialerStatus
   pauseBetweenCalls: number // segundos entre chamadas
   pendingDisposition: boolean // aguardando agente definir disposição
+  parallelBatch: CampaignContact[] // contatos do lote em discagem paralela (modo preditivo)
 
   setCampaign: (campaign: Campaign | null) => void
   setCurrentContact: (contact: CampaignContact | null) => void
   setDialerStatus: (status: DialerStatus) => void
   setPendingDisposition: (pending: boolean) => void
   setPauseBetweenCalls: (seconds: number) => void
+  setParallelBatch: (contacts: CampaignContact[]) => void
   reset: () => void
 }
 
@@ -26,12 +28,14 @@ export const useDialerStore = create<DialerState>((set) => ({
   dialerStatus: 'idle',
   pauseBetweenCalls: 3,
   pendingDisposition: false,
+  parallelBatch: [],
 
   setCampaign: (campaign) => set({ campaign }),
   setCurrentContact: (contact) => set({ currentContact: contact }),
   setDialerStatus: (status) => set({ dialerStatus: status }),
   setPendingDisposition: (pending) => set({ pendingDisposition: pending }),
   setPauseBetweenCalls: (seconds) => set({ pauseBetweenCalls: seconds }),
+  setParallelBatch: (contacts) => set({ parallelBatch: contacts }),
 
   reset: () =>
     set({
@@ -39,5 +43,6 @@ export const useDialerStore = create<DialerState>((set) => ({
       currentContact: null,
       dialerStatus: 'idle',
       pendingDisposition: false,
+      parallelBatch: [],
     }),
 }))

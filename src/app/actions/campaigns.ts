@@ -170,6 +170,51 @@ export async function getNextContact(
   return claimed as CampaignContact | null
 }
 
+// Reserva ATÔMICA de até N contatos pendentes para discagem paralela. Faz o claim um a um
+// (cada UPDATE ... WHERE status='pending' garante exclusividade entre agentes). Resolve o bug
+// anotado no doc: distingue "perdi a corrida" (claim volta null, mas ainda há pendentes) de
+// "acabaram os pendentes" — só para quando findPending não acha mais nada. Recicla uma vez se
+// a fila zerar no meio. Retorna de 0 a N contatos já marcados como 'dialing'.
+export async function getNextContacts(
+  campaignId: string,
+  agentId: string,
+  n: number
+): Promise<CampaignContact[]> {
+  const supabase = await createServerClient()
+  const claimed: CampaignContact[] = []
+  let recycled = false
+
+  while (claimed.length < Math.max(1, n)) {
+    let pending = await findPending(supabase, campaignId)
+    if (!pending) {
+      if (recycled) break
+      await recycleCampaign(supabase, campaignId)
+      recycled = true
+      pending = await findPending(supabase, campaignId)
+      if (!pending) break
+    }
+
+    const { data: claimedRow } = await supabase
+      .from('campaign_contacts')
+      .update({
+        status: 'dialing',
+        assigned_agent_id: agentId,
+        dialed_at: new Date().toISOString(),
+        attempts: pending.attempts + 1,
+      })
+      .eq('id', pending.id)
+      .eq('status', 'pending')
+      .select()
+      .single()
+
+    if (claimedRow) claimed.push(claimedRow as CampaignContact)
+    // claimedRow null = outro agente levou esse id (virou 'dialing'); o próximo findPending
+    // já retorna outro, então o loop avança sem travar.
+  }
+
+  return claimed
+}
+
 export async function updateContactStatus(
   contactId: string,
   status: ContactStatus,
@@ -231,9 +276,12 @@ export async function updateCampaignConfig(
     schedule_end: string | null
     visible_fields: string[]
     notify_dispositions: string[]
+    parallel_lines: number
   }
 ): Promise<{ error?: string }> {
   const supabase = await createServerClient()
+  // Clamp defensivo (a CHECK do banco é 1..10): garante valor válido vindo da UI.
+  const parallel = Math.min(10, Math.max(1, Math.round(config.parallel_lines || 1)))
   const { error } = await supabase
     .from('campaigns')
     .update({
@@ -242,6 +290,7 @@ export async function updateCampaignConfig(
       schedule_end: config.schedule_end,
       visible_fields: config.visible_fields,
       notify_dispositions: config.notify_dispositions,
+      parallel_lines: parallel,
       updated_at: new Date().toISOString(),
     })
     .eq('id', campaignId)
@@ -278,6 +327,7 @@ export async function getCampaignStats(campaignId: string): Promise<{
   busy: number
   failed: number
   do_not_call: number
+  abandoned: number
 }> {
   const supabase = await createServerClient()
   const { data } = await supabase
@@ -294,6 +344,7 @@ export async function getCampaignStats(campaignId: string): Promise<{
     busy: 0,
     failed: 0,
     do_not_call: 0,
+    abandoned: 0,
   }
 
   for (const row of data ?? []) {

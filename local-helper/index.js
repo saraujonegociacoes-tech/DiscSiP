@@ -8,7 +8,7 @@ const PORT = 3001
 
 // Versão do helper. É o que o Blue Line compara para saber se está desatualizado e
 // oferecer o botão "Atualizar". Suba este número a cada correção no helper.
-const HELPER_VERSION = '1.5'
+const HELPER_VERSION = '1.6'
 
 // Código de seleção de operadora (CSP) para discagem interurbana. Sem ele o MicroSIP
 // não completa chamadas para outros estados. Resultado: DIAL_PREFIX + DDD + número.
@@ -47,6 +47,17 @@ function formatNumber(raw) {
   let digits = String(raw).replace(/\D/g, '')
   if (digits.length > 11 && digits.startsWith('55')) digits = digits.slice(2)
   return DIAL_PREFIX + digits
+}
+
+// Só os dígitos de uma string — usado para casar o número que vem no evento do MicroSIP
+// com o número que foi discado (formatos podem diferir em pontuação/prefixo).
+function digitsOf(s) {
+  return String(s || '').replace(/\D/g, '')
+}
+
+// Timestamp curto para os logs do helper.
+function ts() {
+  return new Date().toLocaleTimeString()
 }
 
 app.use(express.json())
@@ -107,6 +118,113 @@ function runMsip(arg) {
     return true
   } catch {
     return false
+  }
+}
+
+// ─── Discagem paralela / preditiva ───────────────────────────────────────────────
+// Disca N números ao mesmo tempo, conecta o 1º que ATENDE e derruba os que ainda tocam
+// (/hangupcalling, que poupa a chamada já CONFIRMED). Enquanto disca, muta o alto-falante
+// (speakmute) para o agente não ouvir os N ringbacks misturados no "Wave mapper"; ao
+// atender, desmuta (speakunmute). A janela do MicroSIP — que em multi-call volta a
+// aparecer ao discar — é escondida à força via ShowWindow(SW_HIDE).
+let parallelSession = null
+
+// Hider PERSISTENTE da janela do MicroSIP. Em multi-call o MicroSIP REEXIBE a janela a cada
+// evento (discar / atender / derrubar) e durante a propria conversa, entao esconder em rajada
+// deixa brechas (foi o que vimos: o handle voltou a !=0 no meio do toque). Em vez disso, um
+// PowerShell OCULTO fica em loop (~250ms) escondendo QUALQUER janela visivel do microsip
+// enquanto o helper estiver vivo. Usa ShowWindow(SW_HIDE) via Win32 — sem dependencia nativa,
+// so o powershell.exe que existe em todo Windows. O loop embute o PID do helper e termina
+// sozinho quando o helper morre (nao deixa processo orfao). HELPER_NO_HIDE=1 desliga (util
+// para depurar vendo o MicroSIP). Comando vai como -EncodedCommand (base64 UTF-16LE).
+let hiderChild = null
+function startMicrosipHider() {
+  if (process.env.HELPER_NO_HIDE || !MICROSIP || hiderChild) return
+  const script = `
+$parentPid = ${process.pid}
+Add-Type @"
+using System;
+using System.Runtime.InteropServices;
+public class MsipHide {
+  [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr h, int n);
+  [DllImport("user32.dll")] public static extern bool EnumWindows(EnumProc cb, IntPtr p);
+  [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);
+  [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr h);
+  public delegate bool EnumProc(IntPtr h, IntPtr p);
+  public static void HidePid(uint pid){
+    EnumWindows((h,p)=>{ uint wp; GetWindowThreadProcessId(h, out wp); if(wp==pid && IsWindowVisible(h)) ShowWindow(h,0); return true; }, IntPtr.Zero);
+  }
+}
+"@
+while($true){
+  if(-not (Get-Process -Id $parentPid -ErrorAction SilentlyContinue)){ break }
+  foreach($pr in Get-Process microsip -ErrorAction SilentlyContinue){ [MsipHide]::HidePid([uint32]$pr.Id) }
+  Start-Sleep -Milliseconds 250
+}`
+  try {
+    const encoded = Buffer.from(script, 'utf16le').toString('base64')
+    // IMPORTANTE: NAO usar detached:true aqui. Detached spawna o powershell SEM console
+    // (DETACHED_PROCESS), e nesse modo o Add-Type (que compila C# via csc.exe) falha em
+    // silencio -> o loop nunca roda e a janela nunca e escondida. windowsHide:true esconde o
+    // console mas o aloca, e ai o Add-Type compila. unref() evita que o filho segure o helper.
+    hiderChild = spawn(
+      'powershell.exe',
+      ['-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden', '-EncodedCommand', encoded],
+      { stdio: 'ignore', windowsHide: true }
+    )
+    hiderChild.on('error', () => {})
+    hiderChild.unref()
+    console.log(`[${ts()}] Hider da janela do MicroSIP iniciado (oculto, ~250ms).`)
+  } catch {
+    // sem PowerShell disponivel — a janela pode aparecer, mas a discagem segue
+  }
+}
+
+// Desmuta o alto-falante UMA vez por sessão (evita speakunmute duplicado).
+function parallelUnmute() {
+  if (parallelSession && parallelSession.muted) {
+    parallelSession.muted = false
+    runMsip('msip:speakunmute')
+  }
+}
+
+// Acha, na sessão atual, o número discado que casa com o número do evento (por dígitos).
+function matchParallelNumber(evNumber) {
+  if (!parallelSession) return null
+  const d = digitsOf(evNumber)
+  return parallelSession.numbers.find((n) => digitsOf(n) === d) || null
+}
+
+// 1º atendimento vence: registra o vencedor, desmuta e derruba as que ainda tocam.
+// Dispara no instante do call-start (sub-100ms) — estreita a janela de abandono.
+function handleParallelAnswer(evNumber) {
+  if (!parallelSession || parallelSession.resolved) return
+  const num = matchParallelNumber(evNumber)
+  if (!num) return
+  parallelSession.resolved = true
+  parallelSession.winner = num
+  parallelSession.answeredAt = new Date().toISOString()
+  parallelSession.calls[num] = 'answered'
+  parallelUnmute()
+  runMsip('/hangupcalling')
+  console.log(`[${ts()}] PARALELO #${parallelSession.id}: ${num} ATENDEU -> speakunmute + /hangupcalling`)
+}
+
+// Marca o término de uma das linhas. Se ninguém atendeu e todas terminaram, desmuta —
+// senão o alto-falante ficaria mudo para o agente após a rajada.
+function handleParallelEnd(evNumber, state) {
+  if (!parallelSession) return
+  const num = matchParallelNumber(evNumber)
+  if (!num) return
+  // Atualiza o estado da linha INCLUSIVE o vencedor: quando o vencedor (que estava 'answered')
+  // recebe seu call-end, vira 'ended' — é assim que a UI sabe que a conversa acabou e mostra a
+  // disposição. O call-end dos derrubados afeta só a entrada deles (match por número).
+  parallelSession.calls[num] = state
+  const aindaTocando = Object.values(parallelSession.calls).some((s) => s === 'calling')
+  if (!parallelSession.resolved && !aindaTocando) {
+    parallelUnmute()
+    parallelSession.endedNoAnswer = true
+    console.log(`[${ts()}] PARALELO #${parallelSession.id}: ninguem atendeu -> speakunmute`)
   }
 }
 
@@ -178,16 +296,19 @@ app.post('/hangup', (req, res) => {
 // São GET porque o curl do MicroSIP usa GET por padrão.
 app.get('/event/call-start', (req, res) => {
   recordEvent('call-start', req.query.number)
+  handleParallelAnswer(req.query.number)
   res.json({ ok: true })
 })
 app.get('/event/call-end', (req, res) => {
   recordEvent('call-end', req.query.number)
+  handleParallelEnd(req.query.number, 'ended')
   res.json({ ok: true })
 })
 // Ligacao deu ocupado (486/600/603). O MicroSIP roteia esses casos para cmdCallBusy,
 // nao para cmdCallEnd — por isso o evento proprio, para o Blue Line tambem tabular.
 app.get('/event/call-busy', (req, res) => {
   recordEvent('call-busy', req.query.number)
+  handleParallelEnd(req.query.number, 'busy')
   res.json({ ok: true })
 })
 
@@ -231,10 +352,84 @@ app.post('/call', (req, res) => {
   })
 })
 
+// Discagem paralela: recebe { numbers: [...] }, muta o alto-falante, dispara as N em
+// rajada, esconde a janela do MicroSIP e arma um timeout de seguranca para desmutar
+// caso ninguem atenda. O 1o call-start (handleParallelAnswer) faz o resto.
+app.post('/dial-parallel', (req, res) => {
+  const { numbers } = req.body || {}
+  if (!Array.isArray(numbers) || numbers.length === 0) {
+    return res.status(400).json({ error: 'numbers (array) obrigatorio' })
+  }
+  const dials = numbers
+    .map((n) => String(n))
+    .filter((n) => digitsOf(n))
+    .map(formatNumber)
+  if (dials.length === 0) return res.status(400).json({ error: 'nenhum numero valido' })
+  if (!MICROSIP) return res.status(500).json({ error: 'MicroSIP nao encontrado' })
+
+  parallelSession = {
+    id: (parallelSession ? parallelSession.id : 0) + 1,
+    startedAt: new Date().toISOString(),
+    numbers: dials,
+    calls: Object.fromEntries(dials.map((d) => [d, 'calling'])),
+    winner: null,
+    answeredAt: null,
+    resolved: false,
+    muted: true,
+  }
+  const sid = parallelSession.id
+
+  // 1) silencio durante o "discando N"
+  runMsip('msip:speakmute')
+  // 2) dispara as N ESCALONADAS (~300ms). Disparar tudo no mesmo instante faz varias
+  // instancias do microsip.exe disputarem a escrita do microsip.ini (historico de
+  // discados) ao mesmo tempo -> uma trava a outra -> modal "Failed to open file for
+  // writing ...ini", que ainda congela a fila de comandos do MicroSIP. O escalonamento
+  // serializa esse toque no .ini. 300ms x N e desprezivel perto dos ~15-30s de toque.
+  const STAGGER_MS = 300
+  dials.forEach((dial, i) => {
+    setTimeout(() => {
+      try {
+        const child = spawn(MICROSIP, [dial], { detached: true, stdio: 'ignore' })
+        child.on('error', () => {})
+        child.unref()
+      } catch {
+        // segue para os demais numeros
+      }
+    }, i * STAGGER_MS)
+  })
+  console.log(`[${ts()}] PARALELO #${sid}: discando ${dials.length} -> ${dials.join(', ')} (speakmute, escalonado)`)
+  // A janela do MicroSIP fica escondida continuamente pelo hider persistente (startMicrosipHider).
+  // 4) seguranca: se ninguem atender, desmuta apos 45s para nao deixar o agente no mudo
+  setTimeout(() => {
+    if (parallelSession && parallelSession.id === sid) parallelUnmute()
+  }, 45000)
+
+  res.json({ ok: true, session: sid, dialed: dials })
+})
+
+// Estado agregado da sessao paralela atual — a UI consome para mostrar "discando N" e,
+// quando alguem atende, "ATENDEU, fale agora" (winner).
+app.get('/parallel-status', (req, res) => {
+  if (!parallelSession) return res.json({ active: false })
+  res.json({
+    active: true,
+    id: parallelSession.id,
+    startedAt: parallelSession.startedAt,
+    calls: parallelSession.calls,
+    winner: parallelSession.winner,
+    answeredAt: parallelSession.answeredAt,
+    muted: parallelSession.muted,
+  })
+})
+
 // No start, antes de subir o servidor, tenta se atualizar sozinho contra o Blue Line.
 // Se houver versão nova, sobrescreve e sai com 42 — o start.bat reabre no código novo.
 // Como após o restart HELPER_VERSION passa a bater com o remoto, não há loop.
 async function maybeAutoUpdate() {
+  // Trava de teste: HELPER_NO_UPDATE=1 impede a auto-atualizacao no start, para rodar um
+  // helper editado localmente sem o Blue Line remoto (versao antiga) sobrescrever o codigo.
+  if (process.env.HELPER_NO_UPDATE) return
   const base = bluelineBaseUrl()
   if (!base) return
   try {
@@ -266,6 +461,7 @@ async function main() {
     if (DIAL_PREFIX) console.log(` Prefixo de discagem (CSP): "${DIAL_PREFIX}" — disca ${DIAL_PREFIX} + DDD + numero`)
     console.log('Aguardando chamadas do Blue Line...')
     console.log('')
+    startMicrosipHider()
   })
 
   // Porta ocupada = quase sempre OUTRA instância do helper já rodando. Em vez do

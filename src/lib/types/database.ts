@@ -12,6 +12,9 @@ export type ContactStatus =
   | 'failed'
   | 'do_not_call'
   | 'exhausted'
+  // Discagem paralela: tocou mas foi derrubado (/hangupcalling) antes de atender.
+  // Reciclável — pode entrar em recycle_statuses da lista.
+  | 'abandoned'
 
 export interface Department {
   id: string
@@ -58,6 +61,9 @@ export interface Campaign {
   visible_fields: string[]
   // Valores de disposição que disparam notificação ao Make (ex: 'interested', 'callback')
   notify_dispositions: string[]
+  // Linhas discadas em paralelo por agente. 1 = power dialer 1-a-1 (padrão); >=2 liga o
+  // modo preditivo (disca N, conecta quem atende primeiro, derruba as outras).
+  parallel_lines: number
   created_at: string
   updated_at: string
 }

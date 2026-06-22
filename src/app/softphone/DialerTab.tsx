@@ -48,11 +48,12 @@ export function DialerTab() {
     dialerStatus,
     pendingDisposition,
     pauseBetweenCalls,
+    parallelBatch,
     setCampaign,
     setPauseBetweenCalls,
   } = useDialerStore()
   const { helperOnline, callStatus, callNumber, agentId, extension } = useSoftphoneStore()
-  const { start, pause, resume, submitDisposition } = usePowerDialer()
+  const { start, pause, resume, submitDisposition, isParallel } = usePowerDialer()
 
   const [view, setView] = useState<View>('list')
   const [campaigns, setCampaigns] = useState<Campaign[]>([])
@@ -214,8 +215,58 @@ export function DialerTab() {
         </div>
       )}
 
-      {/* Contato atual */}
-      {currentContact && dialerStatus === 'running' && !pendingDisposition && (
+      {/* Paralelo: discando N linhas */}
+      {isParallel &&
+        dialerStatus === 'running' &&
+        callStatus === 'calling' &&
+        parallelBatch.length > 0 &&
+        !pendingDisposition && (
+          <div className="overflow-hidden rounded-2xl border border-border bg-gradient-premium p-5 text-white shadow-elevated">
+            <p className="mb-2 text-xs uppercase tracking-wider text-white/70">Discagem paralela</p>
+            <p className="animate-pulse text-lg font-semibold">
+              Discando {parallelBatch.length} {parallelBatch.length === 1 ? 'linha' : 'linhas'}…
+            </p>
+            <div className="mt-2 space-y-0.5">
+              {parallelBatch.map((c) => (
+                <p key={c.id} className="font-mono text-sm text-white/80">
+                  {c.phone_number}
+                  {c.name ? <span className="font-sans text-white/60"> · {c.name}</span> : null}
+                </p>
+              ))}
+            </div>
+            <p className="mt-3 text-xs text-white/60">
+              Pode fazer outra coisa — você é avisado (com som) quando alguém atender.
+            </p>
+          </div>
+        )}
+
+      {/* Paralelo: ATENDEU, fale agora */}
+      {isParallel && callStatus === 'answered' && currentContact && !pendingDisposition && (
+        <div className="overflow-hidden rounded-2xl border-2 border-success bg-success/15 p-5 shadow-elevated">
+          <p className="mb-2 flex items-center gap-2 text-sm font-bold uppercase tracking-wider text-success">
+            <span className="animate-pulse">●</span> Atendeu — fale agora
+          </p>
+          {visibleFields.includes('name') && currentContact.name && (
+            <p className="text-lg font-semibold text-foreground">{currentContact.name}</p>
+          )}
+          {visibleFields.includes('phone_number') && (
+            <p className="font-mono text-xl text-success">{currentContact.phone_number}</p>
+          )}
+          {extraKeys.map((k) => {
+            const val = currentContact.extra_data?.[k]
+            if (!val) return null
+            return (
+              <p key={k} className="mt-1 text-sm">
+                <span className="text-muted-foreground">{fieldLabels[k] ?? k}: </span>
+                <span className="text-foreground">{val}</span>
+              </p>
+            )
+          })}
+        </div>
+      )}
+
+      {/* Contato atual (modo 1-a-1) */}
+      {!isParallel && currentContact && dialerStatus === 'running' && !pendingDisposition && (
         <div
           className={cn(
             'overflow-hidden rounded-2xl border p-5 shadow-elevated',

@@ -35,8 +35,16 @@ Forma de disparar: `microsip.exe "<comando>"`.
 - `microsip.exe <numero>` → **disca** (auto-disca; já em uso pelo helper)
 - `microsip.exe "msip:hangupall"` → **encerra a chamada ativa**, escondido, sem trazer janela à frente ✅ TESTADO
 - Outros: `msip:answer`, `msip:hold`, `msip:micmute`/`micunmute`, `msip:speakmute`/`speakunmute`, `msip:minimize`
-- ⚠️ `/hangup` **NÃO existe** (vira número discado). O certo é `msip:hangupall`.
+- ⚠️ `/hangup` **NÃO existe** (vira número discado — confirmado no histórico `[Dialed]` do ini). O certo é `msip:hangupall`.
 - ❌ Teclas de mídia (WM_APPCOMMAND / "Handle Media Buttons") NÃO encerram — descartado.
+
+> **ATUALIZAÇÃO 2026-06-19 — comandos de hangup (correção):** a doc oficial do MicroSIP
+> lista, além do `/hangupall`, dois comandos de encerramento SELETIVO confirmados em
+> teste: **`microsip.exe /hangupcalling`** (derruba só as chamadas que ainda TOCAM,
+> mantendo a já atendida) e `microsip.exe /hangupincoming` (só as entrantes). O
+> `/hangupcalling` é a peça que viabiliza a **discagem paralela/preditiva** sem
+> recompilar o MicroSIP. Ou seja, NÃO é verdade que "só existe hangupall". Detalhes e
+> resultados dos testes em [`discagem-paralela-preditiva.md`](discagem-paralela-preditiva.md).
 
 ### Eventos de chamada (hooks no `microsip.ini`, seção `[Settings]`)
 Lidos só na inicialização (`settings.cpp:643-649`). Executados por `MSIP::RunCmd` (`lib/MSIP.cpp:498`)

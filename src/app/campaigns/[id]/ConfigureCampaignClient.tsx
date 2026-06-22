@@ -64,6 +64,7 @@ export function ConfigureCampaignClient({
   const [notifyDispositions, setNotifyDispositions] = useState<string[]>(
     campaign.notify_dispositions ?? []
   )
+  const [parallelLines, setParallelLines] = useState<number>(campaign.parallel_lines ?? 1)
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState<{ type: 'ok' | 'error'; text: string } | null>(null)
 
@@ -99,6 +100,7 @@ export function ConfigureCampaignClient({
       schedule_end: end || null,
       visible_fields: visibleFields,
       notify_dispositions: notifyDispositions,
+      parallel_lines: parallelLines,
     })
     const agentsResult = await setCampaignAgents(campaign.id, [...selectedAgents])
 
@@ -165,6 +167,41 @@ export function ConfigureCampaignClient({
               <input type="time" value={end} onChange={(e) => setEnd(e.target.value)} className={fieldClass} />
             </div>
           </div>
+        </section>
+
+        {/* Discagem paralela (preditiva) */}
+        <section className="rounded-2xl border border-border bg-gradient-card p-5 shadow-card">
+          <h2 className="text-sm font-semibold text-foreground">Discagem paralela</h2>
+          <p className="mb-4 mt-1 text-xs text-muted-foreground">
+            Quantas linhas o agente disca ao mesmo tempo. <strong>1</strong> = discagem normal
+            (uma por vez). <strong>2 ou mais</strong> liga o modo preditivo: disca várias, conecta
+            quem atende primeiro e derruba as outras (que ficam como <em>abandonadas</em>, recicláveis).
+          </p>
+          <div className="flex items-center gap-3">
+            {[1, 2, 3, 4, 5].map((n) => (
+              <button
+                key={n}
+                onClick={() => setParallelLines(n)}
+                className={cn(
+                  'h-10 w-10 rounded-lg border text-sm font-semibold tabular-nums transition-colors',
+                  parallelLines === n
+                    ? 'border-primary bg-primary text-primary-foreground'
+                    : 'border-border bg-background/40 text-muted-foreground hover:text-foreground'
+                )}
+              >
+                {n}
+              </button>
+            ))}
+            <span className="ml-1 text-sm text-muted-foreground">
+              {parallelLines === 1 ? 'discagem normal' : `${parallelLines} linhas em paralelo`}
+            </span>
+          </div>
+          {parallelLines >= 2 && (
+            <p className="mt-3 rounded-lg border border-warning/40 bg-warning/10 px-3 py-2 text-xs text-warning">
+              Atenção: discagem preditiva gera chamadas abandonadas (quem não atende a tempo).
+              Confirme os limites de canais do PABX antes de usar com muitos agentes.
+            </p>
+          )}
         </section>
 
         {/* Campos visíveis ao agente */}

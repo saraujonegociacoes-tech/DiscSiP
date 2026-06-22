@@ -3,7 +3,9 @@
 import { create } from 'zustand'
 import type { Profile, Role } from '@/lib/types/database'
 
-export type CallStatus = 'idle' | 'calling' | 'ended'
+// 'answered' é usado no modo paralelo: a chamada foi atendida e o agente deve falar agora
+// (no modo 1-a-1 vai direto de 'calling' para 'ended').
+export type CallStatus = 'idle' | 'calling' | 'answered' | 'ended'
 
 interface AgentState {
   agentId: string | null
@@ -48,11 +50,17 @@ export const useSoftphoneStore = create<AgentState>((set) => ({
   setCallStatus: (status, number) =>
     set((state) => ({
       callStatus: status,
-      callNumber: status === 'calling' ? (number ?? null) : state.callNumber,
-      // Preserva o início da chamada em 'ended' para a duração ser calculada na disposição;
-      // só zera ao voltar para 'idle'
+      callNumber:
+        status === 'calling' || status === 'answered' ? (number ?? state.callNumber) : state.callNumber,
+      // No 1-a-1 o cronômetro começa em 'calling'. No paralelo a conversa só começa quando
+      // alguém atende, então 'answered' (re)inicia o cronômetro. Preserva em 'ended' para a
+      // duração ser calculada na disposição; só zera ao voltar para 'idle'.
       callStartedAt:
-        status === 'calling' ? new Date() : status === 'idle' ? null : state.callStartedAt,
+        status === 'calling' || status === 'answered'
+          ? new Date()
+          : status === 'idle'
+            ? null
+            : state.callStartedAt,
     })),
 
   setHelperOnline: (online, version) =>
