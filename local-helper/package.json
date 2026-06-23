@@ -1,7 +1,7 @@
 {
   "name": "blueline-helper",
-  "version": "1.0.0",
-  "description": "Helper local do Blue Line — aciona MicroSIP via protocolo tel:",
+  "version": "1.6",
+  "description": "Helper local do Blue Line — controla o MicroSIP (discagem simples e paralela) via microsip.exe e expõe eventos/auto-update ao app",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"

@@ -58,6 +58,10 @@ local-helper/index.bak
 local-helper/helper-config.json
 local-helper/node_modules/
 
+# helper publicado — gerado por scripts/sync-helper.mjs no (pre)build a partir de
+# local-helper/index.js; não versionar (senão fica defasado e engana o diagnóstico)
+/public/helper/
+
 # arquivos locais de projeto (não sobem para o repo público)
 .agents/
 .claude/
