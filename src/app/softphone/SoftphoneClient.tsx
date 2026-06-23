@@ -15,6 +15,20 @@ import { helperFetch } from '@/lib/constants'
 
 type Tab = 'dialer' | 'history'
 
+// Compara versões "X.Y.Z" numericamente: true só se `latest` for ESTRITAMENTE maior que
+// `current`. Evita oferecer "atualização" para versão igual ou menor — antes, com `!==`, um
+// version.json de deploy antigo/cacheado chegava a pedir downgrade (ex.: helper 1.6 vs site 1.5).
+function isVersionNewer(latest: string, current: string): boolean {
+  const a = latest.split('.').map((n) => parseInt(n, 10) || 0)
+  const b = current.split('.').map((n) => parseInt(n, 10) || 0)
+  for (let i = 0; i < Math.max(a.length, b.length); i++) {
+    const x = a[i] ?? 0
+    const y = b[i] ?? 0
+    if (x !== y) return x > y
+  }
+  return false
+}
+
 export default function SoftphoneClient() {
   const router = useRouter()
   const {
@@ -31,8 +45,10 @@ export default function SoftphoneClient() {
   // Versão mais nova do helper publicada pelo Blue Line (public/helper/version.json)
   const [latestVersion, setLatestVersion] = useState<string | null>(null)
   const [updating, setUpdating] = useState(false)
+  // Falha na atualização do helper (some sozinha em alguns segundos — ver efeito abaixo)
+  const [updateError, setUpdateError] = useState(false)
   const helperOutdated =
-    helperOnline && !!helperVersion && !!latestVersion && helperVersion !== latestVersion
+    helperOnline && !!helperVersion && !!latestVersion && isVersionNewer(latestVersion, helperVersion)
 
   // Carrega o perfil da sessão (o middleware já garante sessão + aprovação aqui)
   useEffect(() => {
@@ -77,10 +93,18 @@ export default function SoftphoneClient() {
     return () => clearInterval(interval)
   }, [setHelperOnline])
 
+  // O aviso de falha na atualização some sozinho após alguns segundos (não fica preso)
+  useEffect(() => {
+    if (!updateError) return
+    const t = setTimeout(() => setUpdateError(false), 6000)
+    return () => clearTimeout(t)
+  }, [updateError])
+
   // Dispara a auto-atualização do helper: ele baixa o código novo de /helper/index.js
   // (passamos nossa origem), sobrescreve a si mesmo e reinicia. Ficamos esperando voltar.
   const handleUpdateHelper = async () => {
     setUpdating(true)
+    setUpdateError(false)
     try {
       const res = await helperFetch('/update', {
         method: 'POST',
@@ -89,6 +113,7 @@ export default function SoftphoneClient() {
       })
       if (!res.ok) throw new Error('update falhou')
       // O helper reinicia (cai por alguns segundos). Espera ele voltar já na versão nova.
+      let updated = false
       const deadline = Date.now() + 20000
       while (Date.now() < deadline) {
         await new Promise((r) => setTimeout(r, 1500))
@@ -97,14 +122,20 @@ export default function SoftphoneClient() {
           const data = ping.ok ? await ping.json() : null
           if (data?.version) {
             setHelperOnline(true, data.version)
-            if (data.version === latestVersion) break
+            if (data.version === latestVersion) {
+              updated = true
+              break
+            }
           }
         } catch {
           // ainda reiniciando
         }
       }
+      // Não voltou na versão nova dentro do tempo — provável que tenha caído ao reiniciar
+      if (!updated) setUpdateError(true)
     } catch {
-      // helper offline ou versão antiga (sem /update) — nada a fazer pela UI
+      // helper offline, sem /update (versão antiga) ou erro de rede
+      setUpdateError(true)
     } finally {
       setUpdating(false)
     }
@@ -188,17 +219,22 @@ export default function SoftphoneClient() {
         </span>
 
         {helperOutdated && (
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={handleUpdateHelper}
-            disabled={updating}
-            title={`Atualizar helper para v${latestVersion}`}
-            className="border-warning/40 bg-warning/10 text-warning hover:bg-warning/20"
-          >
-            <RefreshCw className={cn('mr-1.5 h-3.5 w-3.5', updating && 'animate-spin')} />
-            {updating ? 'Atualizando…' : `v${latestVersion}`}
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={handleUpdateHelper}
+              disabled={updating}
+              title={`Atualizar helper para v${latestVersion}`}
+              className="border-warning/40 bg-warning/10 text-warning hover:bg-warning/20"
+            >
+              <RefreshCw className={cn('mr-1.5 h-3.5 w-3.5', updating && 'animate-spin')} />
+              {updating ? 'Atualizando…' : `v${latestVersion}`}
+            </Button>
+            {updateError && !updating && (
+              <span className="text-xs text-destructive">Falhou — tente de novo</span>
+            )}
+          </div>
         )}
 
         <button
