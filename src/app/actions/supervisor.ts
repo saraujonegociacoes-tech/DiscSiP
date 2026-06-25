@@ -1,6 +1,7 @@
 'use server'
 
 import { createServerClient } from '@/lib/supabase/server'
+import { hourInBRT, brtTodayStartUtcISO } from '@/lib/timezone'
 import type { CallLog, Campaign } from '@/lib/types/database'
 
 export interface DashboardStats {
@@ -37,19 +38,18 @@ export interface AgentActivity {
 export async function getDashboardStats(): Promise<DashboardStats> {
   const supabase = await createServerClient()
 
-  const todayStart = new Date()
-  todayStart.setHours(0, 0, 0, 0)
+  const todayStartISO = brtTodayStartUtcISO()
 
   const [contactsRes, callsTodayRes, agentsRes] = await Promise.all([
     supabase.from('campaign_contacts').select('status'),
     supabase
       .from('call_logs')
       .select('agent_id')
-      .gte('created_at', todayStart.toISOString()),
+      .gte('created_at', todayStartISO),
     supabase
       .from('call_logs')
       .select('agent_id')
-      .gte('created_at', todayStart.toISOString()),
+      .gte('created_at', todayStartISO),
   ])
 
   const contacts = contactsRes.data ?? []
@@ -103,23 +103,20 @@ export async function getCampaignsSummary(): Promise<CampaignSummary[]> {
 export async function getCallsByHour(): Promise<CallsByHour[]> {
   const supabase = await createServerClient()
 
-  const todayStart = new Date()
-  todayStart.setHours(0, 0, 0, 0)
-
   const { data } = await supabase
     .from('call_logs')
     .select('created_at')
-    .gte('created_at', todayStart.toISOString())
+    .gte('created_at', brtTodayStartUtcISO())
 
   const buckets: Record<number, number> = {}
   for (let h = 0; h < 24; h++) buckets[h] = 0
 
   for (const row of data ?? []) {
-    const h = new Date(row.created_at).getHours()
+    const h = hourInBRT(new Date(row.created_at))
     buckets[h] = (buckets[h] ?? 0) + 1
   }
 
-  const now = new Date().getHours()
+  const now = hourInBRT(new Date())
   return Array.from({ length: now + 1 }, (_, h) => ({
     hour: `${String(h).padStart(2, '0')}h`,
     calls: buckets[h] ?? 0,
@@ -129,8 +126,7 @@ export async function getCallsByHour(): Promise<CallsByHour[]> {
 export async function getAgentActivity(): Promise<AgentActivity[]> {
   const supabase = await createServerClient()
 
-  const todayStart = new Date()
-  todayStart.setHours(0, 0, 0, 0)
+  const todayStartISO = brtTodayStartUtcISO()
 
   const [agentsRes, logsRes] = await Promise.all([
     // Quem tem ramal atribuído aparece como agente na atividade do dashboard
@@ -142,7 +138,7 @@ export async function getAgentActivity(): Promise<AgentActivity[]> {
     supabase
       .from('call_logs')
       .select('agent_id, created_at, status')
-      .gte('created_at', todayStart.toISOString())
+      .gte('created_at', todayStartISO)
       .order('created_at', { ascending: false }),
   ])
 

@@ -2,18 +2,26 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { PhoneOff, RefreshCw, LogOut, Wifi, WifiOff } from 'lucide-react'
+import { RefreshCw, LogOut, Wifi, WifiOff } from 'lucide-react'
 import { useSoftphoneStore } from '@/store/softphoneStore'
 import { useDialerStore } from '@/store/dialerStore'
 import { getCurrentProfile, signOut } from '@/app/actions/auth'
 import { CallHistory } from './CallHistory'
 import { DialerTab } from './DialerTab'
+import { AgentPerformance } from './AgentPerformance'
+import { CallControls } from './CallControls'
 import { AppShell } from '@/components/blueline/AppShell'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { helperFetch } from '@/lib/constants'
 
-type Tab = 'dialer' | 'history'
+type Tab = 'dialer' | 'history' | 'performance'
+
+const TAB_LABEL: Record<Tab, string> = {
+  dialer: 'Discador',
+  history: 'Histórico',
+  performance: 'Meu desempenho',
+}
 
 // Compara versões "X.Y.Z" numericamente: true só se `latest` for ESTRITAMENTE maior que
 // `current`. Evita oferecer "atualização" para versão igual ou menor — antes, com `!==`, um
@@ -35,7 +43,7 @@ export default function SoftphoneClient() {
     agentId, extension,
     callStatus, callNumber,
     helperOnline, helperVersion,
-    setProfile, setCallStatus, setHelperOnline, logout, resetCall,
+    setProfile, setHelperOnline, logout, resetCall,
   } = useSoftphoneStore()
   const { reset: resetDialer } = useDialerStore()
 
@@ -154,17 +162,6 @@ export default function SoftphoneClient() {
   const formatDuration = (s: number) =>
     `${Math.floor(s / 60).toString().padStart(2, '0')}:${(s % 60).toString().padStart(2, '0')}`
 
-  // Encerrar pelo Blue Line: desliga a chamada no MicroSIP (msip:hangupall, escondido) e marca 'ended'.
-  // O fim também chega via evento do MicroSIP, então setamos otimista para resposta imediata.
-  const handleHangup = async () => {
-    try {
-      await helperFetch('/hangup', { method: 'POST' })
-    } catch {
-      // Helper offline — não dá para encerrar no MicroSIP; ainda assim avança a UI
-    }
-    setCallStatus('ended')
-  }
-
   const handleLogout = async () => {
     logout()
     resetCall()
@@ -185,7 +182,7 @@ export default function SoftphoneClient() {
     <>
       {/* Abas */}
       <div className="flex items-center gap-1 rounded-lg border border-border bg-card/60 p-0.5 shadow-card">
-        {(['dialer', 'history'] as Tab[]).map((tab) => (
+        {(['dialer', 'history', 'performance'] as Tab[]).map((tab) => (
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
@@ -196,7 +193,7 @@ export default function SoftphoneClient() {
                 : 'text-muted-foreground hover:text-foreground'
             )}
           >
-            {tab === 'dialer' ? 'Discador' : 'Histórico'}
+            {TAB_LABEL[tab]}
           </button>
         ))}
       </div>
@@ -250,23 +247,17 @@ export default function SoftphoneClient() {
 
   return (
     <AppShell header={header}>
-      {/* Banner de chamada ativa */}
+      {/* Painel de controle de áudio + desligar (sempre visível) */}
+      <CallControls />
+
+      {/* Banner de chamada ativa (informativo; o Desligar vive no painel acima) */}
       {callStatus === 'calling' && (
-        <div className="mb-6 flex items-center justify-between overflow-hidden rounded-2xl border border-success/30 bg-success/10 px-5 py-3 shadow-card">
-          <div className="flex items-center gap-3">
-            <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-success shadow-glow" />
-            <span className="text-sm font-medium text-success">Em chamada — {callNumber}</span>
-            <span className="font-mono text-sm tabular-nums text-muted-foreground">
-              {formatDuration(callDuration)}
-            </span>
-          </div>
-          <Button
-            size="sm"
-            onClick={handleHangup}
-            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-          >
-            <PhoneOff className="mr-1.5 h-4 w-4" /> Encerrar
-          </Button>
+        <div className="mb-6 flex items-center gap-3 overflow-hidden rounded-2xl border border-success/30 bg-success/10 px-5 py-3 shadow-card">
+          <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-success shadow-glow" />
+          <span className="text-sm font-medium text-success">Em chamada — {callNumber}</span>
+          <span className="font-mono text-sm tabular-nums text-muted-foreground">
+            {formatDuration(callDuration)}
+          </span>
         </div>
       )}
 
@@ -283,6 +274,17 @@ export default function SoftphoneClient() {
             <span className="text-xs text-muted-foreground">Ramal {extension} · últimas 20</span>
           </div>
           <CallHistory agentId={agentId} key={agentId} />
+        </div>
+      )}
+
+      {/* Aba Meu desempenho */}
+      {activeTab === 'performance' && (
+        <div className="mx-auto max-w-4xl">
+          <div className="mb-4 flex items-center justify-between">
+            <h2 className="text-lg font-semibold text-foreground">Meu desempenho — hoje</h2>
+            <span className="text-xs text-muted-foreground">Ramal {extension}</span>
+          </div>
+          <AgentPerformance />
         </div>
       )}
     </AppShell>

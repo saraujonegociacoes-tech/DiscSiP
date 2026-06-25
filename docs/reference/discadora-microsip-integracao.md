@@ -1,7 +1,7 @@
 # DiscSiP — Integração com MicroSIP (discagem, encerramento, eventos)
 
 > Estado consolidado da sessão. Fonte de verdade da integração discador ↔ MicroSIP.
-> Complementa `docs/arquitetura-e-proximos-passos.md`.
+> Complementa `arquitetura-e-proximos-passos.md` (mesma pasta `docs/reference/`).
 
 ---
 
@@ -44,7 +44,7 @@ Forma de disparar: `microsip.exe "<comando>"`.
 > mantendo a já atendida) e `microsip.exe /hangupincoming` (só as entrantes). O
 > `/hangupcalling` é a peça que viabiliza a **discagem paralela/preditiva** sem
 > recompilar o MicroSIP. Ou seja, NÃO é verdade que "só existe hangupall". Detalhes e
-> resultados dos testes em [`discagem-paralela-preditiva.md`](discagem-paralela-preditiva.md).
+> resultados dos testes em [`discagem-paralela-preditiva.md`](../updates/discagem-paralela-preditiva.md).
 
 ### Eventos de chamada (hooks no `microsip.ini`, seção `[Settings]`)
 Lidos só na inicialização (`settings.cpp:643-649`). Executados por `MSIP::RunCmd` (`lib/MSIP.cpp:498`)
@@ -169,4 +169,4 @@ integração via MicroSIP falhasse. Como `msip:hangupall` + hooks funcionam, **f
   `f.filipecrepaldii@gmail.com` (o `...santos3454` era override local errado; já corrigido).
 - Mostrar conceito antes de editar; validar sub-sprint a sub-sprint; iterar via logs.
 - Migrações SQL: idempotentes, em `supabase/migrations/`, rodadas manualmente pelo usuário no Supabase.
-- `docs/arquitetura-e-proximos-passos.md` é a fonte de verdade — manter atualizado.
+- `docs/reference/arquitetura-e-proximos-passos.md` é a fonte de verdade — manter atualizado.

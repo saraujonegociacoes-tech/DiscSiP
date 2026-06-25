@@ -8,7 +8,7 @@ const PORT = 3001
 
 // Versão do helper. É o que o Blue Line compara para saber se está desatualizado e
 // oferecer o botão "Atualizar". Suba este número a cada correção no helper.
-const HELPER_VERSION = '1.6'
+const HELPER_VERSION = '1.7'
 
 // Código de seleção de operadora (CSP) para discagem interurbana. Sem ele o MicroSIP
 // não completa chamadas para outros estados. Resultado: DIAL_PREFIX + DDD + número.
@@ -119,6 +119,106 @@ function runMsip(arg) {
   } catch {
     return false
   }
+}
+
+// ─── Mute do ALTO-FALANTE no nível do Windows ────────────────────────────────────
+// Por que não usamos msip:speakmute: no fonte do MicroSIP ele só zera o RX dos conf ports
+// das CHAMADAS já conectadas (lib/MSIP.cpp msip_audio_conf_set_volume) — NÃO cala o ringback
+// do "discando N" (toca num tom separado) nem chamadas que conectam depois. Mutar a SESSÃO de
+// áudio do microsip.exe no mixer do Windows silencia TUDO que ele emite, em qualquer estado e
+// sem mostrar janela. Usa Core Audio (ISimpleAudioVolume) via PowerShell + Add-Type — mesmo
+// padrão do hider, zero dependência. Estado desejado fica em speakerMuted e é reaplicado a cada
+// discagem (uma sessão nova pode nascer com a chamada). Awaitado: a UI só vira o botão se aplicou.
+let speakerMuted = false
+function setMicrosipSpeakerMuted(muted) {
+  return new Promise((resolve) => {
+    const script = `
+$ErrorActionPreference = 'Stop'
+Add-Type @"
+using System;
+using System.Runtime.InteropServices;
+[ComImport, Guid("BCDE0395-E52F-467C-8E3D-C4579291692E")] public class MMDevEnum { }
+[ComImport, Guid("A95664D2-9614-4F35-A746-DE8DB63617E6"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)] public interface IMMDeviceEnumerator { int EnumAudioEndpoints(int dataFlow,int stateMask,out IMMDeviceCollection col); int GetDefaultAudioEndpoint(int dataFlow,int role,out IMMDevice dev); }
+[ComImport, Guid("0BD7A1BE-7A1A-44DB-8397-CC5392387B5E"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)] public interface IMMDeviceCollection { int GetCount(out int c); int Item(int i,out IMMDevice dev); }
+[ComImport, Guid("D666063F-1587-4E43-81F1-B948E807363F"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)] public interface IMMDevice { int Activate(ref Guid iid,int ctx,IntPtr p,[MarshalAs(UnmanagedType.IUnknown)] out object o); }
+[ComImport, Guid("77AA99A0-1BD6-484F-8BC7-2C654C9A9B6F"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)] public interface IAudioSessionManager2 { int f0(IntPtr a,int b,out IntPtr c); int f1(IntPtr a,int b,out IntPtr c); int GetSessionEnumerator(out IAudioSessionEnumerator e); }
+[ComImport, Guid("E2F5BB11-0570-40CA-ACDD-3AA01277DEE8"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)] public interface IAudioSessionEnumerator { int GetCount(out int c); int GetSession(int i,out IAudioSessionControl2 s); }
+[ComImport, Guid("bfb7ff88-7239-4fc9-8fa2-07c950be9c6d"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)] public interface IAudioSessionControl2 {
+  int GetState(out int s);
+  int GetDisplayName([MarshalAs(UnmanagedType.LPWStr)] out string s);
+  int SetDisplayName([MarshalAs(UnmanagedType.LPWStr)] string s, ref Guid c);
+  int GetIconPath([MarshalAs(UnmanagedType.LPWStr)] out string s);
+  int SetIconPath([MarshalAs(UnmanagedType.LPWStr)] string s, ref Guid c);
+  int GetGroupingParam(out Guid g);
+  int SetGroupingParam(ref Guid g, ref Guid c);
+  int RegisterAudioSessionNotification(IntPtr n);
+  int UnregisterAudioSessionNotification(IntPtr n);
+  int GetSessionIdentifier([MarshalAs(UnmanagedType.LPWStr)] out string s);
+  int GetSessionInstanceIdentifier([MarshalAs(UnmanagedType.LPWStr)] out string s);
+  int GetProcessId(out uint pid);
+  int IsSystemSoundsSession();
+  int SetDuckingPreference(bool b);
+}
+[ComImport, Guid("87CE5498-68D6-44E5-9215-6DA47EF883D8"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)] public interface ISimpleAudioVolume {
+  int SetMasterVolume(float l, ref Guid c);
+  int GetMasterVolume(out float l);
+  int SetMute(bool m, ref Guid c);
+  int GetMute(out bool m);
+}
+public static class AppMute {
+  public static int Set(bool mute) {
+    int hit = 0;
+    var ids = new System.Collections.Generic.HashSet<uint>();
+    foreach (var p in System.Diagnostics.Process.GetProcessesByName("microsip")) ids.Add((uint)p.Id);
+    if (ids.Count == 0) return 0;
+    var en = (IMMDeviceEnumerator)(new MMDevEnum());
+    IMMDeviceCollection col;
+    if (en.EnumAudioEndpoints(0,1,out col) != 0) return 0;
+    int dcount; col.GetCount(out dcount);
+    Guid iid = typeof(IAudioSessionManager2).GUID;
+    Guid ev = Guid.Empty;
+    for (int d=0; d<dcount; d++){
+      IMMDevice dev;
+      if (col.Item(d,out dev)!=0) continue;
+      object o;
+      if (dev.Activate(ref iid,1,IntPtr.Zero,out o)!=0) continue;
+      var mgr = (IAudioSessionManager2)o;
+      IAudioSessionEnumerator se;
+      if (mgr.GetSessionEnumerator(out se)!=0) continue;
+      int count; se.GetCount(out count);
+      for (int i=0;i<count;i++){
+        IAudioSessionControl2 ctl;
+        if (se.GetSession(i,out ctl)!=0) continue;
+        uint pid;
+        if (ctl.GetProcessId(out pid)!=0) continue;
+        if (ids.Contains(pid)) { ((ISimpleAudioVolume)ctl).SetMute(mute, ref ev); hit++; }
+      }
+    }
+    return hit;
+  }
+}
+"@
+$n = [AppMute]::Set(${muted ? '$true' : '$false'})
+Write-Output ("HIT:" + $n)
+`
+    try {
+      const encoded = Buffer.from(script, 'utf16le').toString('base64')
+      const child = spawn(
+        'powershell.exe',
+        ['-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden', '-EncodedCommand', encoded],
+        { windowsHide: true }
+      )
+      let out = ''
+      child.stdout.on('data', (d) => (out += d.toString()))
+      child.on('error', () => resolve({ ok: false, applied: 0 }))
+      child.on('close', () => {
+        const m = out.match(/HIT:(\d+)/)
+        resolve({ ok: !!m, applied: m ? Number(m[1]) : 0 })
+      })
+    } catch {
+      resolve({ ok: false, applied: 0 })
+    }
+  })
 }
 
 // ─── Discagem paralela / preditiva ───────────────────────────────────────────────
@@ -292,6 +392,31 @@ app.post('/hangup', (req, res) => {
   res.status(500).json({ error: 'MicroSIP nao encontrado' })
 })
 
+// Mute/desmute do agente (painel de áudio do Blue Line). device: 'mic' (o cliente nao ouve o
+// agente — msip:micmute, que zera a porta de entrada global) ou 'speaker' (o agente nao ouve —
+// mute da sessao do microsip.exe no Windows; ver setMicrosipSpeakerMuted). Sao operacoes sem
+// confirmacao de estado do MicroSIP, entao a UI so vira o botao apos o ok daqui.
+app.post('/mute', async (req, res) => {
+  const ts = new Date().toLocaleTimeString()
+  const { device, muted } = req.body || {}
+  if (device === 'mic') {
+    const cmd = muted ? 'msip:micmute' : 'msip:micunmute'
+    if (runMsip(cmd)) {
+      console.log(`[${ts}] Microfone ${muted ? 'MUDO' : 'aberto'} (${cmd})`)
+      return res.json({ ok: true, device, muted: !!muted })
+    }
+    return res.status(500).json({ error: 'MicroSIP nao encontrado' })
+  }
+  if (device === 'speaker') {
+    speakerMuted = !!muted
+    const r = await setMicrosipSpeakerMuted(speakerMuted)
+    console.log(`[${ts}] Alto-falante ${speakerMuted ? 'MUDO' : 'aberto'} (Windows, ${r.applied} sessao/oes)`)
+    // ok=false significa que o PowerShell nao rodou (Core Audio falhou) — a UI nao deve mentir
+    return res.status(r.ok ? 200 : 500).json({ ok: r.ok, device, muted: speakerMuted, applied: r.applied })
+  }
+  res.status(400).json({ error: "device invalido (use 'mic' ou 'speaker')" })
+})
+
 // Eventos vindos do MicroSIP (configurados no microsip.ini: cmdCallStart / cmdCallEnd).
 // São GET porque o curl do MicroSIP usa GET por padrão.
 app.get('/event/call-start', (req, res) => {
@@ -333,6 +458,8 @@ app.post('/call', (req, res) => {
         console.error(`[${ts}] ERRO ao abrir MicroSIP: ${err.message}`)
       })
       child.unref()
+      // Se o agente deixou o alto-falante mudo, reaplica na sessao de audio desta chamada nova.
+      if (speakerMuted) setTimeout(() => setMicrosipSpeakerMuted(true), 800)
       console.log(`[${ts}] Discando ${dial} via ${MICROSIP}`)
       return res.json({ ok: true, number: dial, method: 'microsip-exe' })
     } catch (err) {
@@ -398,6 +525,8 @@ app.post('/dial-parallel', (req, res) => {
       }
     }, i * STAGGER_MS)
   })
+  // Reaplica o mute manual do alto-falante (Windows) apos as N sessoes nascerem.
+  if (speakerMuted) setTimeout(() => setMicrosipSpeakerMuted(true), 800 + dials.length * STAGGER_MS)
   console.log(`[${ts()}] PARALELO #${sid}: discando ${dials.length} -> ${dials.join(', ')} (speakmute, escalonado)`)
   // A janela do MicroSIP fica escondida continuamente pelo hider persistente (startMicrosipHider).
   // 4) seguranca: se ninguem atender, desmuta apos 45s para nao deixar o agente no mudo

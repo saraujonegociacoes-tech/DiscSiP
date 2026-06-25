@@ -7,7 +7,9 @@ Sistema web de discagem semi-automática para a equipe de vendas da **Araujo Neg
 - **Repositório:** https://github.com/saraujonegociacoes-tech/DiscSiP
 - **PABX:** Intelbras WidevoiceX (`widevoice8.intelbras.com.br`) — ramais 5125–5150
 
-> Documentação técnica aprofundada (decisões, sprints, histórico): [`docs/arquitetura-e-proximos-passos.md`](docs/arquitetura-e-proximos-passos.md) e [`docs/discadora-microsip-integracao.md`](docs/discadora-microsip-integracao.md).
+> Documentação técnica aprofundada em [`docs/`](docs/README.md), organizada em `reference/`
+> (arquitetura, integração MicroSIP, perguntas Intelbras), `updates/` (discagem paralela,
+> discagem em background) e `fixes/` (correções por lote).
 
 ---
 
@@ -62,6 +64,27 @@ O acesso é por **Supabase Auth (email/senha)**. O cadastro é autosserviço: no
 
 Contatos sem sucesso voltam à fila automaticamente (**reciclagem**) após um intervalo, até um limite de tentativas — depois são marcados como `exhausted` e saem da fila.
 
+### Discagem paralela / preditiva
+
+Cada campanha tem `parallel_lines`: **1 = power dialer 1-a-1** (padrão); **≥2 = modo
+preditivo** — o helper disca N números ao mesmo tempo, conecta o **primeiro que atende** e
+derruba os demais (`microsip.exe /hangupcalling`, que poupa a chamada já atendida). Durante o
+"discando N" o agente pode fazer outra coisa; é avisado (visual + som) quando alguém atende.
+Os contatos discados-mas-derrubados viram `abandoned` (recicláveis). Detalhes e testes em
+[`docs/updates/discagem-paralela-preditiva.md`](docs/updates/discagem-paralela-preditiva.md).
+
+### Painel de áudio do agente
+
+Ao entrar numa campanha, o agente vê um painel sempre visível com **Desligar**, **Microfone**
+(mudo/aberto) e **Som** (mudo/aberto). O microfone usa `msip:micmute`; o alto-falante é mutado
+no nível do Windows (sessão de áudio do `microsip.exe`), porque o mute interno do MicroSIP não
+silencia o ringback. Requer **helper ≥ 1.7** (os botões ficam desabilitados em versões antigas).
+
+### Métricas do agente
+
+A aba **Meu desempenho** (em `/softphone`) mostra os números do próprio agente no dia
+(chamadas, atendidas, tempo em chamada, por hora e quebra de tabulações), escopados pela sessão.
+
 ---
 
 ## Papéis e permissões (RBAC)
@@ -111,27 +134,41 @@ PABX Intelbras WidevoiceX
 
 ## Helper local (máquinas dos agentes)
 
-App Express (`local-helper/index.js`, **v1.3**) em `http://localhost:3001`. Endpoints:
+App Express (`local-helper/index.js`, **v1.7**) em `http://localhost:3001`. Endpoints:
 
 | Método | Rota | Função |
 |--------|------|--------|
-| `GET` | `/ping` | Health check (status "Helper online/offline" no app) |
+| `GET` | `/ping` | Health check + versão do helper (status "Helper online/offline" no app) |
 | `POST` | `/call` | Recebe `{ number }`, normaliza e disca via `microsip.exe` (ou fallback `tel:`) |
-| `POST` | `/hangup` | Encerra a chamada ativa (`msip:hangupall`) — botão "Encerrar" |
+| `POST` | `/dial-parallel` | Recebe `{ numbers: [...] }`, disca N em paralelo (modo preditivo) |
+| `GET` | `/parallel-status` | Estado agregado do lote paralelo (quem atendeu, derrubados) |
+| `POST` | `/hangup` | Encerra a chamada ativa (`msip:hangupall`) — botão "Desligar" |
+| `POST` | `/mute` | `{ device:'mic'\|'speaker', muted }` — mic via `msip:micmute`; alto-falante via mute da sessão de áudio do `microsip.exe` no Windows (**v1.7+**) |
 | `GET` | `/events` | Último evento de chamada (o app faz polling aqui) |
 | `GET` | `/event/call-start` · `/event/call-end` · `/event/call-busy` | Recebem os eventos do MicroSIP |
+| `POST` | `/update` | Auto-atualização sob demanda (botão "Atualizar helper" no app) |
 
 **Discagem:** prefixa o CSP `021` (configurável via `DIAL_PREFIX`), removendo `+55`/`55` e formatação. Sempre disca `021 + DDD + número` (ex.: `11952085529` → `02111952085529`). O `microsip.exe` é localizado automaticamente nos caminhos padrão (override via `MICROSIP_PATH`).
+
+### Auto-atualização do helper
+
+A versão publicada do helper vai junto do site em `public/helper/` (`scripts/sync-helper.mjs`
+roda no `prebuild`, copiando `local-helper/index.js` e gravando `version.json`). O app compara a
+versão publicada com a do helper (`/ping`) e, se houver nova, mostra **"Atualizar helper"**. Cada
+helper vira a versão nova **só quando o agente clica nesse botão** (`POST /update`) **ou quando a
+máquina/helper reinicia** (`maybeAutoUpdate` no start) — não há push. Logo, durante um rollout há
+versões convivendo; o app trata isso (ex.: o painel de mute exige helper ≥ 1.7). O `start.bat`
+reabre o `node` quando o helper sai com código 42 (após se atualizar).
 
 ### Arquivos do helper
 
 | Arquivo | Função |
 |---------|--------|
 | `instalar.bat` | Instalação completa (1× por máquina): `npm install` → configura hooks do MicroSIP → cria atalho de startup oculto |
-| `atualizar.bat` | Atualizador 1-clique: `git pull` (se for repo) → mata só o node do helper → `npm install` → sobe oculto |
-| `start.bat` | Inicia o helper manualmente com console (debug) |
+| `atualizar.bat` | Atualizador manual: mata só o node do helper → `npm install` → sobe oculto (a atualização do código em si é via app, `/update`) |
+| `start.bat` | Inicia o helper manualmente com console (debug); reabre o node ao sair com código 42 (auto-update) |
 | `start-hidden.vbs` | Inicia o helper sem janela (usado no startup) |
-| `setup-hooks.ps1` | Copia os `on-call-*.bat` para `C:\Users\Public\discsip-helper` (caminho sem espaços) e grava os hooks `cmdCallStart/End/Busy` + `minimized=1` no `microsip.ini` |
+| `setup-hooks.ps1` | Copia os `on-call-*.bat` para `C:\Users\Public\blueline-helper` (caminho sem espaços) e grava os hooks `cmdCallStart/End/Busy` + `minimized=1` no `microsip.ini` |
 | `on-call-start/end/busy.bat` | Disparados pelo MicroSIP; fazem `curl` para os endpoints `/event/*` do helper |
 
 **Instalação (uma vez por máquina, com o MicroSIP fechado):**
@@ -170,26 +207,30 @@ src/
 │   │   ├── admin.ts           getProfiles, updateProfile, CRUD de departamentos
 │   │   ├── campaigns.ts       campanhas, config, fila + reciclagem, stats
 │   │   ├── lists.ts           listas/mailing (criar, importar, rótulos, excluir)
-│   │   ├── dialer.ts          saveCallLog, getCallHistory
-│   │   ├── supervisor.ts      métricas do dashboard
+│   │   ├── dialer.ts          saveCallLog (grava disposition), getCallHistory
+│   │   ├── supervisor.ts      métricas do dashboard (fuso de Brasília via lib/timezone)
+│   │   ├── performance.ts     getMyPerformance — desempenho do próprio agente (escopo da sessão)
 │   │   └── notifications.ts   sendDispositionNotification (webhook Make)
 │   ├── softphone/             (agente) discador
-│   │   ├── SoftphoneClient.tsx   Layout, banner de chamada, tabs
+│   │   ├── SoftphoneClient.tsx   Layout, painel de áudio, abas (Discador / Histórico / Meu desempenho)
 │   │   ├── DialerTab.tsx         Campanhas do agente, horário, extra_data, controles, disposição
-│   │   └── CallHistory.tsx       Histórico de chamadas
+│   │   ├── CallControls.tsx      Painel: Desligar + mute Microfone/Som (só dentro de campanha, helper ≥ 1.7)
+│   │   ├── AgentPerformance.tsx  Aba "Meu desempenho" (métricas do próprio agente, hoje)
+│   │   └── CallHistory.tsx       Histórico de chamadas (mostra a disposição tabulada)
 │   ├── campaigns/             (supervisor) gestão e configuração
 │   │   ├── CampaignsListClient.tsx   Lista + criar campanha
 │   │   └── [id]/                     Config: horário, agentes, campos visíveis, listas
 │   ├── dashboard/             (supervisor+) métricas, gráfico, atividade dos agentes
 │   └── admin/                 (admin) usuários + departamentos
 ├── components/Sidebar.tsx     Nav condicional por papel
-├── hooks/usePowerDialer.ts    Lógica da fila: dialNext, start/pause/resume, submitDisposition
+├── hooks/usePowerDialer.ts    Motor da fila: 1-a-1 e paralelo/preditivo, start/pause/resume, submitDisposition
 ├── store/
-│   ├── softphoneStore.ts      Perfil da sessão + estado da chamada
-│   └── dialerStore.ts         Campanha, contato atual, status do dialer
+│   ├── softphoneStore.ts      Perfil da sessão + estado da chamada + mute (mic/alto-falante)
+│   └── dialerStore.ts         Campanha, contato atual, status do dialer, lote paralelo
 └── lib/
-    ├── constants.ts           HELPER_URL = http://localhost:3001
-    ├── dispositions.ts        DISPOSITIONS (compartilhado dialer + config)
+    ├── constants.ts           HELPER_URL = http://localhost:3001 + helperFetch (Local Network Access)
+    ├── dispositions.ts        DISPOSITIONS (compartilhado dialer + config + histórico)
+    ├── timezone.ts            hourInBRT / brtTodayStartUtcISO (fuso America/Sao_Paulo)
     ├── mailing.ts             parseMailingFile (xlsx), normalizePhone, slugify
     ├── types/database.ts      Types das tabelas Supabase
     └── supabase/              clientes server / client / middleware (@supabase/ssr)
@@ -208,15 +249,16 @@ docs/                          Documentação técnica
 |--------|-----------|
 | `departments` | Departamentos (CRUD pelo admin) |
 | `profiles` | Identidade do app (**id = `auth.users.id`**): `name`, `email`, `role`, `department_id`, `extension`. Trigger cria perfil `pending` no cadastro |
-| `campaigns` | Campanhas: `status`, `department_id`, `schedule_start/end`, `visible_fields` (jsonb), `notify_dispositions` (jsonb) |
+| `campaigns` | Campanhas: `status`, `department_id`, `schedule_start/end`, `visible_fields` (jsonb), `notify_dispositions`, `parallel_lines` (1 = 1-a-1; ≥2 = preditivo) |
 | `campaign_agents` | N:N campanha ↔ agente (quem participa) |
 | `lists` | Mailing dentro de uma campanha: `column_mapping` (jsonb) + regras `recycle_*` |
 | `campaign_contacts` | Contatos: `list_id`, `extra_data` (jsonb), `status`, `disposition`, `attempts`, `assigned_agent_id`, `dialed_at` |
-| `call_logs` | Histórico de chamadas (`agent_id` nullable, preserva histórico após troca de identidade) |
+| `call_logs` | Histórico de chamadas (`agent_id` nullable; `disposition`/`notes` = tabulação registrada) |
 
 Estados do contato (`ContactStatus`):
 ```
 pending → dialing → answered | no_answer | busy | failed | do_not_call
+                  ↘ abandoned (paralelo: tocou mas foi derrubado antes de atender — reciclável)
                   ↘ (reciclagem) volta a pending até recycle_max_attempts → exhausted
 ```
 
@@ -231,6 +273,7 @@ As migrações ficam em `supabase/migrations/` (prefixo `YYYYMMDD_`, idempotente
 | `20260613_drop_agents_repoint_fks.sql` | Repont. FKs → `profiles` + drop `agents` (7b-ii) |
 | `20260614_rls_policies.sql` | RLS por papel/departamento + seed dos departamentos (7c) |
 | `20260615_profiles_email.sql` | Espelha `email` em `profiles` + backfill (7d) |
+| `20260619_parallel_dialing.sql` | `campaigns.parallel_lines` + status `abandoned` em `campaign_contacts` |
 
 ---
 
@@ -242,8 +285,9 @@ Mutações e queries rodam como Server Actions (em `src/app/actions/`), sempre c
 - **admin** — `getProfiles`, `updateProfile`, `createDepartment`, `updateDepartment`, `deleteDepartment`
 - **campaigns** — `getCampaigns`, `getCampaignsForAgent`, `createCampaign`, `updateCampaignStatus`, `getNextContact` (+ reciclagem), `updateContactStatus`, `getDepartments`, `getAgents`, `getCampaignConfig`, `updateCampaignConfig`, `setCampaignAgents`, `getCampaignStats`
 - **lists** — `getLists`, `getListFieldLabels`, `createList` (dedup + lotes de 500), `deleteList`
-- **dialer** — `saveCallLog`, `getCallHistory`
-- **supervisor** — `getDashboardStats`, `getCampaignsSummary`, `getCallsByHour`, `getAgentActivity`
+- **dialer** — `saveCallLog` (grava a `disposition` tabulada), `getCallHistory`
+- **supervisor** — `getDashboardStats`, `getCampaignsSummary`, `getCallsByHour`, `getAgentActivity` (horas no fuso de Brasília)
+- **performance** — `getMyPerformance` (desempenho do próprio agente, escopado por `auth.getUser()`)
 - **notifications** — `sendDispositionNotification` (POST best-effort para `MAKE_WEBHOOK_URL`)
 
 ---

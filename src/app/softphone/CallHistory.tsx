@@ -5,6 +5,7 @@ import { PhoneIncoming, PhoneOutgoing, Phone } from 'lucide-react'
 import { getCallHistory } from '@/app/actions/dialer'
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
+import { DISPOSITIONS } from '@/lib/dispositions'
 import type { CallLog } from '@/lib/types/database'
 
 interface CallHistoryProps {
@@ -33,6 +34,12 @@ const STATUS_LABEL: Record<string, string> = {
   busy: 'Ocupado',
   failed: 'Falha',
 }
+
+// value da disposição → rótulo exibido (ex.: 'interested' → 'Interessado'). O histórico
+// mostra o que o agente TABULOU; só cai no STATUS_LABEL quando não há disposição (logs antigos).
+const DISPOSITION_LABEL: Record<string, string> = Object.fromEntries(
+  DISPOSITIONS.map((d) => [d.value, d.label])
+)
 
 const STATUS_COLOR: Record<string, string> = {
   answered: 'text-success',
@@ -109,7 +116,9 @@ export function CallHistory({ agentId }: CallHistoryProps) {
           </div>
           <div className="shrink-0 text-right">
             <p className={cn('text-xs font-medium', STATUS_COLOR[log.status])}>
-              {STATUS_LABEL[log.status]}
+              {log.disposition
+                ? (DISPOSITION_LABEL[log.disposition] ?? log.disposition)
+                : STATUS_LABEL[log.status]}
             </p>
             <p className="mt-0.5 text-xs text-muted-foreground">{formatDuration(log.duration_seconds)}</p>
           </div>

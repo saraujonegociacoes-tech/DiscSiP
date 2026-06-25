@@ -339,6 +339,7 @@ export function usePowerDialer() {
         startedAt: callStartedAt?.toISOString() ?? null,
         endedAt: new Date().toISOString(),
         campaignId: campaign?.id,
+        disposition,
       })
 
       await updateContactStatus(currentContact.id, status, disposition)

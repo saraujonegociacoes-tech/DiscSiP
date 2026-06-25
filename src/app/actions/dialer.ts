@@ -13,6 +13,9 @@ interface SaveCallLogInput {
   startedAt: string | null
   endedAt: string | null
   campaignId?: string
+  // Tabulação registrada pelo agente (value da disposição, ex.: 'interested'). É o que o
+  // histórico exibe — sem isso o status grosso (answered/no_answer) era tudo que aparecia.
+  disposition?: string
 }
 
 export async function saveCallLog(
@@ -31,6 +34,7 @@ export async function saveCallLog(
       started_at: input.startedAt,
       ended_at: input.endedAt,
       ...(input.campaignId && { campaign_id: input.campaignId }),
+      ...(input.disposition && { disposition: input.disposition }),
     })
     .select('id')
     .single()

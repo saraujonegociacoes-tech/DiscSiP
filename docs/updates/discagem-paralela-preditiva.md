@@ -3,7 +3,7 @@
 > Criado em 2026-06-19. Registro do estudo e dos testes empíricos da feature de
 > **discagem paralela** (discar N números ao mesmo tempo, conectar o primeiro que
 > atende ao agente, derrubar os demais). Fonte de verdade desta feature.
-> Complementa `discadora-microsip-integracao.md` e `arquitetura-e-proximos-passos.md`.
+> Complementa `../reference/discadora-microsip-integracao.md` e `../reference/arquitetura-e-proximos-passos.md`.
 
 ---
 

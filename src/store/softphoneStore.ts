@@ -18,10 +18,15 @@ interface AgentState {
   callStartedAt: Date | null
   helperOnline: boolean
   helperVersion: string | null
+  // Estado do painel de áudio. O painel fica sempre visível e é a fonte de verdade do mute
+  // (o MicroSIP não devolve o estado real), então persiste entre chamadas até o agente trocar.
+  micMuted: boolean
+  speakerMuted: boolean
 
   setProfile: (profile: Profile) => void
   setCallStatus: (status: CallStatus, number?: string) => void
   setHelperOnline: (online: boolean, version?: string | null) => void
+  setMuted: (device: 'mic' | 'speaker', muted: boolean) => void
   resetCall: () => void
   logout: () => void
 }
@@ -37,6 +42,8 @@ export const useSoftphoneStore = create<AgentState>((set) => ({
   callStartedAt: null,
   helperOnline: false,
   helperVersion: null,
+  micMuted: false,
+  speakerMuted: false,
 
   setProfile: (profile) =>
     set({
@@ -69,6 +76,9 @@ export const useSoftphoneStore = create<AgentState>((set) => ({
       helperVersion: online ? (version ?? state.helperVersion) : null,
     })),
 
+  setMuted: (device, muted) =>
+    set(device === 'mic' ? { micMuted: muted } : { speakerMuted: muted }),
+
   resetCall: () => set({ callStatus: 'idle', callNumber: null, callStartedAt: null }),
 
   logout: () =>
@@ -83,5 +93,7 @@ export const useSoftphoneStore = create<AgentState>((set) => ({
       callStartedAt: null,
       helperOnline: false,
       helperVersion: null,
+      micMuted: false,
+      speakerMuted: false,
     }),
 }))
