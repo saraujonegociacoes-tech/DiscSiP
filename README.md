@@ -75,8 +75,9 @@ Os contatos discados-mas-derrubados viram `abandoned` (recicláveis). Detalhes e
 
 ### Painel de áudio do agente
 
-Ao entrar numa campanha, o agente vê um painel sempre visível com **Desligar**, **Microfone**
-(mudo/aberto) e **Som** (mudo/aberto). O microfone usa `msip:micmute`; o alto-falante é mutado
+Ao **iniciar a discagem** (não ao só selecionar a campanha), o agente vê um painel com
+**Desligar**, **Microfone** (mudo/aberto) e **Som** (mudo/aberto); o painel some quando a
+discagem para. O microfone usa `msip:micmute`; o alto-falante é mutado
 no nível do Windows (sessão de áudio do `microsip.exe`), porque o mute interno do MicroSIP não
 silencia o ringback. Requer **helper ≥ 1.7** (os botões ficam desabilitados em versões antigas).
 
@@ -214,7 +215,7 @@ src/
 │   ├── softphone/             (agente) discador
 │   │   ├── SoftphoneClient.tsx   Layout, painel de áudio, abas (Discador / Histórico / Meu desempenho)
 │   │   ├── DialerTab.tsx         Campanhas do agente, horário, extra_data, controles, disposição
-│   │   ├── CallControls.tsx      Painel: Desligar + mute Microfone/Som (só dentro de campanha, helper ≥ 1.7)
+│   │   ├── CallControls.tsx      Painel: Desligar + mute Microfone/Som (só com discagem iniciada, helper ≥ 1.7)
 │   │   ├── AgentPerformance.tsx  Aba "Meu desempenho" (métricas do próprio agente, hoje)
 │   │   └── CallHistory.tsx       Histórico de chamadas (mostra a disposição tabulada)
 │   ├── campaigns/             (supervisor) gestão e configuração

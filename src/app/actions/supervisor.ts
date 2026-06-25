@@ -33,7 +33,13 @@ export interface AgentActivity {
   lastCallAt: string | null
   callsToday: number
   lastStatus: string | null
+  // Presença em tempo real (heartbeat do softphone). online = visto há < 60s.
+  online: boolean
+  dialerStatus: 'idle' | 'running' | 'paused' | 'completed' | null
 }
+
+// Heartbeat visto há menos disto = agente online (3× o intervalo de ~20s do softphone)
+const PRESENCE_FRESH_MS = 60_000
 
 export async function getDashboardStats(): Promise<DashboardStats> {
   const supabase = await createServerClient()
@@ -128,7 +134,7 @@ export async function getAgentActivity(): Promise<AgentActivity[]> {
 
   const todayStartISO = brtTodayStartUtcISO()
 
-  const [agentsRes, logsRes] = await Promise.all([
+  const [agentsRes, logsRes, presenceRes] = await Promise.all([
     // Quem tem ramal atribuído aparece como agente na atividade do dashboard
     supabase
       .from('profiles')
@@ -140,14 +146,26 @@ export async function getAgentActivity(): Promise<AgentActivity[]> {
       .select('agent_id, created_at, status')
       .gte('created_at', todayStartISO)
       .order('created_at', { ascending: false }),
+    supabase.from('agent_presence').select('agent_id, dialer_status, last_seen_at'),
   ])
 
   const agents = (agentsRes.data ?? []) as { id: string; name: string; extension: number }[]
   const logs = (logsRes.data ?? []) as Pick<CallLog, 'agent_id' | 'created_at' | 'status'>[]
+  const presence = new Map(
+    ((presenceRes.data ?? []) as {
+      agent_id: string
+      dialer_status: AgentActivity['dialerStatus']
+      last_seen_at: string
+    }[]).map((p) => [p.agent_id, p])
+  )
+
+  const now = Date.now()
 
   return agents.map((a) => {
     const agentLogs = logs.filter((l) => l.agent_id === a.id)
     const last = agentLogs[0] ?? null
+    const p = presence.get(a.id)
+    const online = !!p && now - new Date(p.last_seen_at).getTime() < PRESENCE_FRESH_MS
     return {
       agentId: a.id,
       name: a.name,
@@ -155,6 +173,8 @@ export async function getAgentActivity(): Promise<AgentActivity[]> {
       lastCallAt: last?.created_at ?? null,
       callsToday: agentLogs.length,
       lastStatus: last?.status ?? null,
+      online,
+      dialerStatus: online ? (p?.dialer_status ?? 'idle') : null,
     }
   })
 }

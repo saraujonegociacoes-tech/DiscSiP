@@ -1,11 +1,12 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { RefreshCw, LogOut, Wifi, WifiOff } from 'lucide-react'
 import { useSoftphoneStore } from '@/store/softphoneStore'
 import { useDialerStore } from '@/store/dialerStore'
 import { getCurrentProfile, signOut } from '@/app/actions/auth'
+import { reportPresence } from '@/app/actions/presence'
 import { CallHistory } from './CallHistory'
 import { DialerTab } from './DialerTab'
 import { AgentPerformance } from './AgentPerformance'
@@ -46,6 +47,8 @@ export default function SoftphoneClient() {
     setProfile, setHelperOnline, logout, resetCall,
   } = useSoftphoneStore()
   const { reset: resetDialer } = useDialerStore()
+  const dialerStatus = useDialerStore((s) => s.dialerStatus)
+  const campaignId = useDialerStore((s) => s.campaign?.id ?? null)
 
   const [loadingProfile, setLoadingProfile] = useState(true)
   const [activeTab, setActiveTab] = useState<Tab>('dialer')
@@ -100,6 +103,23 @@ export default function SoftphoneClient() {
     const interval = setInterval(check, 10000)
     return () => clearInterval(interval)
   }, [setHelperOnline])
+
+  // Heartbeat de presença (~20s): grava no agent_presence o estado do discador para o
+  // dashboard mostrar online/offline (= está discando). Lê o estado por ref para não
+  // recriar o intervalo a cada mudança de dialerStatus/campanha. Ao desmontar/deslogar
+  // o batimento para → o agente vira offline por staleness (last_seen_at > 60s).
+  const presenceRef = useRef({ dialerStatus, campaignId })
+  presenceRef.current = { dialerStatus, campaignId }
+  useEffect(() => {
+    if (!agentId) return
+    const beat = () => {
+      const { dialerStatus, campaignId } = presenceRef.current
+      reportPresence(dialerStatus, campaignId).catch(() => {})
+    }
+    beat()
+    const interval = setInterval(beat, 20000)
+    return () => clearInterval(interval)
+  }, [agentId])
 
   // O aviso de falha na atualização some sozinho após alguns segundos (não fica preso)
   useEffect(() => {

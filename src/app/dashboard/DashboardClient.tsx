@@ -1,5 +1,6 @@
 'use client'
 
+import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { PhoneCall, PhoneOutgoing, Target, Users, ListChecks, Sparkles } from 'lucide-react'
 import { AppShell } from '@/components/blueline/AppShell'
@@ -9,6 +10,7 @@ import { Button } from '@/components/ui/button'
 import { MetricCard } from './MetricCard'
 import { CallsChart } from './CallsChart'
 import { AgentList } from './AgentList'
+import { getAgentActivity } from '@/app/actions/supervisor'
 import type {
   DashboardStats,
   CampaignSummary,
@@ -31,6 +33,26 @@ interface DashboardClientProps {
 }
 
 export function DashboardClient({ stats, campaigns, callsByHour, agents }: DashboardClientProps) {
+  // Presença é a única parte realmente "ao vivo": atualiza só a lista de agentes a cada 15s
+  // (1 query), sem recarregar stats/campanhas/gráfico inteiros. Inicia com o que veio do server.
+  const [liveAgents, setLiveAgents] = useState(agents)
+  useEffect(() => {
+    let cancelled = false
+    const tick = async () => {
+      try {
+        const next = await getAgentActivity()
+        if (!cancelled) setLiveAgents(next)
+      } catch {
+        // mantém a última leitura boa
+      }
+    }
+    const interval = setInterval(tick, 15000)
+    return () => {
+      cancelled = true
+      clearInterval(interval)
+    }
+  }, [])
+
   return (
     <AppShell>
       {/* Hero premium */}
@@ -76,7 +98,7 @@ export function DashboardClient({ stats, campaigns, callsByHour, agents }: Dashb
           <CallsChart data={callsByHour} />
         </div>
         <div>
-          <AgentList agents={agents} />
+          <AgentList agents={liveAgents} />
         </div>
       </section>
 

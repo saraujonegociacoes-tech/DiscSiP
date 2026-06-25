@@ -16,8 +16,10 @@ function helperSupportsMute(version: string | null): boolean {
   return a > 1 || (a === 1 && b >= 7)
 }
 
-// Painel de controle SEMPRE visível: o agente liga/desliga mic e alto-falante e encerra a
-// chamada a qualquer momento. Como fica sempre à vista, o estado do mute nunca diverge escondido.
+// Painel de controle da discagem ativa: o agente liga/desliga mic e alto-falante e encerra a
+// chamada. Só aparece depois do "Iniciar discagem" (discador rodando/pausado) — não na seleção
+// da campanha. O mute é guardado no store e reaplicado pelo helper a cada discagem, então
+// esconder/mostrar o painel não faz o estado divergir.
 export function CallControls() {
   const {
     callStatus,
@@ -28,7 +30,7 @@ export function CallControls() {
     setMuted,
     setCallStatus,
   } = useSoftphoneStore()
-  const { campaign } = useDialerStore()
+  const { dialerStatus } = useDialerStore()
   const [busy, setBusy] = useState<'mic' | 'speaker' | 'hangup' | null>(null)
 
   const muteReady = helperOnline && helperSupportsMute(helperVersion)
@@ -66,8 +68,10 @@ export function CallControls() {
     if (inCall) setCallStatus('ended')
   }
 
-  // Só aparece quando o agente está dentro de uma campanha (não na lista de campanhas).
-  if (!campaign) return null
+  // Só aparece com a discagem iniciada (rodando ou pausada). Pausar não derruba a chamada em
+  // curso, então o painel continua à mão; some na seleção da campanha e quando a campanha conclui.
+  const dialerActive = dialerStatus === 'running' || dialerStatus === 'paused'
+  if (!dialerActive) return null
 
   const btn =
     'inline-flex items-center justify-center gap-2 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50'

@@ -47,9 +47,10 @@ do "discando N" nem chamadas que conectam depois; por isso "não funcionava".
   awaitado; reaplica o mute a cada discagem em `/call` e `/dial-parallel`, pois sessão nova
   nasce com a chamada). Arquivo: [`local-helper/index.js`](../../local-helper/index.js).
 - Front: [`CallControls.tsx`](../../src/app/softphone/CallControls.tsx) — painel com **Desligar +
-  Microfone + Som**, **só visível ao entrar numa campanha**; gate **helper ≥ 1.7** (Desligar
-  funciona em 1.6); estado em `softphoneStore` (`micMuted`/`speakerMuted`); o botão só vira
-  após o `ok` do helper. O "Encerrar" saiu do banner e vive no painel.
+  Microfone + Som**, **só visível com a discagem iniciada** (`dialerStatus` rodando/pausado, não
+  na seleção da campanha); gate **helper ≥ 1.7** (Desligar funciona em 1.6); estado em
+  `softphoneStore` (`micMuted`/`speakerMuted`); o botão só vira após o `ok` do helper. O
+  "Encerrar" saiu do banner e vive no painel.
 - **Verificado:** o C# do Core Audio compila e, num teste real, achou a sessão do MicroSIP e
   aplicou o mute (`HIT:1`).
 
@@ -58,14 +59,24 @@ Não há push: cada helper vira 1.7 **quando o agente clica em "Atualizar v1.7"*
 ao publicar o site) **ou quando a máquina/helper reinicia**. Logo, por um tempo há helpers 1.6
 e 1.7 convivendo — o site é compatível com ambos (gate de versão; mute desabilitado em 1.6).
 
-## #3 — Agentes online/offline (= está discando) ⏳ PENDENTE
-Hoje a lista de agentes mostra o resultado da última ligação; "verde" = `callsToday>0` (não é
-presença). Pedido: **online = está discando**. Precisa de **presença em tempo real**:
-- Migration nova `agent_presence` (ou colunas em `profiles`): `last_seen_at`, status.
-- Heartbeat do softphone (~20s) reportando `dialerStatus`.
-- `getAgentActivity` deriva online de `last_seen_at < ~60s` + `running`; `AgentList` troca o
-  texto de resultado por Online/Offline (Discando/Pausado/Ocioso).
-Único item do lote que exige migration. **Não iniciado.**
+## #3 — Agentes online/offline (= está discando) ✅
+**Antes:** a lista mostrava o resultado da última ligação e "verde" = `callsToday>0` (ligou hoje,
+não presença). **Pedido:** online = está discando.
+**Fix — presença em tempo real por heartbeat:**
+- **Migration** [`20260625_agent_presence.sql`](../../supabase/migrations/20260625_agent_presence.sql):
+  tabela `agent_presence(agent_id PK, dialer_status, campaign_id, last_seen_at)` + RLS (leitura =
+  visibilidade de `profiles`; escrita só `agent_id = auth.uid()`). **Tabela separada** (não colunas
+  em `profiles`) porque a RLS de profiles só deixa admin dar UPDATE.
+- **Heartbeat:** action [`presence.ts`](../../src/app/actions/presence.ts) `reportPresence` (upsert,
+  agente da sessão), disparada pelo [`SoftphoneClient`](../../src/app/softphone/SoftphoneClient.tsx)
+  a cada **~20s** (estado lido por ref p/ não recriar o intervalo).
+- **Leitura:** [`getAgentActivity`](../../src/app/actions/supervisor.ts) junta `agent_presence` e
+  deriva `online` (visto < **60s**) + `dialerStatus`.
+- **UI:** [`AgentList`](../../src/app/dashboard/AgentList.tsx) mostra bolinha+rótulo por presença
+  (Discando/Pausado/Ocioso/Offline); [`DashboardClient`](../../src/app/dashboard/DashboardClient.tsx)
+  faz poll só de `getAgentActivity()` a cada **15s** (1 query, não recarrega o dashboard todo).
+- Único item do lote que exige migration. **Falta:** rodar a SQL no Supabase + teste e2e (ver
+  agente discando virar "Discando" no painel da gestão).
 
 ---
 

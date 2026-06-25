@@ -68,6 +68,15 @@ export interface Campaign {
   updated_at: string
 }
 
+// Presença em tempo real do agente (heartbeat do softphone ~20s). online = última
+// gravação < 60s; dialer_status espelha o DialerStatus do front.
+export interface AgentPresence {
+  agent_id: string
+  dialer_status: 'idle' | 'running' | 'paused' | 'completed'
+  campaign_id: string | null
+  last_seen_at: string
+}
+
 // Agente participante de uma campanha (N:N)
 export interface CampaignAgent {
   id: string
