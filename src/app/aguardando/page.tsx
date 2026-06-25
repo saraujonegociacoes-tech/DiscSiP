@@ -1,5 +1,6 @@
 'use client'
 
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { Clock } from 'lucide-react'
 import { signOut } from '@/app/actions/auth'
@@ -28,6 +29,12 @@ export default function AguardandoPage() {
           <Button onClick={() => router.refresh()} className="w-full bg-primary hover:bg-primary/90">
             Já fui aprovado — verificar
           </Button>
+          <Link
+            href="/ajuda"
+            className="py-1 text-xs text-primary transition-colors hover:text-primary/80"
+          >
+            Como usar o sistema?
+          </Link>
           <button
             onClick={() => signOut()}
             className="py-1 text-xs text-muted-foreground transition-colors hover:text-foreground"

@@ -1,0 +1,212 @@
+/* Tokens locais e utilitários — escopo: .ajuda-root
+   Tema claro = padrão; o app alterna a classe .dark no <html>, então o tema
+   escuro é aplicado via `.dark .ajuda-root`. Só as cores mudam: estrutura,
+   parallax e animações são idênticas nos dois temas. */
+.ajuda-root {
+  /* ---- Tema CLARO (padrão) ---- */
+  --aj-bg: #EEF4FF;
+  --aj-bg-2: #DCE9FF;
+  --aj-surface: rgba(15, 42, 68, 0.05);
+  --aj-card-from: rgba(255, 255, 255, 0.9);
+  --aj-card-to: rgba(255, 255, 255, 0.65);
+  --aj-border: rgba(30, 111, 224, 0.20);
+  --aj-primary: #1E6FE0;
+  --aj-accent: #1556B0;
+  --aj-fg: #0B1A2B;
+  --aj-muted: #51688A;
+  --aj-success: #059669;
+  --aj-warn: #D97706;
+  --aj-danger: #DC2626;
+  --aj-grid: rgba(30, 111, 224, 0.08);
+  --aj-glass: rgba(255, 255, 255, 0.7);
+  --aj-blob-opacity: 0.22;
+
+  background: radial-gradient(1200px 600px at 80% -10%, rgba(30, 111, 224, 0.10), transparent 60%),
+              radial-gradient(900px 500px at 0% 30%, rgba(91, 168, 255, 0.10), transparent 60%),
+              var(--aj-bg);
+  color: var(--aj-fg);
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Inter, sans-serif;
+  min-height: 100vh;
+  position: relative;
+  overflow-x: hidden;
+}
+
+/* ---- Tema ESCURO ---- */
+.dark .ajuda-root {
+  --aj-bg: #0B1A2B;
+  --aj-bg-2: #0F2A44;
+  --aj-surface: rgba(255, 255, 255, 0.04);
+  --aj-card-from: rgba(255, 255, 255, 0.04);
+  --aj-card-to: rgba(255, 255, 255, 0.015);
+  --aj-border: rgba(91, 168, 255, 0.18);
+  --aj-primary: #1E6FE0;
+  --aj-accent: #5BA8FF;
+  --aj-fg: #E6F1FF;
+  --aj-muted: #8AA6C7;
+  --aj-success: #34D399;
+  --aj-warn: #FBBF24;
+  --aj-danger: #F87171;
+  --aj-grid: rgba(91, 168, 255, 0.06);
+  --aj-glass: rgba(11, 26, 43, 0.7);
+  --aj-blob-opacity: 0.55;
+
+  background: radial-gradient(1200px 600px at 80% -10%, rgba(30, 111, 224, 0.18), transparent 60%),
+              radial-gradient(900px 500px at 0% 30%, rgba(91, 168, 255, 0.12), transparent 60%),
+              var(--aj-bg);
+}
+
+.ajuda-root *,
+.ajuda-root *::before,
+.ajuda-root *::after {
+  box-sizing: border-box;
+}
+
+.ajuda-root h1, .ajuda-root h2, .ajuda-root h3 { color: var(--aj-fg); letter-spacing: -0.02em; }
+.ajuda-root h1 { font-size: clamp(2.5rem, 5vw, 4rem); font-weight: 800; line-height: 1.05; }
+.ajuda-root h2 { font-size: clamp(1.75rem, 3vw, 2.5rem); font-weight: 700; line-height: 1.15; }
+.ajuda-root h3 { font-size: 1.25rem; font-weight: 600; }
+.ajuda-root p  { color: var(--aj-muted); line-height: 1.65; }
+
+/* Reveal */
+.aj-reveal {
+  opacity: 0;
+  transform: translateY(28px);
+  transition: opacity 700ms cubic-bezier(.22,.61,.36,1), transform 700ms cubic-bezier(.22,.61,.36,1);
+  will-change: opacity, transform;
+}
+.aj-reveal[data-visible="true"]  { opacity: 1; transform: translateY(0); }
+.aj-reveal[data-visible="false"] { opacity: 0; transform: translateY(28px); }
+
+.aj-stagger > * { transition-delay: calc(var(--aj-i, 0) * 80ms); }
+
+/* Parallax layer base */
+.aj-parallax {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  will-change: transform;
+}
+
+.aj-blob {
+  position: absolute;
+  border-radius: 999px;
+  filter: blur(80px);
+  opacity: var(--aj-blob-opacity);
+}
+
+.aj-grid-bg {
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(var(--aj-grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--aj-grid) 1px, transparent 1px);
+  background-size: 56px 56px;
+  mask-image: radial-gradient(ellipse at center, black 40%, transparent 75%);
+}
+
+/* Cards */
+.aj-card {
+  background: linear-gradient(180deg, var(--aj-card-from), var(--aj-card-to));
+  border: 1px solid var(--aj-border);
+  border-radius: 18px;
+  padding: 24px;
+  backdrop-filter: blur(10px);
+  transition: transform 220ms ease, border-color 220ms ease, box-shadow 220ms ease;
+}
+.aj-card:hover {
+  transform: translateY(-4px);
+  border-color: rgba(91,168,255,0.45);
+  box-shadow: 0 24px 60px -30px rgba(30,111,224,0.5);
+}
+
+.aj-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--aj-border);
+  background: rgba(91,168,255,0.08);
+  color: var(--aj-accent);
+  font-size: 0.78rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.aj-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 18px;
+  border-radius: 12px;
+  border: 1px solid var(--aj-border);
+  background: linear-gradient(180deg, rgba(30,111,224,0.9), rgba(30,111,224,0.7));
+  color: white;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 180ms ease, box-shadow 180ms ease;
+}
+.aj-btn:hover { transform: translateY(-2px); box-shadow: 0 12px 30px -10px rgba(30,111,224,0.7); }
+.aj-btn[data-variant="ghost"] {
+  background: var(--aj-surface);
+  color: var(--aj-fg);
+}
+
+/* Crossfade de papel */
+@keyframes aj-crossfade-in {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.aj-role-content { animation: aj-crossfade-in 380ms cubic-bezier(.22,.61,.36,1) both; }
+
+/* Timeline */
+.aj-timeline-line {
+  stroke-dasharray: 1000;
+  stroke-dashoffset: 1000;
+  transition: stroke-dashoffset 1800ms ease-out;
+}
+.aj-reveal[data-visible="true"] .aj-timeline-line { stroke-dashoffset: 0; }
+
+/* Counter */
+.aj-counter { font-variant-numeric: tabular-nums; }
+
+/* Sticky role nav (preview/dev) */
+.aj-rolenav {
+  position: sticky;
+  top: 16px;
+  z-index: 30;
+  display: inline-flex;
+  gap: 6px;
+  padding: 6px;
+  border-radius: 999px;
+  border: 1px solid var(--aj-border);
+  background: var(--aj-glass);
+  backdrop-filter: blur(14px);
+}
+.aj-rolenav button {
+  padding: 8px 14px;
+  border-radius: 999px;
+  border: none;
+  background: transparent;
+  color: var(--aj-muted);
+  font-weight: 600;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: color 180ms ease, background 180ms ease;
+}
+.aj-rolenav button[data-active="true"] {
+  background: linear-gradient(180deg, var(--aj-primary), #154fa8);
+  color: white;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ajuda-root .aj-reveal,
+  .ajuda-root .aj-parallax,
+  .ajuda-root .aj-role-content {
+    animation: none !important;
+    transition: none !important;
+    transform: none !important;
+    opacity: 1 !important;
+  }
+}

@@ -55,8 +55,9 @@ export async function updateSession(request: NextRequest) {
   const isPending = !profile || profile.role === 'pending'
 
   if (isPending) {
-    // Pendente só pode ficar em /aguardando
-    if (pathname !== '/aguardando') {
+    // Pendente só pode ficar em /aguardando — ou abrir a ajuda (/ajuda), de onde
+    // o botão "Voltar" o traz de volta para /aguardando.
+    if (pathname !== '/aguardando' && pathname !== '/ajuda') {
       const url = request.nextUrl.clone()
       url.pathname = '/aguardando'
       return NextResponse.redirect(url)
