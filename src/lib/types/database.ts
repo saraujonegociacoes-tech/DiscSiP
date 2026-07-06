@@ -128,3 +128,100 @@ export interface CampaignContact {
   attempts: number
   created_at: string
 }
+
+// ── Dashboard de Leads (Pipefy) — domínio SEPARADO do discador ──────────────
+// Espelham as tabelas/views de supabase/manual/leads_dashboard_setup.sql. As views
+// são security_invoker: o RLS do usuário logado já filtra (agente vê o próprio dado,
+// supervisor+ vê tudo). O front só lê — a escrita é do service_role (Make/import).
+
+// Classificação da fase no funil: caminho de conversão vs lead descartado.
+export type LeadPhaseKind = 'produtiva' | 'morta'
+
+// Dimensão de fase (lookup lead_phases, chave = id da fase no Pipefy)
+export interface LeadPhase {
+  pipefy_phase_id: string
+  name: string
+  kind: LeadPhaseKind
+  funnel_order: number | null
+  is_won: boolean
+  // Prazo (horas desde created_at) para o lead sair desta fase. NULL = sem SLA. (S2)
+  sla_hours: number | null
+}
+
+// Dimensão de agente do Pipefy (lead_agents). profile_id é a ponte (vazia por ora)
+// com o discador; não cruzar métricas agora.
+export interface LeadAgent {
+  id: string
+  pipefy_user_id: string
+  pipefy_name: string | null
+  email: string | null
+  profile_id: string | null
+  active: boolean
+  created_at: string
+}
+
+// Uma linha por lead (view v_lead_progress) — base de todas as métricas por período.
+export interface LeadProgressRow {
+  lead_id: string
+  responsible_agent_id: string | null
+  current_phase: string | null
+  phase_kind: LeadPhaseKind | null
+  current_funnel_order: number | null
+  created_at: string | null
+  first_contact_at: string | null
+  finalized_at: string | null
+  updated_at: string | null
+  discard_reason: string | null
+  channel: string | null
+  duplicate_responsible: boolean
+  is_dead: boolean
+  is_open: boolean
+  is_won: boolean
+  max_funnel_order: number
+  hours_to_first_contact: number | null
+  hours_since_update: number | null
+  // S2 — título do lead (para a tabela do agente), SLA da fase atual e "lead parado"
+  // (aberto, não morto, não ganho e now − created_at > sla_hours). Ver 20260706_leads_sla.sql.
+  title: string | null
+  sla_hours: number | null
+  is_stuck: boolean
+}
+
+// KPIs por agente, all-time (view v_agent_kpis). Para recorte por período, agregamos
+// v_lead_progress na action; esta view fica para o ranking all-time se preciso.
+export interface AgentKpiRow {
+  agent_id: string
+  pipefy_name: string | null
+  email: string | null
+  total_leads: number
+  open_leads: number
+  won_leads: number
+  dead_leads: number
+  stuck_leads: number
+  avg_hours_to_first_contact: number | null
+  conversion_rate: number | null
+  dead_rate: number | null
+}
+
+// Funil de acionamento (view v_funnel)
+export interface FunnelRow {
+  funnel_order: number | null
+  phase_name: string
+  leads_reached: number
+}
+
+// Motivos de descarte (view v_dead_reasons)
+export interface DeadReasonRow {
+  reason: string
+  leads: number
+}
+
+// Alerta de responsabilidade duplicada (view v_duplicate_responsibility) — now-alert,
+// não é por período. Supervisor corrige a atribuição no Pipefy.
+export interface DuplicateResponsibilityRow {
+  lead_id: string
+  title: string | null
+  current_phase: string | null
+  responsible: string | null
+  updated_at: string | null
+}

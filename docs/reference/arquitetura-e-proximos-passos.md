@@ -1,4 +1,4 @@
-# DiscSiP — Documentação Técnica
+# Blue Line — Documentação Técnica
 
 > Atualizado em: 2026-06-11 (Sprint 7 concluído — Autenticação e Permissões RBAC, 7a→7e)
 
@@ -6,7 +6,7 @@
 
 ## 1. Visão Geral
 
-**DiscSiP** é um Power Dialer semi-automático para a equipe de vendas da Araujo Negociações. O sistema gerencia filas de contatos, seleciona o próximo automaticamente e aciona o MicroSIP instalado na máquina do agente via protocolo `tel:`.
+**Blue Line** é um Power Dialer semi-automático para a equipe de vendas da Araujo Negociações. O sistema gerencia filas de contatos, seleciona o próximo automaticamente e aciona o softphone utilizado instalado na máquina do agente via protocolo `tel:`.
 
 - **26 agentes** usando ramais 5125–5150
 - **PABX:** Intelbras WidevoiceX (`widevoice8.intelbras.com.br`)
@@ -25,7 +25,7 @@
 | Banco de dados | Supabase (PostgreSQL, Free tier) |
 | Estado global | Zustand 5 |
 | Estilo | TailwindCSS 4 |
-| Discagem | MicroSIP + helper local Node.js |
+| Discagem | softphone utilizado + helper local Node.js |
 
 ---
 
@@ -35,23 +35,23 @@
 
 O servidor Intelbras usa WebSocket sem TLS (`ws://`). Browsers bloqueiam conexões `ws://` a partir de páginas HTTPS por política de mixed content. Tentativa de TLS handshake confirmou que o servidor não suporta WSS na porta 7048.
 
-### Solução adotada — Helper local + MicroSIP
+### Solução adotada — Helper local + softphone utilizado
 
-Os agentes já usavam o MicroSIP como softphone para chamadas manuais. O MicroSIP é um app nativo Windows que conecta ao PABX sem restrições de TLS.
+Os agentes já usavam o softphone utilizado como softphone para chamadas manuais. O softphone utilizado é um app nativo Windows que conecta ao PABX sem restrições de TLS.
 
-A solução é acionar o MicroSIP programaticamente via protocolo `tel:` do Windows, que qualquer browser consegue disparar quando há um app configurado como handler padrão.
+A solução é acionar o softphone utilizado programaticamente via protocolo `tel:` do Windows, que qualquer browser consegue disparar quando há um app configurado como handler padrão.
 
 ### Fluxo completo
 
 ```
-1. Agente entra no DiscSiP com seu ramal
+1. Agente entra no Blue Line com seu ramal
 2. Seleciona campanha → clica "Iniciar discagem"
 3. App busca próximo contato pendente (Supabase)
 4. App chama http://localhost:3001/call (helper local)
 5. Helper executa: start "" "tel:NUMERO"
-6. Windows abre MicroSIP → MicroSIP disca
+6. Windows abre softphone utilizado → softphone utilizado disca
 7. Agente fala com o contato
-8. Agente clica "Encerrar" no banner do DiscSiP
+8. Agente clica "Encerrar" no banner do Blue Line
 9. App exibe form de disposição
 10. Agente registra resultado → próximo contato carrega
 ```
@@ -67,7 +67,7 @@ Browser (agente)
   ↓ fetch localhost
 Helper Node.js (porta 3001)  ← roda na máquina do agente
   ↓ protocolo tel:
-MicroSIP                     ← softphone já configurado no PABX
+softphone utilizado                     ← softphone já configurado no PABX
   ↓ SIP
 PABX Intelbras WidevoiceX
 ```
@@ -81,8 +81,8 @@ Arquivo: `local-helper/`
 App Express mínimo (~40 linhas) rodando em `http://localhost:3001`.
 
 **Endpoints:**
-- `GET /ping` — health check (usado pelo DiscSiP para mostrar status "Helper online/offline")
-- `POST /call` — recebe `{ number }`, executa `start "" "tel:NUMBER"`, aciona MicroSIP
+- `GET /ping` — health check (usado pelo Blue Line para mostrar status "Helper online/offline")
+- `POST /call` — recebe `{ number }`, executa `start "" "tel:NUMBER"`, aciona softphone utilizado
 
 **Instalação nos PCs dos agentes:**
 1. Node.js instalado na máquina
@@ -151,7 +151,7 @@ pending → dialing → answered | no_answer | busy | failed | do_not_call
 | Sprint 1 | SIP Core (hook `useSipAgent`) | ✅ Concluído → removido |
 | Sprint 2 | Softphone UI | ✅ Concluído → removido |
 | Sprint 3 | Power Dialer Backend | ✅ Concluído |
-| Sprint 4 | Power Dialer UI + Helper local MicroSIP | ✅ Concluído |
+| Sprint 4 | Power Dialer UI + Helper local softphone utilizado | ✅ Concluído |
 | Sprint 5 | Supervisor Dashboard | ✅ Concluído |
 | Sprint 6 | Estados de erro, polish, Listas, Campanhas, Notificações | ✅ Concluído (6.1–6.4) |
 | Sprint 7 | Autenticação e Permissões (RBAC) | ✅ Concluído (7a–7e) |
@@ -195,7 +195,7 @@ Estabilizar a experiência do agente e conectar automações externas via Make.
 ### 🔜 6.3 — Listas e Campanhas configuráveis  ← PRÓXIMO
 
 Substitui o conceito antigo (webhook Make + Google Sheets). O supervisor sobe um
-**mailing** (`.csv` ou `.xlsx`) direto na interface, e o DiscSiP importa os contatos.
+**mailing** (`.csv` ou `.xlsx`) direto na interface, e o Blue Line importa os contatos.
 Sem dependência externa, sem `x-webhook-key`.
 
 #### Conceito: Listas vs Campanhas
@@ -284,7 +284,7 @@ sai da fila permanentemente.
 ### ✅ 6.4 — Notificação pós-chamada (Make)
 
 Quando o agente registra um resultado, se a disposição estiver entre as configuradas na
-campanha, o DiscSiP faz um `POST` para o webhook do Make, que dispara email/WhatsApp.
+campanha, o Blue Line faz um `POST` para o webhook do Make, que dispara email/WhatsApp.
 
 - **Canal**: webhook único do Make. URL em `MAKE_WEBHOOK_URL` (secret no Cloudflare). Sem a
   var, a notificação é no-op. POST é **server-side** (`src/app/actions/notifications.ts`,

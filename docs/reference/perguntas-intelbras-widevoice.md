@@ -1,11 +1,11 @@
 # Intelbras / WidevoiceX — o que precisamos saber e pedir (base para e-mail ao suporte)
 
 > Criado em 2026-06-24. Lista estruturada do que seria **ideal** obter da Intelbras
-> (PABX em nuvem **WidevoiceX**) para o DiscSiP/Blue Line — não só para o problema atual
+> (PABX em nuvem **WidevoiceX**) para o Blue Line/Blue Line — não só para o problema atual
 > de caixa postal, mas para capacidade, compliance, integração e funcionalidades futuras.
 >
 > **Contexto que eles precisam ter:** discadora ativa (power + preditiva) com até **26
-> agentes**, cada um num ramal SIP via **MicroSIP** (cliente PJSIP) → conta no
+> agentes**, cada um num ramal SIP via **softphone utilizado** (cliente PJSIP) → conta no
 > `widevoice8.intelbras.com.br:7048` (UDP). Discagem preditiva disca **N=3 linhas em
 > paralelo** por agente e derruba as que não atendem. Ramal de referência nos testes: **5125**.
 >
@@ -49,7 +49,7 @@ discador classificar com precisão (hoje inferimos por heurística de tempo/cód
 ---
 
 ## Bloco 2 — Caixa postal / AMD (problema atual, bloqueado neles) 🔴
-Confirmamos na doc oficial do MicroSIP que **ele não tem como detectar caixa postal**
+Confirmamos na doc oficial do softphone utilizado que **ele não tem como detectar caixa postal**
 (para o SIP, a caixa "atende" igual a humano: `200 OK`). A detecção (AMD) só é possível
 **onde existe o áudio = no PABX de vocês**.
 
@@ -99,7 +99,7 @@ Discagem preditiva gera **chamadas abandonadas** (quando ninguém atende a tempo
 ---
 
 ## Bloco 5 — API / Webhooks de chamada (pode SIMPLIFICAR a arquitetura) 🟢⭐
-Hoje originamos chamadas e lemos eventos via MicroSIP + um "helper" local (gambiarra que
+Hoje originamos chamadas e lemos eventos via softphone utilizado + um "helper" local (gambiarra que
 funciona, mas é frágil). Se vocês tiverem API, talvez possamos eliminar boa parte disso.
 
 - 🟢 Existe **API REST** para **originar chamada** (click-to-call) a partir do nosso sistema?
@@ -108,17 +108,17 @@ funciona, mas é frágil). Se vocês tiverem API, talvez possamos eliminar boa p
 - 🟢 Existe **API de status** de chamadas/ramais ativos?
 - 🟢 Há API para **derrubar/transferir** uma chamada em curso?
 
-> **Porquê:** webhooks com causa real + originação por API substituiriam o MicroSIP/helper,
+> **Porquê:** webhooks com causa real + originação por API substituiriam o softphone utilizado/helper,
 > dariam classificação confiável (resolve Blocos 1 e 2 de quebra) e reduziriam pontos de falha.
 
 ---
 
-## Bloco 6 — WebRTC (pode ELIMINAR o MicroSIP) 🟢⭐
+## Bloco 6 — WebRTC (pode ELIMINAR o softphone utilizado) 🟢⭐
 - 🟢 O WidevoiceX suporta **WebRTC** (SIP over WebSocket, `wss://`)? Endpoint e requisitos?
 - 🟢 Suporta **multi-linha** por ramal via WebRTC (essencial para a preditiva)?
 
 > **Porquê:** com WebRTC poderíamos ter um **softphone dentro do navegador**, com controle
-> real de múltiplas linhas e do progresso da chamada — adeus MicroSIP, helper, hider de
+> real de múltiplas linhas e do progresso da chamada — adeus softphone utilizado, helper, hider de
 > janela e todas as gambiarras. É a evolução mais estratégica possível desta integração.
 
 ---

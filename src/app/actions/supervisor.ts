@@ -1,8 +1,8 @@
 'use server'
 
 import { createServerClient } from '@/lib/supabase/server'
-import { hourInBRT, brtTodayStartUtcISO } from '@/lib/timezone'
-import type { CallLog, Campaign } from '@/lib/types/database'
+import { hourInBRT } from '@/lib/timezone'
+import type { Campaign } from '@/lib/types/database'
 
 export interface DashboardStats {
   totalContacts: number
@@ -44,82 +44,57 @@ const PRESENCE_FRESH_MS = 60_000
 export async function getDashboardStats(): Promise<DashboardStats> {
   const supabase = await createServerClient()
 
-  const todayStartISO = brtTodayStartUtcISO()
+  // Agregação feita no banco (view v_dashboard_stats) — o Worker só lê 1 linha.
+  const { data } = await supabase.from('v_dashboard_stats').select('*').single()
 
-  const [contactsRes, callsTodayRes, agentsRes] = await Promise.all([
-    supabase.from('campaign_contacts').select('status'),
-    supabase
-      .from('call_logs')
-      .select('agent_id')
-      .gte('created_at', todayStartISO),
-    supabase
-      .from('call_logs')
-      .select('agent_id')
-      .gte('created_at', todayStartISO),
-  ])
-
-  const contacts = contactsRes.data ?? []
-  const total = contacts.length
-  const contacted = contacts.filter((c) =>
-    ['answered', 'no_answer', 'busy', 'failed', 'do_not_call'].includes(c.status)
-  ).length
-
-  const callsToday = callsTodayRes.data?.length ?? 0
-  const activeAgents = new Set(agentsRes.data?.map((r) => r.agent_id) ?? []).size
+  const total = data?.total_contacts ?? 0
+  const contacted = data?.contacted ?? 0
 
   return {
     totalContacts: total,
     contactedPercent: total > 0 ? Math.round((contacted / total) * 100) : 0,
-    callsToday,
-    activeAgents,
+    callsToday: data?.calls_today ?? 0,
+    activeAgents: data?.active_agents ?? 0,
   }
 }
 
 export async function getCampaignsSummary(): Promise<CampaignSummary[]> {
   const supabase = await createServerClient()
 
-  const [campaignsRes, contactsRes] = await Promise.all([
-    supabase.from('campaigns').select('*').order('created_at', { ascending: false }),
-    supabase.from('campaign_contacts').select('campaign_id, status'),
-  ])
+  // v_campaign_summary já agrega por campanha (LEFT JOIN + GROUP BY no banco).
+  const { data } = await supabase.from('v_campaign_summary').select('*')
 
-  const campaigns = (campaignsRes.data ?? []) as Campaign[]
-  const contacts = contactsRes.data ?? []
+  const rows = (data ?? []) as {
+    id: string
+    name: string
+    status: Campaign['status']
+    total: number
+    pending: number
+    answered: number
+    contacted: number
+  }[]
 
-  return campaigns.map((c) => {
-    const cc = contacts.filter((x) => x.campaign_id === c.id)
-    const total = cc.length
-    const pending = cc.filter((x) => x.status === 'pending').length
-    const answered = cc.filter((x) => x.status === 'answered').length
-    const contacted = cc.filter((x) =>
-      ['answered', 'no_answer', 'busy', 'failed', 'do_not_call'].includes(x.status)
-    ).length
-    return {
-      id: c.id,
-      name: c.name,
-      status: c.status,
-      total,
-      pending,
-      answered,
-      contactedPercent: total > 0 ? Math.round((contacted / total) * 100) : 0,
-    }
-  })
+  return rows.map((r) => ({
+    id: r.id,
+    name: r.name,
+    status: r.status,
+    total: r.total,
+    pending: r.pending,
+    answered: r.answered,
+    contactedPercent: r.total > 0 ? Math.round((r.contacted / r.total) * 100) : 0,
+  }))
 }
 
 export async function getCallsByHour(): Promise<CallsByHour[]> {
   const supabase = await createServerClient()
 
-  const { data } = await supabase
-    .from('call_logs')
-    .select('created_at')
-    .gte('created_at', brtTodayStartUtcISO())
+  // v_calls_by_hour_today devolve só as horas com chamadas (≤24 linhas), já no
+  // fuso BRT. Aqui só preenchemos de 00h até a hora atual (formato do CallsChart).
+  const { data } = await supabase.from('v_calls_by_hour_today').select('*')
 
   const buckets: Record<number, number> = {}
-  for (let h = 0; h < 24; h++) buckets[h] = 0
-
-  for (const row of data ?? []) {
-    const h = hourInBRT(new Date(row.created_at))
-    buckets[h] = (buckets[h] ?? 0) + 1
+  for (const row of (data ?? []) as { hour: number; calls: number }[]) {
+    buckets[row.hour] = row.calls
   }
 
   const now = hourInBRT(new Date())
@@ -132,49 +107,35 @@ export async function getCallsByHour(): Promise<CallsByHour[]> {
 export async function getAgentActivity(): Promise<AgentActivity[]> {
   const supabase = await createServerClient()
 
-  const todayStartISO = brtTodayStartUtcISO()
+  // v_agent_activity já agrega os logs de hoje por agente e junta a presença no
+  // banco. Aqui só derivamos online (visto < 60s) e o dialerStatus — trivial.
+  const { data } = await supabase.from('v_agent_activity').select('*')
 
-  const [agentsRes, logsRes, presenceRes] = await Promise.all([
-    // Quem tem ramal atribuído aparece como agente na atividade do dashboard
-    supabase
-      .from('profiles')
-      .select('id, name, extension')
-      .not('extension', 'is', null)
-      .order('extension'),
-    supabase
-      .from('call_logs')
-      .select('agent_id, created_at, status')
-      .gte('created_at', todayStartISO)
-      .order('created_at', { ascending: false }),
-    supabase.from('agent_presence').select('agent_id, dialer_status, last_seen_at'),
-  ])
-
-  const agents = (agentsRes.data ?? []) as { id: string; name: string; extension: number }[]
-  const logs = (logsRes.data ?? []) as Pick<CallLog, 'agent_id' | 'created_at' | 'status'>[]
-  const presence = new Map(
-    ((presenceRes.data ?? []) as {
-      agent_id: string
-      dialer_status: AgentActivity['dialerStatus']
-      last_seen_at: string
-    }[]).map((p) => [p.agent_id, p])
-  )
+  const rows = (data ?? []) as {
+    agent_id: string
+    name: string
+    extension: number
+    last_call_at: string | null
+    calls_today: number
+    last_status: string | null
+    dialer_status: AgentActivity['dialerStatus']
+    last_seen_at: string | null
+  }[]
 
   const now = Date.now()
 
-  return agents.map((a) => {
-    const agentLogs = logs.filter((l) => l.agent_id === a.id)
-    const last = agentLogs[0] ?? null
-    const p = presence.get(a.id)
-    const online = !!p && now - new Date(p.last_seen_at).getTime() < PRESENCE_FRESH_MS
+  return rows.map((r) => {
+    const online =
+      !!r.last_seen_at && now - new Date(r.last_seen_at).getTime() < PRESENCE_FRESH_MS
     return {
-      agentId: a.id,
-      name: a.name,
-      extension: a.extension,
-      lastCallAt: last?.created_at ?? null,
-      callsToday: agentLogs.length,
-      lastStatus: last?.status ?? null,
+      agentId: r.agent_id,
+      name: r.name,
+      extension: r.extension,
+      lastCallAt: r.last_call_at,
+      callsToday: r.calls_today,
+      lastStatus: r.last_status,
       online,
-      dialerStatus: online ? (p?.dialer_status ?? 'idle') : null,
+      dialerStatus: online ? (r.dialer_status ?? 'idle') : null,
     }
   })
 }

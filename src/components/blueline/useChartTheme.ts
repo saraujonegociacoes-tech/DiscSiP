@@ -26,5 +26,13 @@ export function useChartTheme() {
       warning: "#FFB020",
       danger:  "#FF4D4F",
     },
+    // Paleta CATEGÓRICA validada (skill dataviz: banda de luminosidade, piso de croma,
+    // separação CVD e contraste na superfície do card — light #fcfcfb / dark #07133F).
+    // Passos próprios por tema, ordem fixa (não ciclar); overflow → `muted` ("Outros").
+    // Usada onde a cor identifica categorias (ex.: DeadReasonsDonut).
+    categorical: dark
+      ? ["#3987e5", "#199e70", "#c98500", "#9085e9", "#e66767", "#d55181"]
+      : ["#2a78d6", "#1baf7a", "#eda100", "#4a3aa7", "#e34948", "#e87ba4"],
+    muted: dark ? "#a2acc4" : "#898781",
   };
 }

@@ -1,25 +1,25 @@
-# DiscSiP — Integração com MicroSIP (discagem, encerramento, eventos)
+# Blue Line — Integração com softphone utilizado (discagem, encerramento, eventos)
 
-> Estado consolidado da sessão. Fonte de verdade da integração discador ↔ MicroSIP.
+> Estado consolidado da sessão. Fonte de verdade da integração discador ↔ softphone utilizado.
 > Complementa `arquitetura-e-proximos-passos.md` (mesma pasta `docs/reference/`).
 
 ---
 
 ## 1. Objetivo do fluxo (decisão do usuário)
 
-Fluxo desejado, com MicroSIP e helper **invisíveis** (agente só usa o DiscSiP):
+Fluxo desejado, com softphone utilizado e helper **invisíveis** (agente só usa o Blue Line):
 
 ```
-Iniciar discagem → liga → botão "Encerrar" (no DiscSiP) encerra a chamada
+Iniciar discagem → liga → botão "Encerrar" (no Blue Line) encerra a chamada
 → aparece tabulação → agente qualifica → roda a próxima → ... até a lista acabar
 ```
 
-Meta: **1 clique por contato** (só a qualificação). Hoje são 3 (desligar no MicroSIP +
-Encerrar no DiscSiP + qualificar).
+Meta: **1 clique por contato** (só a qualificação). Hoje são 3 (desligar no softphone utilizado +
+Encerrar no Blue Line + qualificar).
 
 ---
 
-## 2. Descobertas essenciais do MicroSIP (NÃO ESQUECER)
+## 2. Descobertas essenciais do softphone utilizado (NÃO ESQUECER)
 
 Versão: **MicroSIP 3.22.x**. Source baixado em `C:\Users\Filipe Crepaldi\Downloads\MicroSIP-3.22.3-src.7z`
 (extraído em `...\OneDrive\Desktop\MicroSIP-3.22.3-src`). **Não precisa recompilar** — tudo é config.
@@ -38,12 +38,12 @@ Forma de disparar: `microsip.exe "<comando>"`.
 - ⚠️ `/hangup` **NÃO existe** (vira número discado — confirmado no histórico `[Dialed]` do ini). O certo é `msip:hangupall`.
 - ❌ Teclas de mídia (WM_APPCOMMAND / "Handle Media Buttons") NÃO encerram — descartado.
 
-> **ATUALIZAÇÃO 2026-06-19 — comandos de hangup (correção):** a doc oficial do MicroSIP
+> **ATUALIZAÇÃO 2026-06-19 — comandos de hangup (correção):** a doc oficial do softphone utilizado
 > lista, além do `/hangupall`, dois comandos de encerramento SELETIVO confirmados em
 > teste: **`microsip.exe /hangupcalling`** (derruba só as chamadas que ainda TOCAM,
 > mantendo a já atendida) e `microsip.exe /hangupincoming` (só as entrantes). O
 > `/hangupcalling` é a peça que viabiliza a **discagem paralela/preditiva** sem
-> recompilar o MicroSIP. Ou seja, NÃO é verdade que "só existe hangupall". Detalhes e
+> recompilar o softphone utilizado. Ou seja, NÃO é verdade que "só existe hangupall". Detalhes e
 > resultados dos testes em [`discagem-paralela-preditiva.md`](../updates/discagem-paralela-preditiva.md).
 
 ### Eventos de chamada (hooks no `microsip.ini`, seção `[Settings]`)
@@ -60,7 +60,7 @@ cmdCallStart="C:\Users\Public\discsip-helper\on-call-start.bat"
 cmdCallEnd="C:\Users\Public\discsip-helper\on-call-end.bat"
 cmdCallBusy="C:\Users\Public\discsip-helper\on-call-busy.bat"
 ```
-Editar o ini só com o MicroSIP FECHADO (ele reescreve o ini ao sair). É UTF-16 LE — preservar encoding.
+Editar o ini só com o softphone utilizado FECHADO (ele reescreve o ini ao sair). É UTF-16 LE — preservar encoding.
 Aplicar/reproduzir com `local-helper/setup-hooks.ps1` (copia os .bat p/ a pasta pública + aplica no ini).
 
 ---
@@ -71,12 +71,12 @@ Express na porta 3001. Endpoints:
 - `GET /ping` → `{ ok, microsip }`
 - `POST /call` `{ number }` → disca via `microsip.exe <numero>` (fallback `tel:`)
 - `POST /hangup` → `microsip.exe "msip:hangupall"`
-- `GET /event/call-start?number=` e `GET /event/call-end?number=` → recebem do MicroSIP (via curl nos .bat)
-- `GET /events` → último evento `{ id, type, number, at }` (DiscSiP faz polling)
+- `GET /event/call-start?number=` e `GET /event/call-end?number=` → recebem do softphone utilizado (via curl nos .bat)
+- `GET /events` → último evento `{ id, type, number, at }` (Blue Line faz polling)
 
 Normalização de número (`formatNumber`): tira não-dígitos e o código de país (`+55`/`55`) e **sempre**
 prefixa o CSP `021`, discando `021 + DDD + número` (ex: `11952085529` → `02111952085529`,
-`33952085522` → `02133952085522`). Sem o `021` o MicroSIP não completa chamadas interurbanas.
+`33952085522` → `02133952085522`). Sem o `021` o softphone utilizado não completa chamadas interurbanas.
 Vale para TODO número, inclusive DDD 11 (não disca mais local sem DDD).
 Envs: `MICROSIP_PATH`, `DIAL_PREFIX` (default **`021`**; só muda se trocar de operadora de longa distância).
 
@@ -95,14 +95,14 @@ A regra de discagem vive no `index.js` (Opção A — cravada no código, não p
 
 ### Cadeia de eventos — testada parcialmente
 - helper ↔ .bat ↔ curl ↔ /events: ✅ funciona (rodando o .bat manual, `/events` registra).
-- MicroSIP → .bat (eventos reais): ❌ **NÃO dispara ainda** (ver Aberto).
+- softphone utilizado → .bat (eventos reais): ❌ **NÃO dispara ainda** (ver Aberto).
 
 ---
 
 ## 4. PENDÊNCIAS / EM ABERTO
 
 ### ✅ RESOLVIDO: cmdCallStart/cmdCallEnd não disparavam (era espaço no caminho)
-Causa raiz (hipótese (c) confirmada): o MicroSIP grava o hook entre aspas no ini, mas ao ler com
+Causa raiz (hipótese (c) confirmada): o softphone utilizado grava o hook entre aspas no ini, mas ao ler com
 `GetPrivateProfileString` **as aspas são removidas**; aí `RunCmd`→`CommandLineToArgvW` (`lib/MSIP.cpp:476`)
 **quebra o caminho no espaço** de "Filipe Crepaldi" → `lpFile="C:\Users\Filipe"` → `ShellExecuteEx`
 falha em silêncio (`SEE_MASK_FLAG_NO_UI`). Provado empiricamente (1 arg vs 2 args).
@@ -110,11 +110,11 @@ Fix: mover os hooks para um caminho SEM espaço — `C:\Users\Public\discsip-hel
 todo Windows, gravável sem admin, serve p/ qualquer usuário, inclusive nomes com espaço/acento).
 Automatizado em `local-helper/setup-hooks.ps1` (chamado pelo `instalar.bat`). NÃO precisa recompilar.
 
-### Sub-sprint B — wiring no DiscSiP (FEITO em parte)
+### Sub-sprint B — wiring no Blue Line (FEITO em parte)
 - ✅ Botão "Encerrar" → `POST /hangup` + `setCallStatus('ended')` (`SoftphoneClient.tsx`, `handleHangup`)
 - ✅ Polling em `/events` (`usePowerDialer.ts`): enquanto `callStatus==='calling'`, 1ª leitura vira baseline;
   evento novo `call-end`/`call-busy` → `setCallStatus('ended')` → tabulação aparece sozinha. Cobre os 2 fluxos
-  (remoto desligou OU agente desligou no MicroSIP/botão). Helper ganhou `/event/call-busy` (+ `on-call-busy.bat`).
+  (remoto desligou OU agente desligou no softphone utilizado/botão). Helper ganhou `/event/call-busy` (+ `on-call-busy.bat`).
 - ⏳ ainda não: `call-start` → estado "atendido"/cronômetro real (mata #5); qualificação em loop disparando a próxima.
 - **Fix de concorrência** (CRÍTICO p/ 2+ agentes): em `getNextContact` (`src/app/actions/campaigns.ts`),
   quando o claim atômico volta `null` por perder a corrida, hoje o `dialNext` trata como "campanha concluída"
@@ -122,7 +122,7 @@ Automatizado em `local-helper/setup-hooks.ps1` (chamado pelo `instalar.bat`). N�
   null quando não há mais pendente.
 
 ### ✅ Lançadores ocultos (Sub-sprint C) — FEITO
-- MicroSIP escondido: chave `minimized=1` no ini (`settings.cpp:652`) faz nascer na bandeja —
+- softphone utilizado escondido: chave `minimized=1` no ini (`settings.cpp:652`) faz nascer na bandeja —
   o startup pula `ShowWindow(SW_SHOW)` (`mainDlg.cpp:2144`). Com `singleMode=1`, `MakeCall` seta
   `doNotShowMessagesWindow` (`mainDlg.cpp:4279`) e `CommandLine`/`hangupall` retornam sem foco →
   discar e encerrar NÃO mostram janela. Aplicado pelo `setup-hooks.ps1`. (`/minimized` só funciona se a
@@ -134,13 +134,13 @@ Automatizado em `local-helper/setup-hooks.ps1` (chamado pelo `instalar.bat`). N�
   `instalar.bat` registra o atalho de startup apontando pro vbs (via wscript) e, antes de criar,
   apaga atalhos antigos de nomes divergentes (evita dois helpers brigando pela porta 3001). O
   `start.bat` sem argumento (com console) fica pra debug.
-- ⚠️ GOTCHA: `minimized` só controla o NASCIMENTO. Se o MicroSIP já estiver aberto/visível (alguém clicou
+- ⚠️ GOTCHA: `minimized` só controla o NASCIMENTO. Se o softphone utilizado já estiver aberto/visível (alguém clicou
   no ícone da bandeja, restaurou a janela), ele FICA visível e discar não esconde. Provado empiricamente:
   startup com `minimized=1` → `MainWindowHandle=0` (escondido); enviar comando (msip:/número) à instância
-  rodando → continua `MainWindowHandle=0`. Ou seja: deixe o MicroSIP só na bandeja; não abra a janela.
+  rodando → continua `MainWindowHandle=0`. Ou seja: deixe o softphone utilizado só na bandeja; não abra a janela.
 - `bringToFrontOnIncoming=0` (defensivo, `mainDlg.cpp:482`) — só afeta recebidas/auto-atender, mas zerado.
 - Chaves relevantes no `[Settings]` do ini: `minimized`, `singleMode`, `bringToFrontOnIncoming`.
-  Na GUI do MicroSIP: Settings → "Minimize on Startup" e "Bring to Front on Incoming".
+  Na GUI do softphone utilizado: Settings → "Minimize on Startup" e "Bring to Front on Incoming".
 
 ### Outros problemas relatados (ainda não feitos)
 1. **SQL `notify_dispositions`** — migração `20260610_campaign_notify_dispositions.sql` NÃO foi rodada.
@@ -160,7 +160,7 @@ Automatizado em `local-helper/setup-hooks.ps1` (chamado pelo `instalar.bat`). N�
 
 ### Decisão registrada
 Softphone próprio (Electron/PJSIP) avaliado: caro (semanas–meses) e arriscado; só compensaria se a
-integração via MicroSIP falhasse. Como `msip:hangupall` + hooks funcionam, **fica descartado por ora**.
+integração via softphone utilizado falhasse. Como `msip:hangupall` + hooks funcionam, **fica descartado por ora**.
 
 ---
 

@@ -1,4 +1,4 @@
-# DiscSiP — Discagem Paralela / Preditiva (estudo de viabilidade + testes)
+# Blue Line — Discagem Paralela / Preditiva (estudo de viabilidade + testes)
 
 > Criado em 2026-06-19. Registro do estudo e dos testes empíricos da feature de
 > **discagem paralela** (discar N números ao mesmo tempo, conectar o primeiro que
@@ -12,7 +12,7 @@
 Sair do modelo atual de **power dialer** (1 chamada por vez, agente espera cada
 ligação ser produtiva/improdutiva) para **discagem preditiva/paralela**:
 
-- Discar **3 a 5 números ao mesmo tempo** ("como 5 abas do MicroSIP abertas").
+- Discar **3 a 5 números ao mesmo tempo** ("como 5 abas do softphone utilizado abertas").
 - Assim que **uma atende**, **derrubar as outras** e mostrar ao agente a que atendeu.
 - O agente pode fazer outras coisas enquanto a discadora roda; quando alguém atende,
   ele já começa a conversar.
@@ -21,25 +21,25 @@ ligação ser produtiva/improdutiva) para **discagem preditiva/paralela**:
 
 ---
 
-## 2. Veredito: VIÁVEL client-side (sem infra nova, sem recompilar MicroSIP)
+## 2. Veredito: VIÁVEL client-side (sem infra nova, sem recompilar softphone utilizado)
 
 A avaliação inicial supôs que preditiva exigiria backend de telefonia server-side
 (Asterisk/FreeSWITCH originando chamadas + AMD + bridge), o que reabriria o problema
-de infra que a arquitetura do DiscSiP foi feita pra evitar (`ws://` only, sem IP fixo,
+de infra que a arquitetura do Blue Line foi feita pra evitar (`ws://` only, sem IP fixo,
 sem API Intelbras). **Isso foi refutado pelos testes.** A feature é viável com a
-arquitetura atual (helper + MicroSIP em multi-call), graças a duas descobertas:
+arquitetura atual (helper + softphone utilizado em multi-call), graças a duas descobertas:
 
-1. **MicroSIP Extended mode** (single call mode desligado → `singleMode=0`) gerencia
+1. **softphone utilizado Extended mode** (single call mode desligado → `singleMode=0`) gerencia
    várias chamadas simultâneas.
 2. **`microsip.exe /hangupcalling`** derruba **apenas as chamadas que ainda tocam**
    (estado "calling"), **mantendo a que já foi atendida** (estado CONFIRMED). É o
-   "hangup seletivo" que torna a preditiva possível sem recompilar o MicroSIP.
+   "hangup seletivo" que torna a preditiva possível sem recompilar o softphone utilizado.
 
 ---
 
-## 3. Descobertas técnicas (corrigem o doc do MicroSIP)
+## 3. Descobertas técnicas (corrigem o doc do softphone utilizado)
 
-### 3.1. Comandos de linha de comando do MicroSIP (doc oficial)
+### 3.1. Comandos de linha de comando do softphone utilizado (doc oficial)
 Forma: `microsip.exe <comando>`. A instância em execução recebe via `WM_COPYDATA`.
 
 | Comando | Função |
@@ -52,7 +52,7 @@ Forma: `microsip.exe <comando>`. A instância em execução recebe via `WM_COPYD
 | `microsip.exe /transfer:XXX` | transfere |
 | `microsip.exe /dtmf:12345` | envia DTMF |
 | `microsip.exe /minimized` | inicia minimizado |
-| `microsip.exe /exit` | encerra o MicroSIP |
+| `microsip.exe /exit` | encerra o softphone utilizado |
 
 > ⚠️ **Correção ao `discadora-microsip-integracao.md`:** aquele doc afirma que "só
 > existe `msip:hangupall`" e que "`/hangup` não existe (vira número discado)". O
@@ -72,7 +72,7 @@ Forma: `microsip.exe <comando>`. A instância em execução recebe via `WM_COPYD
 
 ## 4. Testes empíricos realizados (2026-06-18/19)
 
-**Ambiente:** máquina de teste do usuário · MicroSIP **3.22.9** · ramal **5125** ·
+**Ambiente:** máquina de teste do usuário · softphone utilizado **3.22.9** · ramal **5125** ·
 helper **v1.5** · `singleMode=0` (multi-call) · hooks de evento ativos.
 Disparos via `POST http://localhost:3001/call` (caminho de produção).
 Números de teste: `11952085521`, `11947468059`, `11989898727`.
@@ -128,7 +128,7 @@ Nada de infra nova — tudo "código de app":
    **limite global de canais do PABX/tronco**, não o ramal. **Perguntar ao suporte
    Intelbras / admin do WidevoiceX:** "limite de canais simultâneos por ramal" e
    "limite de chamadas simultâneas do PABX/tronco". Não é testável localmente.
-2. **UX da janela (TESTE 3 não feito):** com `singleMode=0`, o MicroSIP pode **voltar
+2. **UX da janela (TESTE 3 não feito):** com `singleMode=0`, o softphone utilizado pode **voltar
    a mostrar janela** ao discar/atender. A invisibilidade do Sub-sprint C dependia do
    `singleMode=1` (que setava `doNotShowMessagesWindow`). Precisa testar o quanto
    "aparece" em multi-call e domar se necessário.
@@ -137,14 +137,14 @@ Nada de infra nova — tudo "código de app":
    Brasil. Mitigação: helper dispara `/hangupcalling` no instante do 1º `call-start`.
    Abandono zero não existe em preditiva — é regra do jogo, tratar conscientemente.
 4. **Dial Plan deve ficar VAZIO:** quem formata o número (`021 + DDD + ...`) é o
-   helper. Um Dial Plan no MicroSIP (ex.: `[2-9]...`) **bloquearia** números fora do
+   helper. Um Dial Plan no softphone utilizado (ex.: `[2-9]...`) **bloquearia** números fora do
    padrão e quebraria a discagem. Confirmado vazio no `.ini` (`dialPlan=`). Manter.
 
 ---
 
 ## 7. Fatos de ambiente confirmados nos testes
 
-- MicroSIP **3.22.9** (o `discadora-microsip-integracao.md` registrava 3.22.3).
+- softphone utilizado **3.22.9** (o `discadora-microsip-integracao.md` registrava 3.22.3).
 - `.exe`: `C:\Users\Filipe Crepaldi\AppData\Local\MicroSIP\microsip.exe`
 - `.ini` real (UTF-16 LE): `C:\Users\Filipe Crepaldi\AppData\Roaming\MicroSIP\microsip.ini`
 - Conta SIP ramal 5125, `transport=udp`, server/proxy/domain `widevoice8.intelbras.com.br:7048`.
@@ -160,7 +160,7 @@ Nada de infra nova — tudo "código de app":
 2. Subir com console: `cd d:\programs\discsip\local-helper` → `node index.js`
    (ou duplo-clique no `start.bat`). Deixar a janela aberta = log ao vivo.
 3. Disparar chamadas via PowerShell (ver nota PowerShell abaixo).
-4. Observar log do helper + aba **Messages** do MicroSIP (lista de chamadas ativas).
+4. Observar log do helper + aba **Messages** do softphone utilizado (lista de chamadas ativas).
 5. Voltar ao modo produção: fechar console e rodar `start-hidden.vbs`.
 
 > **Nota PowerShell:** `curl` no PowerShell é alias de `Invoke-WebRequest` (não aceita

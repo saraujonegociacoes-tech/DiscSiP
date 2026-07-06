@@ -36,7 +36,7 @@ supervisor — sem duplicação). O dashboard gerencial não mudou.
 
 ## #4 — Painel de mute/desmute (mic + alto-falante) ✅
 **Pedido:** painel assertivo de mute do agente. **Achado:** `msip:speakmute` só zera o RX dos
-conf ports de chamadas conectadas (fonte do MicroSIP, `lib/MSIP.cpp`) — **não** cala o ringback
+conf ports de chamadas conectadas (fonte do softphone utilizado, `lib/MSIP.cpp`) — **não** cala o ringback
 do "discando N" nem chamadas que conectam depois; por isso "não funcionava".
 **Fix:**
 - **Microfone:** `msip:micmute/micunmute` (zera a porta de entrada global — funciona).
@@ -51,7 +51,7 @@ do "discando N" nem chamadas que conectam depois; por isso "não funcionava".
   na seleção da campanha); gate **helper ≥ 1.7** (Desligar funciona em 1.6); estado em
   `softphoneStore` (`micMuted`/`speakerMuted`); o botão só vira após o `ok` do helper. O
   "Encerrar" saiu do banner e vive no painel.
-- **Verificado:** o C# do Core Audio compila e, num teste real, achou a sessão do MicroSIP e
+- **Verificado:** o C# do Core Audio compila e, num teste real, achou a sessão do softphone utilizado e
   aplicou o mute (`HIT:1`).
 
 ### Rollout do helper (importante)

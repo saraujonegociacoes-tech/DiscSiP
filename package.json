@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "next dev --turbopack",
     "sync:helper": "node scripts/sync-helper.mjs",
+    "import:leads": "node scripts/import-leads.mjs",
     "prebuild": "node scripts/sync-helper.mjs",
     "prebuild:cf": "node scripts/sync-helper.mjs",
     "build": "next build",

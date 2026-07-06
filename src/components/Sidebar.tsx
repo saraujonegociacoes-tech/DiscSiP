@@ -3,7 +3,7 @@
 import { useEffect } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { PhoneCall, LayoutDashboard, Megaphone, Shield, HelpCircle, type LucideIcon } from 'lucide-react'
+import { PhoneCall, LayoutDashboard, Megaphone, Target, Shield, HelpCircle, type LucideIcon } from 'lucide-react'
 import { useSoftphoneStore } from '@/store/softphoneStore'
 import { getCurrentProfile } from '@/app/actions/auth'
 import type { Role } from '@/lib/types/database'
@@ -27,6 +27,7 @@ const NAV_ITEMS: { href: string; label: string; icon: LucideIcon; roles: Role[] 
   { href: '/softphone', label: 'Discador', icon: PhoneCall, roles: ['agent', 'supervisor', 'manager', 'admin'] },
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['supervisor', 'manager', 'admin'] },
   { href: '/campaigns', label: 'Campanhas', icon: Megaphone, roles: ['supervisor', 'manager', 'admin'] },
+  { href: '/leads', label: 'Leads', icon: Target, roles: ['agent', 'supervisor', 'manager', 'admin'] },
   { href: '/admin', label: 'Admin', icon: Shield, roles: ['admin'] },
   { href: '/ajuda', label: 'Como usar?', icon: HelpCircle, roles: ['agent', 'supervisor', 'manager', 'admin'] },
 ]

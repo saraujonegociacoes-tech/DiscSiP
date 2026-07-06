@@ -1,6 +1,6 @@
-# Blue Line — Restilização da interface do DiscSiP
+# Blue Line — Restilização da interface do Blue Line
 
-Recriar a interface inteira aplicando a identidade visual **Blue Line Power Dialer**. Foco 100% em UI/visual: tokens, tema dark institucional, layout, componentes e telas. Nenhuma lógica de negócio, integração SIP, Supabase ou helper local é tocada — entrego um shell visual navegável que depois pode ser plugado ao backend real do DiscSiP.
+Recriar a interface inteira aplicando a identidade visual **Blue Line Power Dialer**. Foco 100% em UI/visual: tokens, tema dark institucional, layout, componentes e telas. Nenhuma lógica de negócio, integração SIP, Supabase ou helper local é tocada — entrego um shell visual navegável que depois pode ser plugado ao backend real do Blue Line.
 
 ## 1. Design system (src/styles.css)
 
@@ -54,7 +54,7 @@ Sidebar colapsável (shadcn) com cor `#000A30`, item ativo em `#0B1D55`, ícones
 - **Dialer (agente)** — layout dedicado: card grande com o próximo contato, controles (Atender / Próximo / Pausar / Encerrar), timer em destaque, painel lateral com histórico do contato e notas, indicador "Em chamada" em ciano `#00C2A8`.
 - **Reports** — filtros + gráficos (linha, barras, donut) com a paleta de status.
 - **Users (admin)** — tabela de usuários com papel, departamento, ramal; ações de aprovar pendentes.
-- **Settings** — perfil, ramal MicroSIP, preferências.
+- **Settings** — perfil, ramal softphone utilizado, preferências.
 
 ## 5. Componentes reaproveitáveis
 
@@ -66,9 +66,9 @@ SaaS corporativo de vendas — nada de telemarketing/call-center. Tipografia Int
 
 ## Fora de escopo
 
-- Integração SIP / MicroSIP / helper local
+- Integração SIP / softphone utilizado / helper local
 - Supabase Auth, RLS, server actions, RBAC real
 - Upload e parsing real de `.csv/.xlsx`
 - Persistência — tudo com mocks em memória só para o visual
 
-Resultado: um app navegável idêntico em estrutura ao DiscSiP, totalmente vestido com a marca Blue Line, pronto para depois ser conectado ao backend existente.
+Resultado: um app navegável idêntico em estrutura ao Blue Line, totalmente vestido com a marca Blue Line, pronto para depois ser conectado ao backend existente.

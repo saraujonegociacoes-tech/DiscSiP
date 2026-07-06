@@ -27,7 +27,7 @@ Sequência do bug:
 3. Nenhuma próxima ligação dispara. Ao voltar, o status ainda é `running`, mas não há
    motor rodando → travado.
 
-> O "piscar" do MicroSIP na barra de tarefas é assunto à parte (o hider tem polling de
+> O "piscar" do softphone utilizado na barra de tarefas é assunto à parte (o hider tem polling de
 > ~250ms, então a janela aparece por instantes a cada discagem) e **não** é prioridade.
 
 ---
@@ -125,7 +125,7 @@ atendido, efeito de fim 1-a-1 (`/events`), efeito de `pendingDisposition`, reset
 alteração focada, **testada no npm antes de subir**, de preferência depois do lote de
 produção atual (#1/#2/#4/#5) validado — não empilhar risco.
 
-**Teste (npm, com helper + MicroSIP reais):**
+**Teste (npm, com helper + softphone utilizado reais):**
 1. Iniciar campanha → discar → tabular → **trocar de aba** (Histórico/Meu desempenho) e
    **mudar de página** durante a pausa → a próxima ligação **dispara** mesmo fora da tela.
 2. Modo paralelo: lote dispara e resolve (vencedor/ninguém atendeu) com a tela em outra página.

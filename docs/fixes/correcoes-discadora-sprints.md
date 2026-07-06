@@ -1,4 +1,4 @@
-# DiscSiP / Blue Line — Correções da Discadora (plano por sprints)
+# Blue Line / Blue Line — Correções da Discadora (plano por sprints)
 
 > Criado em 2026-06-24. Conceito e planejamento das correções dos bugs reportados
 > após o lançamento da **discagem paralela/preditiva** (helper v1.6 + front-end).
@@ -41,19 +41,19 @@ fluxo de app **não mudou**. O que mudou e atinge **toda** chamada são efeitos 
 introduzidos pelo modo paralelo no helper v1.6 e no ambiente:
 
 1. **Hider de janela sempre ligado** — `startMicrosipHider()` roda durante toda a vida do
-   helper (loop PowerShell a cada ~250ms escondendo qualquer janela do MicroSIP),
+   helper (loop PowerShell a cada ~250ms escondendo qualquer janela do softphone utilizado),
    inclusive durante chamadas 1-a-1. (`local-helper/index.js`, `startMicrosipHider`)
 2. **`parallelSession` nunca é zerada** e, no caminho "ninguém atendeu"
    (`handleParallelEnd`), o `resolved` **não vira `true`** (só seta `endedNoAnswer`).
    Resultado: fica uma **sessão paralela fantasma**. Numa chamada 1-a-1 posterior, o
    `/event/call-start` chama `handleParallelAnswer`, que só não age por causa do
    *match por número* — proteção frágil. (`local-helper/index.js`, linhas ~200–229)
-3. **MicroSIP em multi-call (`singleMode=0`)** — exigência da feature; é um modo global
+3. **softphone utilizado em multi-call (`singleMode=0`)** — exigência da feature; é um modo global
    que muda o comportamento de **todas** as chamadas, não só as paralelas.
 
 ### Por que isso gera o bug
 Como o código 1-a-1 não mudou, a regressão é quase certamente **de runtime** (modo
-multi-call / comportamento de janela do MicroSIP) **ou** da **sessão paralela fantasma**
+multi-call / comportamento de janela do softphone utilizado) **ou** da **sessão paralela fantasma**
 vazando para o 1-a-1 (disparando `/hangupcalling`/`speakmute` indevidamente). Não é
 honesto cravar o mecanismo exato sem **reproduzir uma vez** — por isso o sprint começa
 por diagnóstico, não por patch às cegas.
@@ -62,9 +62,9 @@ por diagnóstico, não por patch às cegas.
 **Fase A — Diagnóstico guiado (~10 min, sem alterar código):**
 1. Derrubar o helper oculto e subir com console:
    `taskkill /IM node.exe /F` → `cd local-helper` → `set HELPER_NO_HIDE=1 && node index.js`
-   (MicroSIP visível + log ao vivo).
+   (softphone utilizado visível + log ao vivo).
 2. Rodar **uma campanha antiga** em 1-a-1 e observar:
-   - O MicroSIP estabelece áudio ou a chamada cai sozinha?
+   - O softphone utilizado estabelece áudio ou a chamada cai sozinha?
    - O log do helper mostra `/hangupcalling`/`speakmute` disparando numa chamada 1-a-1?
      (indicaria a sessão fantasma — suspeito #2)
    - Confirmar `singleMode` no `microsip.ini` e se era `0` **antes** da feature
@@ -75,7 +75,7 @@ por diagnóstico, não por patch às cegas.
 - **Encerrar/zerar a `parallelSession`** ao fim do lote (setar `resolved = true` também
   no caminho "ninguém atendeu", ou anular a sessão) para que **nunca** vaze para o 1-a-1.
 - **Escopar o hider e o `speakmute` estritamente à sessão paralela ativa** — só esconder/
-  mutar enquanto há lote paralelo em andamento; fora disso, não tocar no MicroSIP. Assim
+  mutar enquanto há lote paralelo em andamento; fora disso, não tocar no softphone utilizado. Assim
   uma campanha 1-a-1 fica imune aos efeitos do modo paralelo.
 
 ### Arquivos prováveis
@@ -96,7 +96,7 @@ diagnóstico primeiro reduz o risco de "consertar o que não era".
 > O alvo é classificação automática "pelas costas do agente", sobretudo no paralelo.
 
 ### Resultado da pesquisa na documentação (2026-06-24)
-**O MicroSIP NÃO emite gatilho de caixa postal — e não pode emitir.** Verificado na
+**O softphone utilizado NÃO emite gatilho de caixa postal — e não pode emitir.** Verificado na
 [ajuda oficial](https://www.microsip.org/help). A lista COMPLETA de eventos é só de
 **estado de chamada**, nenhum de detecção de secretária:
 
@@ -112,9 +112,9 @@ diagnóstico primeiro reduz o risco de "consertar o que não era".
 Para a camada SIP, **a caixa postal "atende" igual a um humano**: a operadora devolve
 `200 OK` e a chamada vira CONFIRMED → dispara `cmdCallStart`, idêntico a um humano.
 Distinguir humano × máquina é **AMD (Answering Machine Detection)**, que exige **analisar
-o áudio** da chamada (bipe / silêncio / padrão de fala). O MicroSIP é cliente PJSIP que
+o áudio** da chamada (bipe / silêncio / padrão de fala). O softphone utilizado é cliente PJSIP que
 **não analisa áudio nem expõe o RTP** a scripts — logo a informação **nunca chega** ao
-hook. Por isso não há `cmdVoicemail`. O único automático do MicroSIP é o `autoHangUpTime`
+hook. Por isso não há `cmdVoicemail`. O único automático do softphone utilizado é o `autoHangUpTime`
 (timeout cego — **vetado** pelo usuário, com razão).
 
 ### Solução — o único caminho "pelas costas do agente": AMD no PABX
@@ -123,7 +123,7 @@ AMD precisa rodar **onde o áudio existe**: no **Intelbras WidevoiceX**. Descobe
   `cmdCallEnd`, que o helper **já escuta hoje** → a ligação cai sozinha, o lote paralelo
   segue, **zero código novo**, 100% transparente. É exatamente o objetivo.
 - Se o WidevoiceX só **sinalizar** via cabeçalho SIP (ex.: `X-Detect`) sem derrubar →
-  **não serve**: o MicroSIP não repassa cabeçalhos SIP aos hooks `cmd*`.
+  **não serve**: o softphone utilizado não repassa cabeçalhos SIP aos hooks `cmd*`.
 
 **Ação do sprint = pergunta ao suporte Intelbras (não é código):**
 > "O WidevoiceX oferece **detecção de secretária eletrônica (AMD)** em campanha de
@@ -132,16 +132,16 @@ AMD precisa rodar **onde o áudio existe**: no **Intelbras WidevoiceX**. Descobe
 
 Encaminhamento conforme a resposta:
 - **Sim, derruba:** validar em 1 teste real (cai em caixa → `cmdCallEnd` → helper avança).
-  Possivelmente **nada a implementar** no DiscSiP.
+  Possivelmente **nada a implementar** no Blue Line.
 - **Sinaliza, mas não derruba:** avaliar se dá para o PABX ser configurado para derrubar;
-  via MicroSIP puro, inalcançável.
+  via softphone utilizado puro, inalcançável.
 - **Não tem AMD:** então não existe solução automática confiável com a stack atual. As
   únicas saídas seriam (a) softphone próprio Electron+PJSIP **com AMD de áudio** — caro e
   já descartado no projeto (`discadora-microsip-integracao.md` §4), ou (b) conviver com o
   custo da caixa postal. Reabrir a decisão com o usuário.
 
 ### Arquivos prováveis
-- Provavelmente **nenhum** no DiscSiP (a solução vive no PABX). Se o teste exigir tabular
+- Provavelmente **nenhum** no Blue Line (a solução vive no PABX). Se o teste exigir tabular
   o `cmdCallEnd` de máquina de forma diferente, aí sim mexe em `usePowerDialer.ts`.
 
 ### Risco / esforço

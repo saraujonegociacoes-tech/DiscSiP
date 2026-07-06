@@ -330,28 +330,25 @@ export async function getCampaignStats(campaignId: string): Promise<{
   abandoned: number
 }> {
   const supabase = await createServerClient()
+
+  // Contagem por status agregada no banco (view v_campaign_status_counts): o Worker
+  // lê 1 linha em vez de varrer todos os contatos da campanha em JS. Sem contatos
+  // (campanha vazia) → maybeSingle devolve null → zeros.
   const { data } = await supabase
-    .from('campaign_contacts')
-    .select('status')
+    .from('v_campaign_status_counts')
+    .select('*')
     .eq('campaign_id', campaignId)
+    .maybeSingle()
 
-  const stats = {
-    total: 0,
-    pending: 0,
-    dialing: 0,
-    answered: 0,
-    no_answer: 0,
-    busy: 0,
-    failed: 0,
-    do_not_call: 0,
-    abandoned: 0,
+  return {
+    total: data?.total ?? 0,
+    pending: data?.pending ?? 0,
+    dialing: data?.dialing ?? 0,
+    answered: data?.answered ?? 0,
+    no_answer: data?.no_answer ?? 0,
+    busy: data?.busy ?? 0,
+    failed: data?.failed ?? 0,
+    do_not_call: data?.do_not_call ?? 0,
+    abandoned: data?.abandoned ?? 0,
   }
-
-  for (const row of data ?? []) {
-    stats.total++
-    const s = row.status as keyof typeof stats
-    if (s in stats) stats[s]++
-  }
-
-  return stats
 }

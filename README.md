@@ -1,6 +1,6 @@
 # Blue Line — Power Dialer
 
-Sistema web de discagem semi-automática para a equipe de vendas da **Araujo Negociações**, integrado ao PABX **Intelbras WidevoiceX** via **MicroSIP**. O DiscSiP gerencia filas de contatos, seleciona o próximo automaticamente e aciona o MicroSIP instalado na máquina do agente — o agente só atende e fala.
+Sistema web de discagem semi-automática para a equipe de vendas da **Araujo Negociações**, integrado ao PABX **Intelbras WidevoiceX** via **softphone utilizado**. O Blue Line gerencia filas de contatos, seleciona o próximo automaticamente e aciona o softphone utilizado instalado na máquina do agente — o agente só atende e fala.
 
 - **App:** https://discsip.pages.dev
 - **Deploy:** Cloudflare Pages (deploy automático no push para `main`)
@@ -8,7 +8,7 @@ Sistema web de discagem semi-automática para a equipe de vendas da **Araujo Neg
 - **PABX:** Intelbras WidevoiceX (`widevoice8.intelbras.com.br`) — ramais 5125–5150
 
 > Documentação técnica aprofundada em [`docs/`](docs/README.md), organizada em `reference/`
-> (arquitetura, integração MicroSIP, perguntas Intelbras), `updates/` (discagem paralela,
+> (arquitetura, integração softphone utilizado, perguntas Intelbras), `updates/` (discagem paralela,
 > discagem em background) e `fixes/` (correções por lote).
 
 ---
@@ -33,7 +33,7 @@ Sistema web de discagem semi-automática para a equipe de vendas da **Araujo Neg
 
 ## Visão geral
 
-O servidor SIP da Intelbras só aceita WebSocket sem TLS (`ws://`), o que um app em HTTPS não pode usar (mixed content). Em vez de discar pelo browser, o DiscSiP aproveita o **MicroSIP** que os agentes já usam: um **helper local** (Node.js, porta 3001) rodando na máquina de cada agente recebe o número do navegador e aciona o MicroSIP, que disca via SIP no PABX. Sem proxy central, sem IP fixo, sem API Intelbras.
+O servidor SIP da Intelbras só aceita WebSocket sem TLS (`ws://`), o que um app em HTTPS não pode usar (mixed content). Em vez de discar pelo browser, o Blue Line aproveita o **softphone utilizado** que os agentes já usam: um **helper local** (Node.js, porta 3001) rodando na máquina de cada agente recebe o número do navegador e aciona o softphone utilizado, que disca via SIP no PABX. Sem proxy central, sem IP fixo, sem API Intelbras.
 
 O sistema é **dirigido pelo supervisor**: ele cria campanhas, sobe os mailings (`.csv`/`.xlsx`) e define quem disca, quando e o que o agente vê. O agente apenas seleciona uma campanha e inicia a discagem.
 
@@ -56,9 +56,9 @@ O acesso é por **Supabase Auth (email/senha)**. O cadastro é autosserviço: no
 
 1. Vê apenas as campanhas em que participa e seleciona uma.
 2. Clica **Iniciar discagem** (bloqueado fora do horário configurado, reavaliado periodicamente).
-3. O sistema busca o próximo contato pendente da fila e aciona o MicroSIP via helper local.
-4. O MicroSIP disca automaticamente — o agente só atende o telefone.
-5. O fim da chamada é detectado em tempo real (eventos do MicroSIP via helper) ou pelo botão **Encerrar**.
+3. O sistema busca o próximo contato pendente da fila e aciona o softphone utilizado via helper local.
+4. O softphone utilizado disca automaticamente — o agente só atende o telefone.
+5. O fim da chamada é detectado em tempo real (eventos do softphone utilizado via helper) ou pelo botão **Encerrar**.
 6. O agente registra o **resultado** (disposição); se ela estiver entre as configuradas, um webhook do Make é disparado (email/WhatsApp).
 7. O próximo contato carrega após uma pausa curta entre chamadas.
 
@@ -78,7 +78,7 @@ Os contatos discados-mas-derrubados viram `abandoned` (recicláveis). Detalhes e
 Ao **iniciar a discagem** (não ao só selecionar a campanha), o agente vê um painel com
 **Desligar**, **Microfone** (mudo/aberto) e **Som** (mudo/aberto); o painel some quando a
 discagem para. O microfone usa `msip:micmute`; o alto-falante é mutado
-no nível do Windows (sessão de áudio do `microsip.exe`), porque o mute interno do MicroSIP não
+no nível do Windows (sessão de áudio do `microsip.exe`), porque o mute interno do softphone utilizado não
 silencia o ringback. Requer **helper ≥ 1.7** (os botões ficam desabilitados em versões antigas).
 
 ### Métricas do agente
@@ -122,14 +122,14 @@ Browser (agente)
 Helper Node.js (porta 3001)        ← roda na máquina do agente
   │  spawn microsip.exe NUMERO  (ou fallback protocolo tel:)
   ▼
-MicroSIP (softphone Windows)
+softphone utilizado (softphone Windows)
   │  SIP
   ▼
 PABX Intelbras WidevoiceX
 ```
 
 - O número é normalizado para `021 + DDD + número` (CSP da operadora, sem o qual o interurbano não completa).
-- O fim da chamada flui de volta: MicroSIP → hooks `cmdCallStart/End/Busy` (no `microsip.ini`) → helper (`/event/*`) → o app faz polling em `/events` para tabular automaticamente.
+- O fim da chamada flui de volta: softphone utilizado → hooks `cmdCallStart/End/Busy` (no `microsip.ini`) → helper (`/event/*`) → o app faz polling em `/events` para tabular automaticamente.
 
 ---
 
@@ -146,7 +146,7 @@ App Express (`local-helper/index.js`, **v1.7**) em `http://localhost:3001`. Endp
 | `POST` | `/hangup` | Encerra a chamada ativa (`msip:hangupall`) — botão "Desligar" |
 | `POST` | `/mute` | `{ device:'mic'\|'speaker', muted }` — mic via `msip:micmute`; alto-falante via mute da sessão de áudio do `microsip.exe` no Windows (**v1.7+**) |
 | `GET` | `/events` | Último evento de chamada (o app faz polling aqui) |
-| `GET` | `/event/call-start` · `/event/call-end` · `/event/call-busy` | Recebem os eventos do MicroSIP |
+| `GET` | `/event/call-start` · `/event/call-end` · `/event/call-busy` | Recebem os eventos do softphone utilizado |
 | `POST` | `/update` | Auto-atualização sob demanda (botão "Atualizar helper" no app) |
 
 **Discagem:** prefixa o CSP `021` (configurável via `DIAL_PREFIX`), removendo `+55`/`55` e formatação. Sempre disca `021 + DDD + número` (ex.: `11952085529` → `02111952085529`). O `microsip.exe` é localizado automaticamente nos caminhos padrão (override via `MICROSIP_PATH`).
@@ -165,14 +165,14 @@ reabre o `node` quando o helper sai com código 42 (após se atualizar).
 
 | Arquivo | Função |
 |---------|--------|
-| `instalar.bat` | Instalação completa (1× por máquina): `npm install` → configura hooks do MicroSIP → cria atalho de startup oculto |
+| `instalar.bat` | Instalação completa (1× por máquina): `npm install` → configura hooks do softphone utilizado → cria atalho de startup oculto |
 | `atualizar.bat` | Atualizador manual: mata só o node do helper → `npm install` → sobe oculto (a atualização do código em si é via app, `/update`) |
 | `start.bat` | Inicia o helper manualmente com console (debug); reabre o node ao sair com código 42 (auto-update) |
 | `start-hidden.vbs` | Inicia o helper sem janela (usado no startup) |
 | `setup-hooks.ps1` | Copia os `on-call-*.bat` para `C:\Users\Public\blueline-helper` (caminho sem espaços) e grava os hooks `cmdCallStart/End/Busy` + `minimized=1` no `microsip.ini` |
-| `on-call-start/end/busy.bat` | Disparados pelo MicroSIP; fazem `curl` para os endpoints `/event/*` do helper |
+| `on-call-start/end/busy.bat` | Disparados pelo softphone utilizado; fazem `curl` para os endpoints `/event/*` do helper |
 
-**Instalação (uma vez por máquina, com o MicroSIP fechado):**
+**Instalação (uma vez por máquina, com o softphone utilizado fechado):**
 ```
 local-helper/instalar.bat
 ```
@@ -191,7 +191,7 @@ Pré-requisito: Node.js instalado.
 | Estilo | TailwindCSS 4 |
 | Gráficos | Recharts |
 | Parse de mailing | `xlsx` (SheetJS), client-side com dynamic import |
-| Discagem | MicroSIP + helper local Node.js/Express |
+| Discagem | softphone utilizado + helper local Node.js/Express |
 
 ---
 
