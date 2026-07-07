@@ -22,6 +22,7 @@ Dois domínios, propositalmente **não misturados**:
 
 ## `fixes/` — correções de bugs
 - [`correcao-cpu-cloudflare-1102.md`](fixes/correcao-cpu-cloudflare-1102.md) — Cloudflare Error 1102 (estouro de CPU): agregar no Postgres (views security_invoker) em vez de puxar tabelas inteiras e agregar no Worker
+- [`correcao-truncamento-1000-linhas.md`](fixes/correcao-truncamento-1000-linhas.md) — contagens travando em 1000 (teto Max Rows do Supabase): dashboard de leads via RPC `get_leads_dashboard` + `fetchAllRows` paginado; inclui dedup de campanha e saneamento de período. **Aviso: consolidado é destrutivo.**
 - [`correcoes-producao-2026-06.md`](fixes/correcoes-producao-2026-06.md) — lote de produção jun/2026 (#1 tabulação, #2 fuso, #4 mute, #5 dashboard do agente; #3 pendente)
 - [`correcoes-discadora-sprints.md`](fixes/correcoes-discadora-sprints.md) — 1ª leva de correções da discadora (sprints)
 

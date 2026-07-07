@@ -94,6 +94,19 @@ export function customPeriod(startYMD: string, endYMD: string): LeadPeriod {
   }
 }
 
+// Saneia um LeadPeriod vindo do CLIENTE antes de usar start/end em queries. As server
+// actions recebem o período do browser; sem isto, um start/end forjado poderia se infiltrar
+// num filtro montado por string (ex.: PostgREST .or(...)). Normaliza para ISO canônico (só
+// dígitos e -:.TZ), lançando se a data for inválida. Idempotente para períodos válidos.
+export function sanitizePeriod(period: LeadPeriod): LeadPeriod {
+  const iso = (v: string, field: string): string => {
+    const t = Date.parse(v)
+    if (Number.isNaN(t)) throw new Error(`período inválido (${field})`)
+    return new Date(t).toISOString()
+  }
+  return { ...period, start: iso(period.start, 'start'), end: iso(period.end, 'end') }
+}
+
 // Datas BRT ('YYYY-MM-DD') dos limites de um período, para preencher inputs de data.
 // `endDate` é o último dia INCLUSIVO (véspera do `end` exclusivo).
 export function periodBounds(p: LeadPeriod): { startDate: string; endDate: string } {

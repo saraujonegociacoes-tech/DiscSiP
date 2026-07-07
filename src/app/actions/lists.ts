@@ -1,6 +1,7 @@
 'use server'
 
 import { createServerClient } from '@/lib/supabase/server'
+import { fetchAllRows } from '@/lib/supabase/paginate'
 import type { ColumnMapping, ContactStatus, List } from '@/lib/types/database'
 
 export async function getLists(campaignId: string): Promise<List[]> {
@@ -78,13 +79,20 @@ export async function createList(
     return { inserted: 0, duplicates: 0, error: listError?.message ?? 'Falha ao criar lista' }
   }
 
-  // Telefones já existentes na campanha (dedup em nível de campanha)
-  const { data: existing } = await supabase
-    .from('campaign_contacts')
-    .select('phone_number')
-    .eq('campaign_id', campaignId)
+  // Telefones já existentes na campanha (dedup em nível de campanha). Paginado: sem isto o
+  // PostgREST cortava em "Max Rows" (1000) e uma campanha maior deixava passar duplicados.
+  // Ordena por id (PK) para a paginação ser determinística.
+  const existing = await fetchAllRows<{ phone_number: string }>(
+    (from, to) =>
+      supabase
+        .from('campaign_contacts')
+        .select('phone_number')
+        .eq('campaign_id', campaignId)
+        .order('id', { ascending: true })
+        .range(from, to) as unknown as PromiseLike<{ data: { phone_number: string }[] | null }>
+  )
 
-  const seen = new Set((existing ?? []).map((c) => c.phone_number as string))
+  const seen = new Set(existing.map((c) => c.phone_number))
 
   const toInsert: Array<{
     campaign_id: string
