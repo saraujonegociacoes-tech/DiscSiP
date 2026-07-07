@@ -69,14 +69,31 @@ export function AgentRanking({
   const [sortKey, setSortKey] = useState<SortKey>('wonLeads')
   const [asc, setAsc] = useState(false) // desc por padrão (mais ganhos no topo)
 
-  const board = useMemo<BoardRow[]>(
-    () =>
-      rows.map((r) => {
-        const s = stuckByAgent[r.agentId]
-        return { ...r, stuckNow: s?.now ?? 0, stuckCycle: s?.cycle ?? 0 }
-      }),
-    [rows, stuckByAgent]
-  )
+  const board = useMemo<BoardRow[]>(() => {
+    const seen = new Set(rows.map((r) => r.agentId))
+    const out: BoardRow[] = rows.map((r) => {
+      const s = stuckByAgent[r.agentId]
+      return { ...r, stuckNow: s?.now ?? 0, stuckCycle: s?.cycle ?? 0 }
+    })
+    // Agentes com parados AGORA mas sem leads recebidos no período (só retroativos): entram
+    // no ranking com as métricas do período zeradas, para não sumirem da comparação.
+    for (const [agentId, s] of Object.entries(stuckByAgent)) {
+      if (seen.has(agentId)) continue
+      out.push({
+        agentId,
+        name: s.name,
+        totalLeads: 0,
+        wonLeads: 0,
+        deadLeads: 0,
+        conversionRate: 0,
+        deadRate: 0,
+        avgHoursToFirstContact: null,
+        stuckNow: s.now,
+        stuckCycle: s.cycle,
+      })
+    }
+    return out
+  }, [rows, stuckByAgent])
 
   const sorted = useMemo(() => {
     const dir = asc ? 1 : -1
@@ -109,8 +126,8 @@ export function AgentRanking({
       <div className="border-b border-border px-5 py-4">
         <h2 className="text-sm font-semibold text-foreground">Ranking de agentes</h2>
         <p className="text-xs text-muted-foreground">
-          {board.length} {board.length === 1 ? 'agente' : 'agentes'} com leads no período · clique
-          numa coluna para ordenar
+          {board.length} {board.length === 1 ? 'agente' : 'agentes'} · leads do período + parados
+          agora · clique numa coluna para ordenar
         </p>
       </div>
       {board.length === 0 ? (

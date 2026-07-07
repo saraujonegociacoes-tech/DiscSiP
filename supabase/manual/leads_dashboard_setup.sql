@@ -33,8 +33,11 @@ DROP TABLE    IF EXISTS public.lead_events CASCADE;
 DROP TABLE    IF EXISTS public.leads       CASCADE;
 DROP TABLE    IF EXISTS public.lead_agents CASCADE;
 DROP TABLE    IF EXISTS public.lead_phases CASCADE;
+DROP FUNCTION IF EXISTS public.get_agent_stuck(timestamptz, timestamptz);
 DROP FUNCTION IF EXISTS public.ingest_lead_card(jsonb);
 DROP FUNCTION IF EXISTS public.ingest_lead_event(jsonb);
+DROP FUNCTION IF EXISTS public.lead_in_supervisor_scope(uuid, uuid);
+DROP FUNCTION IF EXISTS public.lead_agent_dept(uuid);
 DROP FUNCTION IF EXISTS public.current_lead_agent_id();
 
 -- ── 1. Tabelas + seed + índices ──────────────────────────────────────────────
@@ -128,6 +131,26 @@ RETURNS uuid LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public AS $$
   SELECT id FROM public.lead_agents WHERE profile_id = auth.uid();
 $$;
 
+-- Departamento do responsável de um lead (via profile_id) — recorte de equipe do supervisor.
+CREATE FUNCTION public.lead_agent_dept(la_id uuid)
+RETURNS uuid LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public AS $$
+  SELECT p.department_id
+  FROM public.lead_agents la
+  JOIN public.profiles p ON p.id = la.profile_id
+  WHERE la.id = la_id;
+$$;
+
+-- O lead está no escopo de um supervisor do depto `dept`? (órfão OU do depto dele.)
+CREATE FUNCTION public.lead_in_supervisor_scope(l_id uuid, dept uuid)
+RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM public.leads l
+    WHERE l.id = l_id
+      AND (l.responsible_agent_id IS NULL
+           OR public.lead_agent_dept(l.responsible_agent_id) = dept)
+  );
+$$;
+
 ALTER TABLE public.lead_phases ENABLE ROW LEVEL SECURITY;
 CREATE POLICY lead_phases_select ON public.lead_phases FOR SELECT
   USING (auth.uid() IS NOT NULL);
@@ -136,16 +159,30 @@ ALTER TABLE public.lead_agents ENABLE ROW LEVEL SECURITY;
 CREATE POLICY lead_agents_select ON public.lead_agents FOR SELECT
   USING (auth.uid() IS NOT NULL);
 
+-- agente (o seu) · supervisor (do SEU depto + órfãos) · manager/admin (tudo). O recorte do
+-- supervisor por departamento espelha o discador (20260614_rls_policies.sql) via a ponte
+-- lead_agents.profile_id → profiles.department_id. Ver 20260707_leads_supervisor_scope.sql.
 ALTER TABLE public.leads ENABLE ROW LEVEL SECURITY;
 CREATE POLICY leads_select ON public.leads FOR SELECT USING (
-  current_profile_role() IN ('supervisor', 'manager', 'admin')
+  current_profile_role() IN ('manager', 'admin')
   OR responsible_agent_id = current_lead_agent_id()
+  OR (
+    current_profile_role() = 'supervisor'
+    AND (
+      responsible_agent_id IS NULL
+      OR lead_agent_dept(responsible_agent_id) = current_profile_dept()
+    )
+  )
 );
 
 ALTER TABLE public.lead_events ENABLE ROW LEVEL SECURITY;
 CREATE POLICY lead_events_select ON public.lead_events FOR SELECT USING (
-  current_profile_role() IN ('supervisor', 'manager', 'admin')
+  current_profile_role() IN ('manager', 'admin')
   OR agent_id = current_lead_agent_id()
+  OR (
+    current_profile_role() = 'supervisor'
+    AND lead_in_supervisor_scope(lead_id, current_profile_dept())
+  )
 );
 
 -- ── 3. Views agregadas (security_invoker = true -> RLS do usuário vale) ───────
@@ -431,6 +468,44 @@ $$;
 
 REVOKE ALL ON FUNCTION public.ingest_lead_card(jsonb) FROM public;
 GRANT EXECUTE ON FUNCTION public.ingest_lead_card(jsonb) TO service_role;
+
+-- ── 5. Agregação de "parados agora" (S4/perf) ────────────────────────────────
+-- Agrega no Postgres em vez de puxar a base aberta inteira pro Worker (menos egress/CPU —
+-- mesma filosofia do fix do Error 1102). SECURITY INVOKER: o RLS do chamador vale. Devolve
+-- 1 linha por agente (sem duplicados/sem responsável) + 1 linha "equipe" (agent_id NULL,
+-- inclui tudo). Espelhado em supabase/migrations/20260706_leads_agent_stuck.sql.
+CREATE OR REPLACE FUNCTION public.get_agent_stuck(p_start timestamptz, p_end timestamptz)
+RETURNS TABLE (
+  agent_id    uuid,
+  pipefy_name text,
+  stuck_now   bigint,
+  stuck_cycle bigint
+)
+LANGUAGE sql
+STABLE
+AS $$
+  SELECT
+    NULL::uuid,
+    NULL::text,
+    count(*),
+    count(*) FILTER (WHERE p.created_at >= p_start AND p.created_at < p_end)
+  FROM public.v_lead_progress p
+  WHERE p.is_stuck
+  UNION ALL
+  SELECT
+    p.responsible_agent_id,
+    la.pipefy_name,
+    count(*),
+    count(*) FILTER (WHERE p.created_at >= p_start AND p.created_at < p_end)
+  FROM public.v_lead_progress p
+  JOIN public.lead_agents la ON la.id = p.responsible_agent_id
+  WHERE p.is_stuck
+    AND NOT p.duplicate_responsible
+    AND p.responsible_agent_id IS NOT NULL
+  GROUP BY p.responsible_agent_id, la.pipefy_name;
+$$;
+
+GRANT EXECUTE ON FUNCTION public.get_agent_stuck(timestamptz, timestamptz) TO authenticated;
 
 COMMIT;
 

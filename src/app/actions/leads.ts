@@ -47,6 +47,18 @@ export interface DeathByAttempt {
   deaths: number
 }
 
+// Desempenho por canal de captação (S5.1). O canal (`capta_o_do_lead`) virou obrigatório no
+// Pipefy — enquanto o histórico não enche, a UI usa `channelFillRate` para marcar o painel
+// como "dado incompleto".
+export interface ChannelStat {
+  channel: string
+  totalLeads: number
+  wonLeads: number
+  deadLeads: number
+  conversionRate: number
+  deadRate: number
+}
+
 export interface AgentRankRow {
   agentId: string
   name: string
@@ -72,12 +84,14 @@ export interface LeadsData {
   deadReasons: DeadReason[]
   deathByAttempt: DeathByAttempt[]
   ranking: AgentRankRow[]
+  channelBreakdown: ChannelStat[]
+  channelFillRate: number // 0..1 — fração dos leads do período com canal preenchido
 }
 
 // Só as colunas de v_lead_progress que a agregação consome (o filtro por created_at é
 // server-side, então created_at nem precisa vir no payload). Mantém o egress enxuto.
 const PROGRESS_COLS =
-  'responsible_agent_id, discard_reason, duplicate_responsible, ' +
+  'responsible_agent_id, discard_reason, duplicate_responsible, channel, ' +
   'is_dead, is_open, is_won, max_funnel_order, hours_to_first_contact'
 
 function kpisFromRows(rows: LeadProgressRow[]): LeadKpis {
@@ -157,6 +171,46 @@ export async function getLeadsData(period: LeadPeriod): Promise<LeadsData> {
     (p) => p.order <= maxDeathOrder
   ).map((p) => ({ order: p.order, phase: p.name, deaths: deathByOrder.get(p.order) ?? 0 }))
 
+  // Desempenho por canal (S5.1). Usa o valor CRU de `capta_o_do_lead` (ex.: "Meta ADS -
+  // Whatsapp" vs "Meta ADS - Forms 1" são canais distintos que o supervisor quer comparar).
+  // Cap em CHANNEL_TOP_N por volume + "Outros" para não estourar se as campanhas crescerem.
+  // `channelFillRate` = fração dos leads do período com canal preenchido — a UI marca o
+  // painel como incompleto se for baixa.
+  const CHANNEL_TOP_N = 12
+  let channelFilled = 0
+  const byChannel = new Map<string, LeadProgressRow[]>()
+  for (const r of rows) {
+    const v = r.channel?.trim()
+    if (v) channelFilled++
+    const key = v || 'Não informado'
+    const arr = byChannel.get(key) ?? []
+    arr.push(r)
+    byChannel.set(key, arr)
+  }
+  const statOf = (channel: string, chRows: LeadProgressRow[]): ChannelStat => {
+    const k = kpisFromRows(chRows)
+    return {
+      channel,
+      totalLeads: k.totalLeads,
+      wonLeads: k.wonLeads,
+      deadLeads: k.deadLeads,
+      conversionRate: k.conversionRate,
+      deadRate: k.deadRate,
+    }
+  }
+  const sortedChannels = [...byChannel].sort((a, b) => b[1].length - a[1].length)
+  const channelBreakdown: ChannelStat[] =
+    sortedChannels.length <= CHANNEL_TOP_N
+      ? sortedChannels.map(([c, rs]) => statOf(c, rs))
+      : [
+          ...sortedChannels.slice(0, CHANNEL_TOP_N).map(([c, rs]) => statOf(c, rs)),
+          statOf(
+            'Outros',
+            sortedChannels.slice(CHANNEL_TOP_N).flatMap(([, rs]) => rs)
+          ),
+        ]
+  const channelFillRate = rows.length > 0 ? channelFilled / rows.length : 0
+
   // Ranking por agente. Exclui leads sem responsável e os de responsabilidade duplicada
   // (esses vão só para a lista de alerta, para não distorcer a comparação — regra do S0).
   const byAgent = new Map<string, LeadProgressRow[]>()
@@ -182,7 +236,15 @@ export async function getLeadsData(period: LeadPeriod): Promise<LeadsData> {
     })
     .sort((a, b) => b.wonLeads - a.wonLeads || b.totalLeads - a.totalLeads)
 
-  return { kpis: kpisFromRows(rows), funnel, deadReasons, deathByAttempt, ranking }
+  return {
+    kpis: kpisFromRows(rows),
+    funnel,
+    deadReasons,
+    deathByAttempt,
+    ranking,
+    channelBreakdown,
+    channelFillRate,
+  }
 }
 
 // ── Visão do agente (S2): fila de trabalho + desfechos do período ────────────
@@ -289,6 +351,13 @@ const FORGOTTEN_LIMIT = 100
 export interface StuckSplit {
   now: number // leads parados agora (estado atual)
   cycle: number // dos quais, criados no período selecionado
+  name: string // nome do agente (p/ montar linhas de agentes que só têm parados retroativos)
+}
+
+export interface TeamStuck {
+  total: number
+  cycle: number
+  retro: number
 }
 
 export interface ForgottenLead {
@@ -299,32 +368,109 @@ export interface ForgottenLead {
   createdAt: string | null
 }
 
+// Leads sem responsável (órfãos), para o supervisor triar — estado atual, distribuído por
+// fase. Supervisor+ vê todos os órfãos (não pertencem a nenhuma equipe). Ver a policy
+// leads_select em 20260707_leads_supervisor_scope.sql.
+export interface OrphanSummary {
+  total: number
+  open: number
+  byPhase: { phase: string; leads: number }[]
+}
+
 export interface SupervisorMetrics {
   // Parados agora por agente (keyed by agentId) — exclui responsabilidade duplicada, para
   // casar com o ranking (que já os exclui). Estado atual; `cycle` reancorado ao período.
   stuckByAgent: Record<string, StuckSplit>
   // Total da equipe (inclui duplicados) com split ciclo × retroativo.
-  teamStuck: { total: number; cycle: number; retro: number }
+  teamStuck: TeamStuck
   // Leads abertos em Recebidos/1° Acionamento, sem 1º contato, há mais de X horas (os
   // FORGOTTEN_LIMIT mais antigos); forgottenTotal = quantos existem ao todo.
   forgotten: ForgottenLead[]
   forgottenTotal: number
   forgottenThresholdHours: number
+  // Leads sem responsável (órfãos), distribuídos por fase — para triagem.
+  orphans: OrphanSummary
 }
 
 // Só as colunas de v_lead_progress que cada agregação consome (egress enxuto).
 const STUCK_COLS = 'responsible_agent_id, created_at, duplicate_responsible'
 const FORGOTTEN_COLS = 'lead_id, title, current_phase, responsible_agent_id, created_at'
 
+type NameById = Map<string, string>
+interface StuckAgg {
+  byAgent: Record<string, StuckSplit>
+  team: TeamStuck
+}
+
+// Preferido: agrega "parados agora" NO POSTGRES (RPC get_agent_stuck) — devolve ~1 linha por
+// agente + 1 linha "equipe" (agent_id NULL) em vez de puxar a base aberta inteira pro Worker
+// (menos egress e CPU do Worker — mesma filosofia do fix do Error 1102). Retorna null se a
+// função ainda não existir no banco (migration não rodada) → cai no fallback.
+async function stuckFromRpc(
+  supabase: Awaited<ReturnType<typeof createServerClient>>,
+  period: LeadPeriod
+): Promise<StuckAgg | null> {
+  const { data, error } = await supabase.rpc('get_agent_stuck', {
+    p_start: period.start,
+    p_end: period.end,
+  })
+  if (error || !data) return null
+  const rows = data as {
+    agent_id: string | null
+    pipefy_name: string | null
+    stuck_now: number
+    stuck_cycle: number
+  }[]
+  const byAgent: Record<string, StuckSplit> = {}
+  let team: TeamStuck = { total: 0, cycle: 0, retro: 0 }
+  for (const r of rows) {
+    const now = Number(r.stuck_now)
+    const cycle = Number(r.stuck_cycle)
+    if (r.agent_id == null) {
+      team = { total: now, cycle, retro: now - cycle } // linha "equipe"
+    } else {
+      byAgent[r.agent_id] = { now, cycle, name: r.pipefy_name ?? 'Sem nome' }
+    }
+  }
+  return { byAgent, team }
+}
+
+// Fallback: agrega em memória a partir de v_lead_progress (is_stuck=true). Mais lento (puxa a
+// base aberta), mas mantém a tela funcionando enquanto a migration do RPC não roda.
+async function stuckFromScan(
+  supabase: Awaited<ReturnType<typeof createServerClient>>,
+  period: LeadPeriod,
+  nameById: NameById
+): Promise<StuckAgg> {
+  const { data } = await supabase.from('v_lead_progress').select(STUCK_COLS).eq('is_stuck', true)
+  const rows = (data ?? []) as unknown as LeadProgressRow[]
+  const inPeriod = (c: string | null) => c != null && c >= period.start && c < period.end
+  const byAgent: Record<string, StuckSplit> = {}
+  let total = 0
+  let cycle = 0
+  for (const r of rows) {
+    total++
+    const cyc = inPeriod(r.created_at)
+    if (cyc) cycle++
+    if (!r.responsible_agent_id || r.duplicate_responsible) continue
+    const s = (byAgent[r.responsible_agent_id] ??= {
+      now: 0,
+      cycle: 0,
+      name: nameById.get(r.responsible_agent_id) ?? 'Sem nome',
+    })
+    s.now++
+    if (cyc) s.cycle++
+  }
+  return { byAgent, team: { total, cycle, retro: total - cycle } }
+}
+
 export async function getSupervisorMetrics(period: LeadPeriod): Promise<SupervisorMetrics> {
   const supabase = await createServerClient()
   const cutoff = new Date(Date.now() - FORGOTTEN_THRESHOLD_HOURS * 3_600_000).toISOString()
 
-  const [stuckRes, forgottenRes, agentsRes] = await Promise.all([
-    // (1) parados agora — toda a base aberta que estourou o SLA de fase.
-    supabase.from('v_lead_progress').select(STUCK_COLS).eq('is_stuck', true),
-    // (2) esquecidos — abertos em Recebidos/1° Acionamento, sem 1º contato, mais velhos que
-    // o limite. count exact traz o total mesmo com o teto de linhas.
+  const [forgottenRes, agentsRes, orphanRes, rpcStuck] = await Promise.all([
+    // Esquecidos — abertos em Recebidos/1° Acionamento, sem 1º contato, mais velhos que o
+    // limite. count exact traz o total mesmo com o teto de linhas.
     supabase
       .from('v_lead_progress')
       .select(FORGOTTEN_COLS, { count: 'exact' })
@@ -335,33 +481,23 @@ export async function getSupervisorMetrics(period: LeadPeriod): Promise<Supervis
       .order('created_at', { ascending: true })
       .limit(FORGOTTEN_LIMIT),
     supabase.from('lead_agents').select('id, pipefy_name'),
+    // Órfãos — leads sem responsável (o RLS já deixa supervisor+ ver todos). Colunas enxutas
+    // para agregar por fase em memória.
+    supabase.from('v_lead_progress').select('current_phase, is_open').is('responsible_agent_id', null),
+    stuckFromRpc(supabase, period),
   ])
 
-  const inPeriod = (createdAt: string | null) =>
-    createdAt != null && createdAt >= period.start && createdAt < period.end
-
-  // (1) parados agora → por agente (sem duplicados) + total da equipe.
-  const stuckRows = (stuckRes.data ?? []) as unknown as LeadProgressRow[]
-  const stuckByAgent: Record<string, StuckSplit> = {}
-  let teamTotal = 0
-  let teamCycle = 0
-  for (const r of stuckRows) {
-    teamTotal++
-    const cyc = inPeriod(r.created_at)
-    if (cyc) teamCycle++
-    if (!r.responsible_agent_id || r.duplicate_responsible) continue
-    const s = (stuckByAgent[r.responsible_agent_id] ??= { now: 0, cycle: 0 })
-    s.now++
-    if (cyc) s.cycle++
-  }
-
-  // (2) esquecidos → resolve o nome do responsável para o alerta.
-  const nameById = new Map(
+  const nameById: NameById = new Map(
     ((agentsRes.data ?? []) as { id: string; pipefy_name: string | null }[]).map((a) => [
       a.id,
       a.pipefy_name ?? 'Sem nome',
     ])
   )
+
+  // Parados agora: RPC (agregado no banco) ou fallback (agregado em memória).
+  const stuck = rpcStuck ?? (await stuckFromScan(supabase, period, nameById))
+
+  // Esquecidos → resolve o nome do responsável para o alerta.
   const forgottenRows = (forgottenRes.data ?? []) as unknown as LeadProgressRow[]
   const forgotten: ForgottenLead[] = forgottenRows.map((r) => ({
     leadId: r.lead_id,
@@ -373,11 +509,32 @@ export async function getSupervisorMetrics(period: LeadPeriod): Promise<Supervis
     createdAt: r.created_at,
   }))
 
+  // Órfãos → total, abertos e distribuição por fase (desc).
+  const orphanRows = (orphanRes.data ?? []) as unknown as {
+    current_phase: string | null
+    is_open: boolean
+  }[]
+  const orphanByPhase = new Map<string, number>()
+  let orphanOpen = 0
+  for (const r of orphanRows) {
+    if (r.is_open) orphanOpen++
+    const phase = r.current_phase?.trim() || '—'
+    orphanByPhase.set(phase, (orphanByPhase.get(phase) ?? 0) + 1)
+  }
+  const orphans: OrphanSummary = {
+    total: orphanRows.length,
+    open: orphanOpen,
+    byPhase: [...orphanByPhase]
+      .map(([phase, leads]) => ({ phase, leads }))
+      .sort((a, b) => b.leads - a.leads),
+  }
+
   return {
-    stuckByAgent,
-    teamStuck: { total: teamTotal, cycle: teamCycle, retro: teamTotal - teamCycle },
+    stuckByAgent: stuck.byAgent,
+    teamStuck: stuck.team,
     forgotten,
     forgottenTotal: forgottenRes.count ?? forgotten.length,
     forgottenThresholdHours: FORGOTTEN_THRESHOLD_HOURS,
+    orphans,
   }
 }

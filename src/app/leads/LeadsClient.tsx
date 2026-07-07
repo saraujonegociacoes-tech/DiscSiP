@@ -13,6 +13,8 @@ import {
   AgentRanking,
   DuplicateAlert,
   ForgottenLeads,
+  ChannelBreakdown,
+  OrphanLeads,
 } from '@/features/leads'
 import { useLeadsRealtime, LEADS_REALTIME_ENABLED } from '@/features/leads/useLeadsRealtime'
 import {
@@ -174,6 +176,10 @@ export function LeadsClient({
               <AgentRanking rows={data.ranking} stuckByAgent={supervisor.stuckByAgent} />
             </section>
             <section className="mt-6">
+              <ChannelBreakdown data={data.channelBreakdown} fillRate={data.channelFillRate} />
+            </section>
+            <section className="mt-6 grid grid-cols-1 items-start gap-4 xl:grid-cols-2">
+              <OrphanLeads orphans={supervisor.orphans} />
               <DuplicateAlert rows={duplicates} />
             </section>
           </>

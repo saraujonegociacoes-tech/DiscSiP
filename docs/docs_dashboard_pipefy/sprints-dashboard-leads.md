@@ -24,13 +24,17 @@ Este documento é o roadmap; os três documentos-irmãos deste silo são a fonte
 
 **S2 FEITO** (visão do agente) — jul/2026, **não deployado**; `tsc` + `eslint` verdes (erros restantes do `eslint` full são de `local-helper`/`public/helper`/`.open-next`, pré-existentes). Gráficos definitivos (Recharts + `useChartTheme`), tabela pessoal do agente e **"lead parado" por SLA de fase**. **Falta o dono rodar a migration `20260706_leads_sla.sql`** e mapear um `lead_agents.profile_id` para provar a visão do agente. Detalhes na seção **S2** abaixo.
 
-**S3 FEITO** (visão do supervisor) — jul/2026, **não deployado**; `tsc` + `eslint` verdes. `next build` local **não valida** aqui (erro de ambiente: `EPERM` em `.next/trace` + `EISDIR` num `route.ts` do discador — nada a ver com o código de leads; o deploy real é via OpenNext/Cloudflare, outra pipeline). Entregue: ranking comparativo **ordenável** + coluna "parados agora", gráfico "onde o lead morre", alerta de responsabilidade duplicada (definitivo) e alerta de "leads sem acionamento". Detalhes na seção **S3**.
+**S3 FEITO** (visão do supervisor) — **deployado atrás de tela "Em breve"**; `tsc` + `eslint` verdes. Migration do SLA (`20260706_leads_sla.sql`) rodada e `lead_agents.profile_id` mapeado (agente já enxerga o próprio). Entregue: ranking comparativo **ordenável** + coluna "parados agora" (**inclui agentes com só parados retroativos** — decisão do dono), gráfico "onde o lead morre", alerta de duplicados (definitivo) e alerta de "leads sem acionamento". **Parados agora agregado no Postgres** (RPC `get_agent_stuck`, com fallback em memória). Detalhes na seção **S3**.
 
-**S4 INICIADO** — scaffolding de **Realtime** pronto e **desligado por padrão** (opt-in por env + publicação Postgres). A tela já sabe se re-buscar sozinha quando ligado. Detalhes na seção **S4**.
+**S4 FEITO** — **Realtime LIGADO pelo dono (07/jul):** env `NEXT_PUBLIC_LEADS_REALTIME=1` + `ALTER PUBLICATION supabase_realtime ADD TABLE public.leads` rodado; a migration de perf `get_agent_stuck` também foi aplicada (verificado — o Realtime torna o RPC importante, não mais opcional). Também: **count-up sóbrio** nos KPIs de volume, **a11y** (`aria-sort`/`aria-busy`), egress via RPC. Enfeites que dependem do Realtime (destaque "venda", som opt-in) seguem adiados. Detalhes na seção **S4**.
 
-**Furos conhecidos:** provar o RLS do agente (mapear um `lead_agents.profile_id`) — enquanto isso o **agente logado vê a tela vazia** (o RLS não acha os leads dele); supervisor+ vê tudo. Confirmar a assunção "mais recente = último de `respons_vel`".
+**S5 EM ANDAMENTO (07/jul):** **S5.1 canal FEITO no código** (campo virou obrigatório no Pipefy → painel por canal + guarda de "dado incompleto"; falta o histórico encher). **S5.2 backup com scaffold** (`npm run backup:leads`, falta agendar/destino). **S5.3 ponte desenhada, dados 100% prontos** (8/8 `profile_id`+email) — não implementada de propósito (cruza domínios → só sob pedido explícito). Detalhes/contexto na seção **S5**.
 
-**Próximo: concluir S4** (ligar o Realtime — env + publicação; polimento visual/animações medidas) e depois **S5** (canal/backup/ponte com o discador).
+**Furos conhecidos:** confirmar a assunção "mais recente = último de `respons_vel`".
+
+**RBAC (07/jul):** achado que o **supervisor via todas as equipes** no domínio de leads (o S0 o pôs no mesmo balde que manager). Corrigido para o modelo do discador (supervisor = seu depto + órfãos) na migration `20260707_leads_supervisor_scope.sql` (**rodada e verificada** — é um aperto, não abre nada) + painel **"Leads sem responsável"** (órfãos por fase, ~395) para triagem. Detalhes na seção de princípios (#5) e no S3.
+
+**Verificação final ao vivo (07/jul):** todas as migrations aplicadas (SLA, `get_agent_stuck`, `20260707` supervisor-scope), `profile_id` 8/8, publicação Realtime confirmada (`leads` em `supabase_realtime`), `tsc`/`eslint` verdes. **Falta só o dono** (em andamento): **commit/deploy** do S3–S5 e envs de prod no Cloudflare (`NEXT_PUBLIC_LEADS_REALTIME=1` e, ao lançar, `NEXT_PUBLIC_LEADS_ENABLED=1`).
 
 ---
 
@@ -42,7 +46,7 @@ Decisões já fechadas com o dono do produto (não reabrir sem motivo):
 2. **Reusar a stack da Blue Line, descartar Vite/Pages.** O _plano de dados_ do doc de stack (Pipefy → Make → Supabase, com RLS + Realtime + Views) é 100% aproveitado. A _casca_ proposta (React + Vite no Cloudflare Pages) é descartada em favor de uma **rota nativa do Next**, reusando Recharts, Radix, Tailwind, os clientes Supabase e o RBAC que já existem.
 3. **Isolamento de dados agora, ponte pronta pra depois.** Os leads vivem em tabelas próprias, **sem** reconciliar com os `profiles` do discador. A dimensão de agente do Pipefy carrega uma coluna `profile_id` _nullable_ e vazia por ora — no dia em que cruzar "desempenho no discador × no funil" for desejado, vira _backfill_, não remigração. Não é agora.
 4. **Design system existente, não "Midnight Indigo".** A seção usa o tema _theme-aware_ que já existe (`theme.tsx`, `useChartTheme.ts`, `KpiCard`), não a paleta dark/glow proposta — para não virar uma ilha visualmente estrangeira. (Coerente com a própria ressalva do `panoramavisual.md`.)
-5. **Duas visões via papéis existentes.** "Agente" (autoavaliação) e "Supervisor" (gerencial/ranking) mapeiam nos papéis `agent/supervisor/manager/admin` que o RBAC já tem. O escopo por agente é garantido no banco (RLS), não no frontend.
+5. **Duas visões via papéis existentes.** "Agente" (autoavaliação) e "Supervisor" (gerencial/ranking) mapeiam nos papéis `agent/supervisor/manager/admin` que o RBAC já tem. O escopo é garantido no banco (RLS), não no frontend, e segue o **mesmo modelo do discador**: agente vê **o seu**; **supervisor vê o do seu departamento + os órfãos** (leads sem responsável, para triagem); manager/admin veem **tudo**. A ponte de equipe é `lead_agents.profile_id → profiles.department_id`. Ver `20260707_leads_supervisor_scope.sql` (o S0 tinha posto supervisor no mesmo balde que manager — corrigido 07/jul).
 
 ---
 
@@ -85,8 +89,8 @@ Sem mudança no `middleware.ts` — a rota `/leads` já cai no gate de sessão a
 | **S1** ✅ | Casca da seção, navegação e server actions — **FEITO** | S0 |
 | **S2** ✅ | Visão do Agente (autoavaliação) — **FEITO** | S1 |
 | **S3** ✅ | Visão do Supervisor (gerencial + ranking + alertas) — **FEITO** | S1 |
-| **S4** 🔄 | Tempo real, polimento e performance — **INICIADO** | S2, S3 |
-| **S5** | Pós-MVP: métricas bloqueadas, backup e ponte com o discador | S4 |
+| **S4** ✅ | Tempo real, polimento e performance — **FEITO** (Realtime ligado 07/jul) | S2, S3 |
+| **S5** 🔄 | Pós-MVP — canal ✅(código) · backup (scaffold) · ponte (desenho, sob pedido) | S4 |
 
 MVP = S0→S4. S5 só quando o dashboard deixar de ser protótipo.
 
@@ -171,9 +175,11 @@ MVP = S0→S4. S5 só quando o dashboard deixar de ser protótipo.
 - **`DeathByAttempt`** (novo, Recharts barras horizontais, cor *danger*) — a distribuição da mortalidade pelo funil.
 - **`ForgottenLeads`** (novo) — alerta de "leads sem acionamento" (estado success quando zero; lista os mais antigos quando > 0).
 - **`DuplicateAlert`** mantido (já servia como definitivo) — fora do ranking, para o supervisor corrigir no Pipefy.
+- **`OrphanLeads`** (novo, 07/jul) — "Leads sem responsável": total + abertos + distribuição por fase (~395 órfãos, 275 em 1° Acionamento), para o supervisor triar e atribuir no Pipefy. `getSupervisorMetrics` ganhou `orphans {total, open, byPhase}`.
+- **RLS do supervisor recortada por departamento (07/jul):** `leads_select`/`lead_events_select` reescritas — supervisor vê só o **próprio depto + órfãos** (era mesmo balde que manager). Ponte `lead_agents.profile_id → profiles.department_id`; helpers `lead_agent_dept`/`lead_in_supervisor_scope`. Migration `20260707_leads_supervisor_scope.sql`. Como as views são security_invoker, isso recorta TUDO (KPIs/funil/ranking/alertas) sem tocar no front.
 - **`page.tsx` / `LeadsClient`** — para supervisor+: card "Parados" agora vem de `teamStuck`; novos painéis (DeathByAttempt + ForgottenLeads lado a lado, ranking, duplicados); a troca de período re-busca `getLeadsData` + `getSupervisorMetrics` (o split ciclo × retroativo dos parados é reancorado ao período).
 
-**Nota de arquitetura (parados agora):** a leitura `is_stuck = true` varre a base aberta inteira (~3.3k linhas × 3 colunas) numa agregação só. Se o egress pesar, vira uma view `v_agent_stuck` / RPC parametrizado — **decisão adiada** (sem tocar no banco por ora). O ranking é por período; um agente com parados só retroativos e zero leads no período não aparece na tabela (mas entra no `teamStuck`).
+**Nota de arquitetura (parados agora) — RESOLVIDO (S4/perf):** o "parados agora" é agregado **no Postgres** via RPC `get_agent_stuck(p_start, p_end)` (`SECURITY INVOKER` → o RLS do chamador vale, igual às views), que devolve **~1 linha por agente + 1 linha "equipe"** em vez de puxar a base aberta (~3.3k linhas) pro Worker — corta egress e CPU do Worker (mesma filosofia do fix do Error 1102). Migration: [`../../supabase/migrations/20260706_leads_agent_stuck.sql`](../../supabase/migrations/20260706_leads_agent_stuck.sql) (espelhada no consolidado). O app tem **fallback**: enquanto a função não existir no banco, `getSupervisorMetrics` volta a agregar em memória — funciona nos dois casos, então dá pra rodar a migration quando quiser. **Ranking mostra também agentes com só parados retroativos** (zero leads no período): entram com as métricas do período zeradas, para não sumirem da comparação (decisão do dono, 06/jul).
 
 ---
 
@@ -191,25 +197,126 @@ MVP = S0→S4. S5 só quando o dashboard deixar de ser protótipo.
 - Mudança de fase no Pipefy reflete na tela aberta sem refresh manual.
 - Consumo de egress condizente com o plano Free no volume atual.
 
-**Iniciado (06/jul/2026)** — scaffolding de Realtime pronto, `tsc` + `eslint` verdes.
-- **Hook `useLeadsRealtime`** ([`../../src/features/leads/useLeadsRealtime.ts`](../../src/features/leads/useLeadsRealtime.ts)): assina `postgres_changes` em `public.leads` e dispara um **refetch silencioso** (debounce 1,5 s) do período corrente. O `LeadsClient` já usa (função `refresh`); há um selo **"Ao vivo"** no header quando ligado. O RLS vale para o Realtime (agente só recebe o próprio; supervisor+ tudo), e por ser client-side **não passa pelo worker** (não gasta egress do SSR).
-- **Desligado por padrão** (nem abre socket). Para **ligar**, o dono faz DOIS passos:
-  1. **Env:** `NEXT_PUBLIC_LEADS_REALTIME=1` (no `.env.local` / no ambiente do deploy).
-  2. **Banco (uma vez, SQL Editor):** `ALTER PUBLICATION supabase_realtime ADD TABLE public.leads;` (sem isso o socket conecta mas nunca recebe evento — não quebra nada, só não atualiza sozinho).
-- **Egress:** confirmado — o front só lê views agregadas / `v_lead_progress` recortada, nunca tabelas brutas (regra travada mantida no S3).
+**Entregue (06/jul/2026)** — `tsc` + `eslint` verdes.
+- **Realtime (scaffolding, opt-in) — hook `useLeadsRealtime`** ([`../../src/features/leads/useLeadsRealtime.ts`](../../src/features/leads/useLeadsRealtime.ts)): assina `postgres_changes` em `public.leads` e dispara um **refetch silencioso** (debounce 1,5 s) do período corrente. O `LeadsClient` já usa (função `refresh`); selo **"Ao vivo"** no header quando ligado. RLS vale para o Realtime (agente só o próprio; supervisor+ tudo); por ser client-side **não passa pelo worker**. **Desligado por padrão** (nem abre socket). Ligar = DOIS passos: (1) env `NEXT_PUBLIC_LEADS_REALTIME=1`; (2) SQL uma vez `ALTER PUBLICATION supabase_realtime ADD TABLE public.leads;`.
+- **Animação sóbria — `useCountUp`** ([`../../src/features/leads/useCountUp.ts`](../../src/features/leads/useCountUp.ts)): count-up só nas **contagens de volume** (Recebidos, Em aberto, Parados) — conversão/lead morto/tempo ficam estáticos ("sem excesso"). Respeita `prefers-reduced-motion` (pula pro valor final).
+- **Egress/perf:** confirmado que o front só lê views agregadas / `v_lead_progress` recortada, nunca tabelas brutas; e o "parados agora" saiu do scan em memória para o RPC agregado (ver Nota no S3).
+- **A11y:** `aria-sort` nas colunas ordenáveis do ranking, `aria-busy` no container durante o carregamento.
 
-**Ainda falta no S4:** animações medidas (count-up sóbrio nos KPIs, destaque só para "venda", som opt-in); passada final de responsividade/empty-error; e o dono ligar o Realtime (env + publicação) para bater o critério "sem refresh manual".
+**Atualização (07/jul): o dono LIGOU o Realtime.** `NEXT_PUBLIC_LEADS_REALTIME=1` no `.env.local` (+ `NEXT_PUBLIC_LEADS_ENABLED=1` local) e rodou `ALTER PUBLICATION supabase_realtime ADD TABLE public.leads`. Como o Realtime dispara refetch a cada mudança, a **migration de perf `get_agent_stuck` deixou de ser opcional** e também foi aplicada (verificado). **Falta:** confirmar a publicação no SQL Editor + testar o "Ao vivo" no browser + a env `NEXT_PUBLIC_LEADS_REALTIME=1` no **build de produção** (Cloudflare) + commit/deploy. Os enfeites que dependem do Realtime (destaque de "venda", som opt-in) seguem **não implementados** (adiados). O resto do S4 (polimento sóbrio, egress, a11y) está fechado.
 
 ---
 
 ## S5 — Pós-MVP (só quando virar rotina)
 
-**Objetivo:** destravar o que depende de dado/processo externo e blindar a operação.
+**Objetivo:** destravar o que depende de dado/processo externo e blindar a operação. Abaixo o
+contexto acionável de cada frente: o que é, por que está travado, o gatilho, os passos e o
+critério de aceite.
 
-**Escopo / entregáveis**
-- **Métricas de canal:** destravam quando `Captação do Lead` / `canal_origem` virar obrigatório no Pipefy (hoje 0,5% preenchido). Até lá, ficam marcadas como bloqueadas na UI.
-- **Backup:** rotina `pg_dump` agendada (Make → storage externo, ex. Cloudflare R2) enquanto no Free; migrar Supabase Pro quando o dashboard virar dependência diária.
-- **Ponte com o discador:** _backfill_ de `lead_agents.profile_id` para cruzar desempenho discador × funil. **Só quando explicitamente pedido** — não é agora.
+> **Progresso (07/jul):** **S5.1 (canal) FEITO no código** — o campo virou obrigatório no
+> Pipefy, então implementei o painel por canal com guarda de "dado incompleto" (só falta o
+> histórico encher). **S5.2 (backup) com scaffold pronto** (`npm run backup:leads`, falta
+> agendar/destino). **S5.3 (ponte) desenhada, dados 100% prontos** — não implementada de
+> propósito (cruza domínios → só sob pedido explícito do dono).
+
+### S5.1 — Métricas de canal (origem do lead)
+
+> **Estado (07/jul): FEITO no código.** O campo `Captação do Lead` virou **obrigatório no
+> Pipefy** (dono), então destravou. Implementado: `getLeadsData` agrega por canal
+> (`channelBreakdown` + `channelFillRate`, sem leitura extra — o `channel` já vinha em
+> `v_lead_progress`); componente `ChannelBreakdown` (tabela volume/conversão/lead morto por
+> canal, barra de volume inline) com **guarda de "dado incompleto"** enquanto o preenchimento
+> do período estiver < 80%. Canal é o valor cru de `capta_o_do_lead` (ex.: "Meta ADS -
+> Whatsapp" vs "Meta ADS - Forms 1" são distintos), com cap top-12 + "Outros". **Só falta o
+> histórico encher** (hoje ~12% no ciclo → o painel aparece marcado como incompleto e fica
+> confiável sozinho conforme os leads novos entram). `tsc`/`eslint` verdes.
+
+**O que é:** volume / conversão / taxa de lead morto **por canal de captação** (Meta ADS,
+indicação, etc.) — separar "lead ruim" de "atendimento ruim".
+
+**Por que está travado:** o campo `Captação do Lead` (`capta_o_do_lead`) vinha preenchido em
+~0,5% da base histórica. Leads novos já chegam com "Meta ADS - …", então **está destravando
+sozinho** conforme a base gira — mas ainda não é confiável para o histórico.
+
+**O dado já flui:** o `channel` já é ingerido e existe em `v_lead_progress.channel` (o Make já
+mapeia `capta_o_do_lead`). Ou seja, **falta só a camada de leitura + UI**, não migration de dados.
+
+**Gatilho:** `Captação do Lead` virar **obrigatório** na entrada do card no Pipefy (ou o
+Meta/formulário sempre enviar), levando o preenchimento dos leads do período para perto de 100%.
+
+**Passos (quando destravar):**
+1. Nova action tipo `getChannelBreakdown(period)` — agrega `v_lead_progress` por `channel`
+   (mesmo padrão de `getLeadsData`: recorte por `created_at`, agregação em memória; vira RPC se
+   pesar). KPIs por canal: recebidos, conversão, lead morto.
+2. Componente `ChannelBreakdown` (donut ou barras, reusar `useChartTheme.categorical`).
+3. **Estado bloqueado na UI:** enquanto o preenchimento do período estiver abaixo de um piso
+   (ex.: < 80%), mostrar o painel com um selo "dado incompleto" em vez de número enganoso.
+
+**Aceite:** painel de canal confiável para o período corrente; nada de número derivado de canal
+vazio apresentado como verdade.
+
+### S5.2 — Backup do banco
+
+> **Estado (07/jul): SCAFFOLD pronto.** Script [`../../scripts/backup-leads.mjs`](../../scripts/backup-leads.mjs)
+> (`npm run backup:leads`) — backup **lógico** (JSON timestampado por tabela + manifest) via
+> PostgREST + service role, paginado, read-only, sem dependências. Testado (mecânica ok).
+> `BACKUP_LIMIT=N` p/ teste rápido, `BACKUP_OUT_DIR` p/ destino. Saída em `backups/` (gitignored).
+> **Falta a decisão do dono:** agendar (Make/cron) + destino externo (Cloudflare R2), ou migrar
+> p/ Supabase Pro (backup gerenciado + PITR) e aposentar o script.
+
+**O que é:** rotina de backup do schema de leads (e do resto) enquanto no plano **Free** do
+Supabase (que não garante PITR/backup gerenciado).
+
+**Por que está travado:** é operação/infra, não código do dashboard. Só vale a pena quando o
+dashboard virar **dependência diária** (perder dado passa a doer).
+
+**Gatilho:** o dashboard sair do "Em breve" e entrar no uso real do time.
+
+**Passos (opções):**
+1. **Curto prazo (Free):** `pg_dump` agendado (Make/cron externo) → storage (ex.: Cloudflare R2),
+   com retenção. Barato, cobre o essencial.
+2. **Quando virar crítico:** migrar para **Supabase Pro** (backup diário gerenciado + PITR) —
+   decisão de custo do dono.
+
+**Aceite:** existe um backup recuperável recente do domínio de leads; procedimento de restore
+testado uma vez.
+
+### S5.3 — Ponte com o discador (cruzar desempenho)
+
+> **Estado (07/jul): DADOS 100% PRONTOS, código NÃO iniciado de propósito.** Verificação live:
+> os **8/8 agentes** têm `email` **e** `profile_id` já mapeado → o backfill (que era o passo 1)
+> **já está feito**. Mas construir o cruzamento **cruza os domínios**, o que é a regra travada
+> "só sob pedido explícito" — então deixei **desenhado e pronto para executar**, sem escrever a
+> query cross-domain sem o "vai" do dono. É o passo mais barato dos três quando ele pedir.
+
+**O que é:** cruzar "desempenho no discador" × "desempenho no funil de leads" por agente.
+
+**Por que está travado:** **decisão travada do dono** — os domínios ficam isolados por ora
+("discadora é discadora; dashboard de leads é outra"). A ponte é `lead_agents.profile_id` (já
+100% mapeado).
+
+**Gatilho:** o dono **pedir explicitamente** o cruzamento. **Não é agora.**
+
+**Plano de execução (quando o dono pedir "vai"):**
+1. ~~Backfill de `profile_id`~~ — **já feito** (8/8).
+2. **Action `getAgentBridge(period)`** (nova, em `actions/leads.ts` ou num módulo próprio):
+   junta, POR AGENTE, o agregado do funil (reusa a lógica de `getLeadsData`/`v_agent_kpis`) com
+   o agregado do discador (call_logs por `agent_id` = `profiles.id`, via `lead_agents.profile_id`).
+   Cruzar **só na dimensão de pessoa** — nunca reconciliar lead × contato/ligação. Chave:
+   `lead_agents.profile_id ↔ profiles.id ↔ call_logs.agent_id`.
+3. **RLS/escopo:** manager+ (é visão gerencial comparativa). Fail-closed p/ agente comum.
+4. **UI:** tabela comparativa (ligações feitas/atendidas × leads recebidos/convertidos por
+   agente) — provavelmente **no dashboard do discador ou numa aba nova**, fora do fluxo de
+   `/leads`, para não borrar o isolamento dos domínios na navegação.
+5. **Cuidado travado:** manter as duas bases de fato separadas; a única cola é o agregado por
+   `profile_id`. Nada de FK nova entre `leads` e `call_logs`.
+
+**Aceite:** dá para ver, por agente, o lado discador e o lado funil lado a lado, sem misturar as
+bases de fato.
+
+> **Ordem sugerida daqui:** S5.1 (canal) já está no código — só observar o preenchimento subir e
+> tirar a guarda de "incompleto" quando estabilizar. Depois: S5.2 (agendar o backup) assim que o
+> time depender do dashboard, e S5.3 (ponte) só sob pedido explícito.
 
 ---
 

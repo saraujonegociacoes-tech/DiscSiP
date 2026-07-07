@@ -47,6 +47,9 @@ next-env.d.ts
 supabase/.temp/
 supabase/functions/.env
 
+# backups lógicos do domínio de leads (scripts/backup-leads.mjs) — contêm dados, não versionar
+/backups/
+
 # editor
 .vscode/settings.json
 .idea/
