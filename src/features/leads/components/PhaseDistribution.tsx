@@ -4,6 +4,7 @@ import { useState } from 'react'
 import {
   BarChart,
   Bar,
+  Cell,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -13,36 +14,37 @@ import {
 } from 'recharts'
 import { useChartTheme } from '@/components/blueline/useChartTheme'
 import { ResponsibleBreakdown } from './ResponsibleBreakdown'
-import type { FunnelStage, AgentCount } from '@/app/actions/leads'
+import type { PhaseDistribution as PhaseDistributionRow, AgentCount } from '@/app/actions/leads'
 
-// Funil de acionamento (S2) — barras horizontais (magnitude), série única. Cada etapa conta
-// quantos leads do período ALCANÇARAM aquela ordem ou além (ordem 0 = todos os recebidos).
-// Clicar numa barra abre o detalhamento por responsável (quem passou por aquela etapa).
-export function Funnel({
-  stages,
+// Distribuição por fase ATUAL — barras horizontais do VOLUME atual (quantos leads do período
+// estão agora em cada fase). Complementa o Funil (fluxo cumulativo): aqui a soma bate com o
+// total. Fases mortas em vermelho (cor por significado). Clicar numa barra abre o detalhamento
+// por responsável (quem está parado ali). Espelha o padrão do Funnel + useChartTheme.
+export function PhaseDistribution({
+  data,
   byResponsible = {},
 }: {
-  stages: FunnelStage[]
+  data: PhaseDistributionRow[]
   byResponsible?: Record<string, AgentCount[]>
 }) {
   const ct = useChartTheme()
-  const [selected, setSelected] = useState<FunnelStage | null>(null)
-  const hasData = stages.some((s) => s.leadsReached > 0)
+  const [selected, setSelected] = useState<string | null>(null)
+  const hasData = data.some((d) => d.leads > 0)
 
-  // Recharts entrega o datum clicado (campos no topo e/ou em .payload). Casamos pela ordem.
   function handleBarClick(entry: unknown) {
-    const p = entry as { order?: number; payload?: { order?: number } }
-    const order = p.order ?? p.payload?.order
-    if (order == null) return
-    setSelected((cur) => (cur?.order === order ? null : stages.find((s) => s.order === order) ?? null))
+    const p = entry as { phase?: string; payload?: { phase?: string } }
+    const phase = p.phase ?? p.payload?.phase
+    if (phase == null) return
+    setSelected((cur) => (cur === phase ? null : phase))
   }
 
   return (
     <div className="relative h-full overflow-hidden rounded-2xl border border-border bg-gradient-card p-5 shadow-elevated">
       <div className="pointer-events-none absolute -top-20 right-0 h-48 w-48 rounded-full bg-primary/15 blur-3xl" />
-      <h2 className="text-sm font-semibold text-foreground">Funil de acionamento</h2>
+      <h2 className="text-sm font-semibold text-foreground">Distribuição por fase atual</h2>
       <p className="mb-4 text-xs text-muted-foreground">
-        Leads que alcançaram cada etapa no período. Clique numa barra para ver por responsável.
+        Onde os leads do período estão agora (mortas em vermelho). Clique numa barra para ver por
+        responsável.
       </p>
       {!hasData ? (
         <p className="py-8 text-center text-sm text-muted-foreground">Sem leads no período.</p>
@@ -52,7 +54,7 @@ export function Funnel({
             <ResponsiveContainer width="100%" height="100%">
               <BarChart
                 layout="vertical"
-                data={stages}
+                data={data}
                 margin={{ top: 4, right: 40, left: 8, bottom: 4 }}
                 barCategoryGap={6}
               >
@@ -68,7 +70,7 @@ export function Funnel({
                 <YAxis
                   type="category"
                   dataKey="phase"
-                  width={96}
+                  width={110}
                   stroke={ct.axis}
                   tick={{ fontSize: 11, fill: ct.axis }}
                   axisLine={false}
@@ -80,15 +82,20 @@ export function Funnel({
                   formatter={(v) => [v as number, 'Leads']}
                 />
                 <Bar
-                  dataKey="leadsReached"
-                  fill={ct.series.primary}
+                  dataKey="leads"
                   radius={[0, 4, 4, 0]}
                   name="Leads"
                   cursor="pointer"
                   onClick={handleBarClick}
                 >
+                  {data.map((d) => (
+                    <Cell
+                      key={d.phase}
+                      fill={d.kind === 'morta' ? ct.series.danger : ct.series.primary}
+                    />
+                  ))}
                   <LabelList
-                    dataKey="leadsReached"
+                    dataKey="leads"
                     position="right"
                     style={{ fill: ct.axis, fontSize: 11 }}
                   />
@@ -98,8 +105,8 @@ export function Funnel({
           </div>
           {selected && (
             <ResponsibleBreakdown
-              title={`Alcançaram ${selected.phase}`}
-              rows={byResponsible[String(selected.order)] ?? []}
+              title={selected}
+              rows={byResponsible[selected] ?? []}
               onClose={() => setSelected(null)}
             />
           )}

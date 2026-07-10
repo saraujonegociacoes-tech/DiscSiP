@@ -220,6 +220,7 @@ export interface DeadReasonRow {
 // não é por período. Supervisor corrige a atribuição no Pipefy.
 export interface DuplicateResponsibilityRow {
   lead_id: string
+  pipefy_card_id: string | null
   title: string | null
   current_phase: string | null
   responsible: string | null

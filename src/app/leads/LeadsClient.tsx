@@ -1,12 +1,24 @@
 'use client'
 
 import { useCallback, useMemo, useState } from 'react'
+import { usePathname, useRouter, useSearchParams } from 'next/navigation'
+import {
+  LayoutDashboard,
+  Users,
+  Filter,
+  TriangleAlert,
+  TrendingUp,
+  XCircle,
+  Search,
+} from 'lucide-react'
 import { AppShell } from '@/components/blueline/AppShell'
 import { PageHeader } from '@/components/blueline/PageHeader'
+import { Tabs, TabsContent } from '@/components/ui/tabs'
 import {
   PeriodPicker,
   LeadKpiRow,
   Funnel,
+  PhaseDistribution,
   DeadReasonsDonut,
   DeathByAttempt,
   LeadsTable,
@@ -15,16 +27,26 @@ import {
   ForgottenLeads,
   ChannelBreakdown,
   OrphanLeads,
+  EvolutionChart,
+  AlertsPanel,
+  PerformancePanel,
+  LeadsTabNav,
+  TabPlaceholder,
+  type LeadTab,
+  type AlertItem,
 } from '@/features/leads'
 import { useLeadsRealtime, LEADS_REALTIME_ENABLED } from '@/features/leads/useLeadsRealtime'
 import {
   getLeadsData,
   getAgentLeads,
   getSupervisorMetrics,
+  getLeadsTimeseries,
   type LeadsData,
   type AgentLeadRow,
   type SupervisorMetrics,
   type DuplicateAlert as DuplicateAlertRow,
+  type DailyPoint,
+  type TrendPoint,
 } from '@/app/actions/leads'
 import type { LeadPeriod } from '@/lib/leads/period'
 
@@ -34,8 +56,33 @@ interface LeadsClientProps {
   initialAgentLeads: AgentLeadRow[]
   duplicates: DuplicateAlertRow[]
   initialSupervisor: SupervisorMetrics | null
+  initialTimeseries: DailyPoint[]
+  initialTrend: TrendPoint[]
   isManager: boolean
 }
+
+// Catálogo das abas do novo visual (Sprint 1). Cada aba responde uma pergunta — ver
+// docs/updates/novo-visual-dashleads.md. `managerOnly` esconde a aba do agente (ele não vê
+// Equipe/Operação/Performance). A ordem aqui é a ordem na topbar; a primeira visível é o
+// default (`visao-geral`, sempre visível).
+type TabSlug =
+  | 'visao-geral'
+  | 'equipe'
+  | 'funil'
+  | 'operacao'
+  | 'performance'
+  | 'lead-morto'
+  | 'leads'
+
+const TABS: Array<LeadTab & { slug: TabSlug; managerOnly: boolean }> = [
+  { slug: 'visao-geral', label: 'Visão Geral', icon: LayoutDashboard, managerOnly: false },
+  { slug: 'equipe', label: 'Equipe', icon: Users, managerOnly: true },
+  { slug: 'funil', label: 'Funil', icon: Filter, managerOnly: false },
+  { slug: 'operacao', label: 'Operação', icon: TriangleAlert, managerOnly: true },
+  { slug: 'performance', label: 'Performance', icon: TrendingUp, managerOnly: true },
+  { slug: 'lead-morto', label: 'Lead Morto', icon: XCircle, managerOnly: false },
+  { slug: 'leads', label: 'Leads', icon: Search, managerOnly: false },
+]
 
 export function LeadsClient({
   initialPeriod,
@@ -43,14 +90,42 @@ export function LeadsClient({
   initialAgentLeads,
   duplicates,
   initialSupervisor,
+  initialTimeseries,
+  initialTrend,
   isManager,
 }: LeadsClientProps) {
   const [period, setPeriod] = useState(initialPeriod)
   const [data, setData] = useState(initialData)
   const [agentLeads, setAgentLeads] = useState(initialAgentLeads)
   const [supervisor, setSupervisor] = useState(initialSupervisor)
+  const [timeseries, setTimeseries] = useState(initialTimeseries)
+  // Tendência entre ciclos (Performance) não depende do período selecionado → não re-busca.
+  const [trend] = useState(initialTrend)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  const router = useRouter()
+  const pathname = usePathname()
+  const searchParams = useSearchParams()
+
+  // Abas visíveis para o papel atual e aba ativa (sincronizada com ?aba=). Deep-link inválido
+  // (ou aba escondida por RBAC) cai no default — a primeira visível, sempre `visao-geral`.
+  const visibleTabs = useMemo(() => TABS.filter((t) => !t.managerOnly || isManager), [isManager])
+  const requestedTab = searchParams.get('aba')
+  const activeTab = visibleTabs.some((t) => t.slug === requestedTab)
+    ? (requestedTab as TabSlug)
+    : visibleTabs[0].slug
+
+  // Troca de aba: 100% client-side, sem refetch. Só reescreve ?aba= na URL (replace, sem
+  // rolar), mantendo qualquer outro parâmetro que exista.
+  const handleTabChange = useCallback(
+    (slug: string) => {
+      const params = new URLSearchParams(searchParams.toString())
+      params.set('aba', slug)
+      router.replace(`${pathname}?${params.toString()}`, { scroll: false })
+    },
+    [router, pathname, searchParams],
+  )
 
   // "Parados agora" da visão do AGENTE: total de leads com SLA de fase estourado, com o
   // split ciclo × retroativo. É estado ATUAL — independe do período; muda só a etiqueta de
@@ -68,6 +143,20 @@ export function LeadsClient({
   // de getSupervisorMetrics — estado atual, com split ciclo × retroativo reancorado ao período).
   const kpiStuck = isManager ? supervisor?.teamStuck : agentStuck
 
+  // Alertas da Visão Geral: números já calculados (sem acionamento, parados, órfãos e duplicados
+  // para o gestor; parados para o agente). As listas completas ficam na aba Operação.
+  const alertItems: AlertItem[] = useMemo(() => {
+    if (isManager && supervisor) {
+      return [
+        { label: 'Sem acionamento', value: supervisor.forgottenTotal, tone: 'danger' },
+        { label: 'Parados agora', value: supervisor.teamStuck.total, tone: 'danger' },
+        { label: 'Sem responsável', value: supervisor.orphans.total, tone: 'warning' },
+        { label: 'Responsabilidade duplicada', value: duplicates.length, tone: 'warning' },
+      ]
+    }
+    return [{ label: 'Parados agora', value: agentStuck.total, tone: 'danger' }]
+  }, [isManager, supervisor, duplicates.length, agentStuck.total])
+
   // Troca de período: re-busca o que depende do período. Para o agente, também a tabela
   // (abertos permanecem; finalizados-no-período e etiquetas de origem mudam). Para o
   // supervisor, também as métricas de estado atual (o split ciclo × retroativo dos parados é
@@ -79,13 +168,23 @@ export function LeadsClient({
     setLoading(true)
     try {
       if (isManager) {
-        const [d, sup] = await Promise.all([getLeadsData(next), getSupervisorMetrics(next)])
+        const [d, sup, ts] = await Promise.all([
+          getLeadsData(next),
+          getSupervisorMetrics(next),
+          getLeadsTimeseries(next),
+        ])
         setData(d)
         setSupervisor(sup)
+        setTimeseries(ts)
       } else {
-        const [d, al] = await Promise.all([getLeadsData(next), getAgentLeads(next)])
+        const [d, al, ts] = await Promise.all([
+          getLeadsData(next),
+          getAgentLeads(next),
+          getLeadsTimeseries(next),
+        ])
         setData(d)
         setAgentLeads(al)
+        setTimeseries(ts)
       }
     } catch {
       setError('Não foi possível carregar os dados deste período. Tente novamente.')
@@ -99,13 +198,23 @@ export function LeadsClient({
   const refresh = useCallback(async () => {
     try {
       if (isManager) {
-        const [d, sup] = await Promise.all([getLeadsData(period), getSupervisorMetrics(period)])
+        const [d, sup, ts] = await Promise.all([
+          getLeadsData(period),
+          getSupervisorMetrics(period),
+          getLeadsTimeseries(period),
+        ])
         setData(d)
         setSupervisor(sup)
+        setTimeseries(ts)
       } else {
-        const [d, al] = await Promise.all([getLeadsData(period), getAgentLeads(period)])
+        const [d, al, ts] = await Promise.all([
+          getLeadsData(period),
+          getAgentLeads(period),
+          getLeadsTimeseries(period),
+        ])
         setData(d)
         setAgentLeads(al)
+        setTimeseries(ts)
       }
     } catch {
       /* silêncio: a tela segue com o último dado bom */
@@ -145,46 +254,99 @@ export function LeadsClient({
         </div>
       )}
 
-      <div
-        className={loading ? 'pointer-events-none opacity-60 transition-opacity' : 'transition-opacity'}
-        aria-busy={loading}
-      >
-        <LeadKpiRow kpis={data.kpis} stuck={kpiStuck} />
+      <Tabs value={activeTab} onValueChange={handleTabChange} className="w-full">
+        <LeadsTabNav tabs={visibleTabs} />
 
-        <section className="mt-6 grid grid-cols-1 gap-4 xl:grid-cols-2">
-          <Funnel stages={data.funnel} />
-          <DeadReasonsDonut reasons={data.deadReasons} />
-        </section>
-
-        {!isManager && (
-          <section className="mt-6">
-            <LeadsTable rows={agentLeads} />
-          </section>
-        )}
-
-        {isManager && supervisor && (
-          <>
+        <div
+          className={loading ? 'pointer-events-none opacity-60 transition-opacity' : 'transition-opacity'}
+          aria-busy={loading}
+        >
+          {/* 🏠 Visão Geral — "Como está a operação agora?" */}
+          <TabsContent value="visao-geral" className="mt-6">
+            <LeadKpiRow kpis={data.kpis} stuck={kpiStuck} />
+            <section className="mt-6 grid grid-cols-1 items-start gap-4 xl:grid-cols-3">
+              <div className="xl:col-span-2">
+                <EvolutionChart data={timeseries} />
+              </div>
+              <AlertsPanel
+                items={alertItems}
+                onOpenOperacao={isManager ? () => handleTabChange('operacao') : undefined}
+              />
+            </section>
             <section className="mt-6 grid grid-cols-1 items-start gap-4 xl:grid-cols-2">
-              <DeathByAttempt data={data.deathByAttempt} />
+              <PhaseDistribution
+                data={data.phaseDistribution}
+                byResponsible={data.phaseByResponsible}
+              />
+              <DeadReasonsDonut reasons={data.deadReasons} />
+            </section>
+          </TabsContent>
+
+          {/* 👥 Equipe — "Quem está performando melhor ou pior?" (supervisor+) */}
+          {isManager && supervisor && (
+            <TabsContent value="equipe" className="mt-6">
+              <AgentRanking rows={data.ranking} stuckByAgent={supervisor.stuckByAgent} />
+              <section className="mt-6">
+                <ChannelBreakdown data={data.channelBreakdown} fillRate={data.channelFillRate} />
+              </section>
+            </TabsContent>
+          )}
+
+          {/* 🎯 Funil — "Onde estou perdendo leads no processo?" (fluxo cumulativo + volume atual) */}
+          <TabsContent value="funil" className="mt-6">
+            <section className="grid grid-cols-1 items-start gap-4 xl:grid-cols-2">
+              <Funnel stages={data.funnel} byResponsible={data.funnelByResponsible} />
+              <PhaseDistribution
+                data={data.phaseDistribution}
+                byResponsible={data.phaseByResponsible}
+              />
+            </section>
+          </TabsContent>
+
+          {/* ⚠ Operação — "O que precisa de ação agora?" (supervisor+) */}
+          {isManager && supervisor && (
+            <TabsContent value="operacao" className="mt-6">
               <ForgottenLeads
                 leads={supervisor.forgotten}
                 total={supervisor.forgottenTotal}
                 thresholdHours={supervisor.forgottenThresholdHours}
               />
+              <section className="mt-6 grid grid-cols-1 items-start gap-4 xl:grid-cols-2">
+                <OrphanLeads orphans={supervisor.orphans} />
+                <DuplicateAlert rows={duplicates} />
+              </section>
+            </TabsContent>
+          )}
+
+          {/* 📊 Performance — "Estamos melhorando ao longo do tempo?" (supervisor+) */}
+          {isManager && (
+            <TabsContent value="performance" className="mt-6">
+              <PerformancePanel data={trend} />
+            </TabsContent>
+          )}
+
+          {/* ❌ Lead Morto — "Por que estamos perdendo leads?" */}
+          <TabsContent value="lead-morto" className="mt-6">
+            <section className="grid grid-cols-1 items-start gap-4 xl:grid-cols-2">
+              <DeadReasonsDonut reasons={data.deadReasons} />
+              <DeathByAttempt data={data.deathByAttempt} />
             </section>
-            <section className="mt-6">
-              <AgentRanking rows={data.ranking} stuckByAgent={supervisor.stuckByAgent} />
-            </section>
-            <section className="mt-6">
-              <ChannelBreakdown data={data.channelBreakdown} fillRate={data.channelFillRate} />
-            </section>
-            <section className="mt-6 grid grid-cols-1 items-start gap-4 xl:grid-cols-2">
-              <OrphanLeads orphans={supervisor.orphans} />
-              <DuplicateAlert rows={duplicates} />
-            </section>
-          </>
-        )}
-      </div>
+          </TabsContent>
+
+          {/* 🔍 Leads — exploração livre */}
+          <TabsContent value="leads" className="mt-6">
+            {isManager ? (
+              <TabPlaceholder
+                icon={Search}
+                title="Explorador de leads chega na Sprint 5"
+                description="A busca livre com filtros e a tabela completa para o gestor entram na sprint final. Por enquanto, o agente vê a própria fila aqui."
+              />
+            ) : (
+              <LeadsTable rows={agentLeads} />
+            )}
+          </TabsContent>
+        </div>
+      </Tabs>
     </AppShell>
   )
 }

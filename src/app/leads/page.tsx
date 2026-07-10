@@ -1,12 +1,16 @@
+import { Suspense } from 'react'
 import { getCurrentProfile } from '@/app/actions/auth'
 import {
   getLeadsData,
   getDuplicateAlerts,
   getAgentLeads,
   getSupervisorMetrics,
+  getLeadsTimeseries,
+  getLeadsTrend,
   type DuplicateAlert,
   type AgentLeadRow,
   type SupervisorMetrics,
+  type TrendPoint,
 } from '@/app/actions/leads'
 import { currentCycle } from '@/lib/leads/period'
 import type { Role } from '@/lib/types/database'
@@ -37,21 +41,29 @@ export default async function LeadsPage() {
   const isManager = MANAGER_ROLES.includes(role)
   const cycle = currentCycle()
 
-  const [data, duplicates, agentLeads, supervisor] = await Promise.all([
+  const [data, duplicates, agentLeads, supervisor, timeseries, trend] = await Promise.all([
     getLeadsData(cycle),
     isManager ? getDuplicateAlerts() : Promise.resolve([] as DuplicateAlert[]),
     isManager ? Promise.resolve([] as AgentLeadRow[]) : getAgentLeads(cycle),
     isManager ? getSupervisorMetrics(cycle) : Promise.resolve(null as SupervisorMetrics | null),
+    getLeadsTimeseries(cycle), // evolução diária (Visão Geral) — todos os papéis
+    isManager ? getLeadsTrend() : Promise.resolve([] as TrendPoint[]), // tendência (Performance) — só gestor
   ])
 
   return (
-    <LeadsClient
-      initialPeriod={cycle}
-      initialData={data}
-      initialAgentLeads={agentLeads}
-      duplicates={duplicates}
-      initialSupervisor={supervisor}
-      isManager={isManager}
-    />
+    // Suspense: o LeadsClient usa useSearchParams (aba ativa em ?aba=), que exige um limite
+    // de Suspense no App Router. Os dados já vêm prontos por props, então não há gap real.
+    <Suspense fallback={null}>
+      <LeadsClient
+        initialPeriod={cycle}
+        initialData={data}
+        initialAgentLeads={agentLeads}
+        duplicates={duplicates}
+        initialSupervisor={supervisor}
+        initialTimeseries={timeseries}
+        initialTrend={trend}
+        isManager={isManager}
+      />
+    </Suspense>
   )
 }

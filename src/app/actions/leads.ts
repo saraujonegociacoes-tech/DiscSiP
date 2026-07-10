@@ -3,8 +3,8 @@
 import { createServerClient } from '@/lib/supabase/server'
 import { fetchAllRows } from '@/lib/supabase/paginate'
 import { PRODUCTIVE_PHASES } from '@/features/leads/content/phases'
-import { sanitizePeriod, type LeadPeriod } from '@/lib/leads/period'
-import type { LeadProgressRow, DuplicateResponsibilityRow } from '@/lib/types/database'
+import { sanitizePeriod, recentCycles, type LeadPeriod } from '@/lib/leads/period'
+import type { LeadPhaseKind, LeadProgressRow, DuplicateResponsibilityRow } from '@/lib/types/database'
 
 // Dashboard de Leads (Pipefy) — domínio SEPARADO do discador. Estas actions leem as
 // views de S0 via createServerClient() (que propaga auth.uid() → RLS). As views são
@@ -38,6 +38,26 @@ export interface FunnelStage {
 export interface DeadReason {
   reason: string
   leads: number
+}
+
+// Distribuição por fase ATUAL (volume): quantos leads do período estão agora em cada fase.
+// kind marca produtiva × morta (a UI colore mortas de vermelho); order = ordem no funil
+// (NULL nas mortas). A soma de `leads` == total recebido no período. Complementa o funil
+// (que é fluxo cumulativo): aqui é o volume atual por fase.
+export interface PhaseDistribution {
+  phase: string
+  kind: LeadPhaseKind | null
+  order: number | null
+  leads: number
+}
+
+// Detalhamento por responsável de uma fase (drill-down ao clicar numa barra). agentId nulo =
+// "Sem responsável". Usado nos dois gráficos: por fase ATUAL (distribuição) e por ordem
+// ALCANÇADA (funil).
+export interface AgentCount {
+  agentId: string | null
+  name: string
+  count: number
 }
 
 // "Em qual tentativa o lead mais morre" (S3): entre os leads mortos, a última etapa
@@ -74,6 +94,7 @@ export interface AgentRankRow {
 
 export interface DuplicateAlert {
   leadId: string
+  pipefyCardId: string | null // para o link "abrir no Pipefy" (open-cards)
   title: string | null
   currentPhase: string | null
   responsible: string | null
@@ -83,11 +104,38 @@ export interface DuplicateAlert {
 export interface LeadsData {
   kpis: LeadKpis
   funnel: FunnelStage[]
+  phaseDistribution: PhaseDistribution[]
   deadReasons: DeadReason[]
   deathByAttempt: DeathByAttempt[]
   ranking: AgentRankRow[]
   channelBreakdown: ChannelStat[]
   channelFillRate: number // 0..1 — fração dos leads do período com canal preenchido
+  // Drill-down por responsável (clique na barra). Chaveado por nome da fase (distribuição
+  // atual) e por ordem produtiva "<n>" (funil cumulativo). Vazio quando a migration não rodou.
+  phaseByResponsible: Record<string, AgentCount[]>
+  funnelByResponsible: Record<string, AgentCount[]>
+}
+
+// Evolução DIÁRIA dentro do período (linha da Visão Geral — Sprint 2). Um ponto por dia (BRT);
+// recebidos por created_at, ganhos/mortos por finalized_at.
+export interface DailyPoint {
+  day: string // 'YYYY-MM-DD'
+  received: number
+  won: number
+  dead: number
+}
+
+// Tendência ENTRE CICLOS (aba Performance — Sprint 2). Um ponto por ciclo (11→10). As taxas
+// são derivadas no app a partir dos brutos do RPC.
+export interface TrendPoint {
+  key: string
+  label: string // rótulo curto do ciclo (mês de início), ex.: "jun"
+  received: number
+  won: number
+  dead: number
+  conversionRate: number // 0..1
+  deadRate: number // 0..1
+  avgHoursToFirstContact: number | null
 }
 
 type SupabaseClient = Awaited<ReturnType<typeof createServerClient>>
@@ -209,7 +257,8 @@ function avg1(values: number[]): number | null {
 
 // Só as colunas de v_lead_progress que a agregação em memória (fallback) consome.
 const PROGRESS_COLS =
-  'lead_id, responsible_agent_id, discard_reason, duplicate_responsible, channel, ' +
+  'lead_id, responsible_agent_id, duplicate_responsible, channel, ' +
+  'current_phase, phase_kind, current_funnel_order, ' +
   'is_dead, is_open, is_won, max_funnel_order, hours_to_first_contact'
 
 // ── Preferido: agrega o dashboard NO POSTGRES (RPC get_leads_dashboard) ────────
@@ -218,6 +267,9 @@ const PROGRESS_COLS =
 interface DashboardRpc {
   kpis: { total: number; open: number; won: number; dead: number; avgHoursToFirstContact: number | null }
   funnelByOrder: Record<string, number>
+  funnelByResponsible: Record<string, AgentCount[]>
+  phaseDistribution: PhaseDistribution[]
+  phaseByResponsible: Record<string, AgentCount[]>
   deadReasons: { reason: string; leads: number }[]
   deathByOrder: Record<string, number>
   channels: ChannelAgg[]
@@ -244,11 +296,14 @@ async function dashboardFromRpc(
   return {
     kpis: kpisFromCounts(k.total, k.open, k.won, k.dead, k.avgHoursToFirstContact),
     funnel: buildFunnel(d.funnelByOrder ?? {}),
+    phaseDistribution: d.phaseDistribution ?? [],
     deadReasons: (d.deadReasons ?? []).map((x) => ({ reason: x.reason, leads: x.leads })),
     deathByAttempt: buildDeathByAttempt(d.deathByOrder ?? {}),
     ranking: buildRanking(d.ranking ?? []),
     channelBreakdown,
     channelFillRate,
+    phaseByResponsible: d.phaseByResponsible ?? {},
+    funnelByResponsible: d.funnelByResponsible ?? {},
   }
 }
 
@@ -279,7 +334,8 @@ async function dashboardFromScan(
     ])
   )
 
-  // KPIs.
+  // KPIs. A média do 1º contato ignora os retroativos (contato < criação → horas < 0):
+  // são leads antigos com data real de contato anterior à entrada no pipe, não tempo de resposta.
   let open = 0
   let won = 0
   let dead = 0
@@ -288,27 +344,85 @@ async function dashboardFromScan(
     if (r.is_open) open++
     if (r.is_won) won++
     if (r.is_dead) dead++
-    if (r.hours_to_first_contact != null) ftc.push(r.hours_to_first_contact)
+    if (r.hours_to_first_contact != null && r.hours_to_first_contact >= 0)
+      ftc.push(r.hours_to_first_contact)
   }
   const total = rows.length
 
-  // Funil.
+  // Funil (cumulativo): quem alcançou cada ordem ou além. A ordem 0 (Recebidos) é ancorada
+  // em TODOS os recebidos — todo lead passou por Recebidos, mesmo o morto sem evento produtivo
+  // (max_funnel_order = -1), que senão sumiria do funil.
   const reachedByOrder: Record<string, number> = {}
   for (const p of PRODUCTIVE_PHASES) {
-    reachedByOrder[String(p.order)] = rows.filter(
-      (r) => (r.max_funnel_order ?? -1) >= p.order
-    ).length
+    reachedByOrder[String(p.order)] =
+      p.order === 0 ? total : rows.filter((r) => (r.max_funnel_order ?? -1) >= p.order).length
   }
 
-  // Motivos de descarte + mortalidade por ordem.
+  // Distribuição por fase atual (volume): quantos leads do período estão agora em cada fase.
+  const phaseMap = new Map<string, PhaseDistribution>()
+  for (const r of rows) {
+    const phase = r.current_phase?.trim() || '—'
+    const e =
+      phaseMap.get(phase) ??
+      { phase, kind: r.phase_kind, order: r.current_funnel_order, leads: 0 }
+    e.leads++
+    phaseMap.set(phase, e)
+  }
+  const phaseDistribution: PhaseDistribution[] = [...phaseMap.values()].sort(
+    (a, b) => (a.order ?? 999) - (b.order ?? 999) || b.leads - a.leads
+  )
+
+  // Drill-down por responsável (mesma lógica das seções do RPC). agentId nulo → "Sem responsável".
+  const resolveName = (agentId: string | null) =>
+    agentId ? nameById.get(agentId) ?? 'Sem nome' : 'Sem responsável'
+  const sortAgents = (m: Map<string, AgentCount>) =>
+    [...m.values()].sort((a, b) => b.count - a.count || a.name.localeCompare(b.name))
+
+  // Por fase ATUAL × responsável (quem está parado ali agora).
+  const phaseAgentMap = new Map<string, Map<string, AgentCount>>()
+  for (const r of rows) {
+    const phase = r.current_phase?.trim() || '—'
+    const key = r.responsible_agent_id ?? 'orphan'
+    let m = phaseAgentMap.get(phase)
+    if (!m) {
+      m = new Map()
+      phaseAgentMap.set(phase, m)
+    }
+    const e =
+      m.get(key) ??
+      { agentId: r.responsible_agent_id ?? null, name: resolveName(r.responsible_agent_id), count: 0 }
+    e.count++
+    m.set(key, e)
+  }
+  const phaseByResponsible: Record<string, AgentCount[]> = {}
+  for (const [phase, m] of phaseAgentMap) phaseByResponsible[phase] = sortAgents(m)
+
+  // Por ordem ALCANÇADA × responsável (quem passou; ordem 0 = todos, igual ao funil).
+  const funnelByResponsible: Record<string, AgentCount[]> = {}
+  for (const p of PRODUCTIVE_PHASES) {
+    const m = new Map<string, AgentCount>()
+    for (const r of rows) {
+      if (!(p.order === 0 || (r.max_funnel_order ?? -1) >= p.order)) continue
+      const key = r.responsible_agent_id ?? 'orphan'
+      const e =
+        m.get(key) ??
+        { agentId: r.responsible_agent_id ?? null, name: resolveName(r.responsible_agent_id), count: 0 }
+      e.count++
+      m.set(key, e)
+    }
+    funnelByResponsible[String(p.order)] = sortAgents(m)
+  }
+
+  // Motivos de descarte = FASE MORTA (não o texto livre discard_reason) + mortalidade por
+  // ordem. Morto com max_funnel_order = -1 conta na ordem 0 (morreu em Recebidos).
   const reasonCount = new Map<string, number>()
   const deathByOrder: Record<string, number> = {}
   for (const r of rows) {
     if (!r.is_dead) continue
-    const reason = r.discard_reason?.trim() || 'Não informado'
+    const reason = r.current_phase?.trim() || 'Não informado'
     reasonCount.set(reason, (reasonCount.get(reason) ?? 0) + 1)
-    const ord = r.max_funnel_order ?? -1
-    if (ord >= 0) deathByOrder[String(ord)] = (deathByOrder[String(ord)] ?? 0) + 1
+    const ord = Math.max(r.max_funnel_order ?? -1, 0)
+    deathByOrder[String(ord)] = (deathByOrder[String(ord)] ?? 0) + 1
   }
   const deadReasons: DeadReason[] = [...reasonCount]
     .map(([reason, leads]) => ({ reason, leads }))
@@ -354,7 +468,8 @@ async function dashboardFromScan(
     e.agg.total++
     if (r.is_won) e.agg.won++
     if (r.is_dead) e.agg.dead++
-    if (r.hours_to_first_contact != null) e.ftc.push(r.hours_to_first_contact)
+    if (r.hours_to_first_contact != null && r.hours_to_first_contact >= 0)
+      e.ftc.push(r.hours_to_first_contact)
     agMap.set(id, e)
   }
   const rankingAggs: AgentAgg[] = [...agMap.values()].map((e) => ({
@@ -365,11 +480,14 @@ async function dashboardFromScan(
   return {
     kpis: kpisFromCounts(total, open, won, dead, avg1(ftc)),
     funnel: buildFunnel(reachedByOrder),
+    phaseDistribution,
     deadReasons,
     deathByAttempt: buildDeathByAttempt(deathByOrder),
     ranking: buildRanking(rankingAggs),
     channelBreakdown,
     channelFillRate,
+    phaseByResponsible,
+    funnelByResponsible,
   }
 }
 
@@ -378,6 +496,63 @@ export async function getLeadsData(periodInput: LeadPeriod): Promise<LeadsData> 
   const period = sanitizePeriod(periodInput) // saneia o período vindo do cliente
   const supabase = await createServerClient()
   return (await dashboardFromRpc(supabase, period)) ?? dashboardFromScan(supabase, period)
+}
+
+// ── Séries temporais (Sprint 2) ───────────────────────────────────────────────
+
+// Evolução DIÁRIA dentro do período (RPC get_leads_timeseries). Vazio se a migration ainda não
+// rodou → a linha da Visão Geral mostra estado vazio (degradação graciosa).
+export async function getLeadsTimeseries(periodInput: LeadPeriod): Promise<DailyPoint[]> {
+  const period = sanitizePeriod(periodInput)
+  const supabase = await createServerClient()
+  const { data, error } = await supabase.rpc('get_leads_timeseries', {
+    p_start: period.start,
+    p_end: period.end,
+  })
+  if (error || !data) return []
+  return data as DailyPoint[]
+}
+
+const MONTHS_PT = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez']
+const TREND_CYCLES = 6
+
+// Tendência ENTRE CICLOS (RPC get_leads_trend). Monta as janelas dos últimos N ciclos, agrega
+// no banco numa chamada só e deriva as taxas + rótulos. Independe do período selecionado (é a
+// leitura histórica "estamos melhorando?"). Vazio se a migration não rodou.
+export async function getLeadsTrend(): Promise<TrendPoint[]> {
+  const supabase = await createServerClient()
+  const cycles = recentCycles(TREND_CYCLES).slice().reverse() // do mais antigo ao mais novo
+  const windows = cycles.map((c) => ({ key: c.key, start: c.start, end: c.end }))
+  const { data, error } = await supabase.rpc('get_leads_trend', { p_windows: windows })
+  if (error || !data) return []
+  const byKey = new Map(
+    (
+      data as {
+        key: string
+        received: number
+        won: number
+        dead: number
+        avgHoursToFirstContact: number | null
+      }[]
+    ).map((r) => [r.key, r])
+  )
+  return cycles.map((c) => {
+    const r = byKey.get(c.key)
+    const received = Number(r?.received ?? 0)
+    const won = Number(r?.won ?? 0)
+    const dead = Number(r?.dead ?? 0)
+    const month = Number(c.key.slice(5, 7))
+    return {
+      key: c.key,
+      label: MONTHS_PT[month - 1] ?? c.key,
+      received,
+      won,
+      dead,
+      conversionRate: received > 0 ? won / received : 0,
+      deadRate: received > 0 ? dead / received : 0,
+      avgHoursToFirstContact: r?.avgHoursToFirstContact ?? null,
+    }
+  })
 }
 
 // ── Visão do agente (S2): fila de trabalho + desfechos do período ────────────
@@ -462,11 +637,12 @@ export async function getDuplicateAlerts(): Promise<DuplicateAlert[]> {
   const supabase = await createServerClient()
   const { data } = await supabase
     .from('v_duplicate_responsibility')
-    .select('lead_id, title, current_phase, responsible, updated_at')
+    .select('lead_id, pipefy_card_id, title, current_phase, responsible, updated_at')
     .order('updated_at', { ascending: false })
 
   return ((data ?? []) as DuplicateResponsibilityRow[]).map((r) => ({
     leadId: r.lead_id,
+    pipefyCardId: r.pipefy_card_id,
     title: r.title,
     currentPhase: r.current_phase,
     responsible: r.responsible,
