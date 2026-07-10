@@ -43,9 +43,10 @@ pnpm-debug.log*
 *.tsbuildinfo
 next-env.d.ts
 
-# supabase local dev
-supabase/.temp/
-supabase/functions/.env
+# supabase — pasta inteira ignorada (a pedido do dono). NOTA: o que já está versionado
+# (migrations/*.sql, manual/*.sql) continua rastreado; isto só passa a ignorar arquivos NOVOS
+# da pasta. Para tirar a pasta do repo de vez seria preciso `git rm --cached -r supabase/`.
+/supabase/
 
 # backups lógicos do domínio de leads (scripts/backup-leads.mjs) — contêm dados, não versionar
 /backups/
