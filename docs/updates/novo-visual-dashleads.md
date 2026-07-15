@@ -355,10 +355,10 @@ Troca a página de rolagem única por uma **topbar de 7 abas in-page** (estado n
 ### ✅ Sprint 2 — Visão Geral completa + Performance (série temporal) — ENTREGUE
 Duas RPCs de série temporal (migration `20260710`): **`get_leads_timeseries`** (evolução DIÁRIA no período) e **`get_leads_trend`** (tendência ENTRE CICLOS, últimos 6). Visão Geral ganhou a **linha de evolução** (recebidos/ganhos/mortos por dia) + **painel de alertas** (resumo → aba Operação). Performance saiu do placeholder para **4 gráficos por ciclo**: conversão %, tempo até 1º contato, taxa de lead morto (linhas) + recebidos (área). Detalhe abaixo.
 
-### 🔜 Sprint 3 — Funil aprofundado
-Novas métricas de `lead_events`: **tempo médio por etapa** + **conversão entre etapas adjacentes** (novo RPC). UI: funil principal + tempo por etapa (barras horizontais) + conversão entre etapas (waterfall/barras).
+### ✅ Sprint 3 — Funil aprofundado — ENTREGUE
+**Tempo médio por etapa** (dwell time) via nova RPC `get_leads_dwell_time` sobre `lead_events` (1ª leitura desse dado em toda a feature). **Conversão entre etapas adjacentes** acabou **sem precisar de dado novo** — é derivável do `funnel` que `get_leads_dashboard` já retorna (`reached[i+1] / reached[i]`), então ficou como shaper puro no componente, sem RPC nem action extra. Detalhe abaixo.
 
-### ⬜ Sprint 4 — Equipe + Lead Morto
+### 🔜 Sprint 4 — Equipe + Lead Morto
 Equipe (tela principal do supervisor): ranking em **barras horizontais** + tabela comparativa + KPIs de equipe. Lead Morto (aba dedicada): total/taxa/**tempo até descarte** (nova métrica) + motivos + **lead morto por responsável** (nova métrica) + "em qual etapa morreu" (`DeathByAttempt`).
 
 ### ⬜ Sprint 5 — Operação + Leads (explorer) + polimento/lançamento
@@ -408,19 +408,35 @@ Pedidos do dono ao revisar os painéis, entregues ainda na Sprint 1. Camada de d
 - **Performance:** conversão %, tempo até 1º contato, taxa de lead morto (linhas) + recebidos (área), 1 ponto por ciclo.
 - **Fetch:** `timeseries` buscado junto no load e a cada troca de período (todos os papéis); `trend` buscado 1× no load só p/ gestor (independe do período). Wiring em `page.tsx` + `LeadsClient.tsx`; exports em `index.ts`.
 
-`tsc` + `lint` verdes; nada commitado. **Pendente do dono: rodar `20260710` no Supabase** (verificação no rodapé do arquivo: `soma(timeseries.received) == kpis.total` do ciclo; `trend` com 1 objeto/janela).
+`tsc` + `lint` verdes; nada commitado. **Confirmado ao vivo (10/jul): a migration `20260710` já estava rodando** — testei `get_leads_timeseries` direto contra o Supabase (leitura, sem alterar nada) e voltou dado real. O doc estava desatualizado nesse ponto; verificação: `soma(timeseries.received) == kpis.total` do ciclo; `trend` com 1 objeto/janela.
 
 ---
 
-# Handoff — para a próxima conversa (início da Sprint 3)
+# Sprint 3 (entregue) — Funil aprofundado
 
-**Onde paramos:** Sprints 1 e 2 no código. **Sprint 1 (migrations `20260708`/`20260709`) aplicada e verificada no banco.** **Sprint 2 (migration `20260710`) implementada — falta o dono rodar a migration** (até lá, evolução/tendência aparecem vazias por degradação graciosa). `tsc` + `lint` verdes; nada commitado (o dono controla o git).
+**Achado de plataforma (10/jul):** o commit `bf62847` (mesmo dia) **removeu `supabase/` do repo git** — a pasta local de migrations agora só existe no disco de quem a cria (`.gitignore: /supabase/`, "schema mantido no Supabase"). Não há mais histórico de migrations versionado localmente. Para escrever a RPC desta sprint com as colunas certas, o schema de `lead_events`/`lead_phases` foi **introspectado ao vivo** (leitura, via `openapi+json` do PostgREST com a service role do `.env.local` — nenhuma alteração no banco). Colunas confirmadas de `lead_events`: `id, lead_id, pipefy_card_id, from_phase, to_phase, to_phase_id, agent_id, occurred_at, created_at`.
 
-**Como rodar/verificar localmente:** `NEXT_PUBLIC_LEADS_ENABLED=1` no `.env.local` → `npm run dev` → logar → `/leads`. Sprint 2: Visão Geral com linha de evolução + alertas; Performance com 4 gráficos por ciclo; trocar período atualiza a evolução (não a tendência). *(Interativo exige sessão autenticada — feito pelo dono.)*
+**Camada de dados — migration `20260710_leads_funnel_depth.sql`** (idempotente, `CREATE OR REPLACE FUNCTION`, não toca dado; `SECURITY INVOKER` — o RLS de `leads_select`/`lead_events_select` vale igual às outras RPCs):
+- **`get_leads_dwell_time(p_start, p_end)`** → tempo médio (horas) que os leads criados no período passam em cada etapa produtiva **antes de sair dela** (`LAG(occurred_at)` por lead, ancorado em `leads.created_at` para a 1ª transição = saída de "Recebidos"). Só conta transições **completas** — um lead ainda parado na fase atual não entra (dwell em aberto/censurado enviesaria a média pra cima nas fases com backlog). Retorna `{funnel_order, avg_hours, sample_size}` por etapa (0..8; Venda é terminal).
+- **Conversão entre etapas adjacentes NÃO virou RPC** — simplificação em relação ao plano original: dá pra derivar do `funnel` que `get_leads_dashboard` já devolve (`reachedByOrder[i+1] / reachedByOrder[i]`), então é um shaper puro dentro do componente (`StepConversion.tsx`), sem round-trip novo.
 
-**Próximos passos (Sprint 3 — Funil aprofundado):**
-1. **Migration incremental**: RPC(s) `security_invoker` de `lead_events` para **tempo médio por etapa** (dwell time entre transições) + **conversão entre etapas adjacentes** (drop-off passo a passo). Padrão de `get_leads_dashboard`.
-2. **Server action + tipos** em `leads.ts`.
-3. **UI** na aba Funil: funil principal + tempo por etapa (barras horizontais) + conversão entre etapas (waterfall/barras). Reusar `useChartTheme`.
+**App — `src/app/actions/leads.ts`:** tipo `StepDwellTime`; action `getLeadsFunnelDepth(period)` (mapeia o retorno da RPC pelas `PRODUCTIVE_PHASES`, igual ao padrão de `buildFunnel`/`buildDeathByAttempt`). Degradação graciosa: RPC ausente → `[]`, UI mostra estado vazio.
 
-**Cuidados herdados (memória do projeto):** o dono controla git/migrations/deploy; PowerShell 5.1; agregar sempre no Postgres (nunca puxar tabelas inteiras — erro 1102); só migrations incrementais (reaplicar consolidado APAGA dados); `CREATE OR REPLACE VIEW` só adiciona coluna no FIM; cuidado com `name` ambíguo (qualificar alias); dashboard segue atrás de "Em breve" até o lançamento.
+**UI (novos componentes):** `StepDwellTime` (barras horizontais, `Xh`/`X d` — mesma regra de formatação do `fmtHours` já usado em `LeadKpiRow`/`AgentRanking`; só mostra etapas com `sampleSize > 0`) e `StepConversion` (barras horizontais, % da etapa anterior que avançou; deriva de `data.funnel`, sem prop de dado novo). Aba **Funil**: nova seção abaixo do Funil + Distribuição por fase existentes — `[StepDwellTime | StepConversion]`. Fetch: `funnelDepth` busca junto com `timeseries` no load inicial, na troca de período e no refresh silencioso do Realtime — mesmo tratamento pros dois papéis (a aba Funil é visível a todos, RLS escopa o resultado por agente/depto como o resto). Wiring em `page.tsx` + `LeadsClient.tsx`; exports em `index.ts`.
+
+`tsc` + `eslint` verdes; nada commitado. **Pendente do dono: rodar `20260710_leads_funnel_depth.sql` no Supabase** (até lá, "Tempo médio por etapa" aparece vazio por degradação graciosa; "Conversão entre etapas" já funciona hoje, pois não depende da migration nova). Verificação sugerida no rodapé do arquivo de migration.
+
+---
+
+# Handoff — para a próxima conversa (início da Sprint 4)
+
+**Onde paramos:** Sprints 1, 2 e 3 no código. **Sprint 1 (migrations `20260708`/`20260709`) aplicada e verificada no banco.** **Sprint 2 (migration `20260710_leads_timeseries.sql`) confirmada rodando ao vivo (10/jul).** **Sprint 3 (migration `20260710_leads_funnel_depth.sql`) implementada — falta o dono rodar** (a parte de conversão entre etapas não depende disso e já funciona). `tsc` + `lint` verdes; nada commitado (o dono controla o git). **Nota de plataforma:** `supabase/` saiu do git (`bf62847`, 10/jul) — migrations novas continuam sendo escritas em `supabase/migrations/`, só não são mais versionadas; o dono é quem as aplica e guarda.
+
+**Como rodar/verificar localmente:** `NEXT_PUBLIC_LEADS_ENABLED=1` no `.env.local` → `npm run dev` → logar → `/leads` → aba Funil. Tempo médio por etapa fica vazio até a migration `20260710_leads_funnel_depth.sql` rodar; conversão entre etapas já aparece (não depende de migration nova). *(Interativo exige sessão autenticada — feito pelo dono.)*
+
+**Próximos passos (Sprint 4 — Equipe + Lead Morto):**
+1. **Equipe** (tela principal do supervisor): ranking em barras horizontais (`AgentRanking` já existe como tabela ordenável — decidir se vira gráfico ou se a tabela já resolve) + tabela comparativa + KPIs de equipe.
+2. **Lead Morto** (aba dedicada): total/taxa (já existem) + **tempo até descarte** (nova métrica — `finalized_at - created_at` dos mortos, provavelmente cabe numa RPC pequena ou até em `get_leads_dashboard`) + motivos (`DeadReasonsDonut` já existe) + **lead morto por responsável** (nova métrica, provavelmente agregável em `get_leads_dashboard` sem RPC extra) + "em qual etapa morreu" (`DeathByAttempt` já existe).
+3. Verificar o que já dá pra reaproveitar de S3 do `sprints-dashboard-leads.md` (o dashboard "antigo" já tem `AgentRanking`/`DeathByAttempt`/ranking por depto) antes de criar componente novo.
+
+**Cuidados herdados (memória do projeto):** o dono controla git/migrations/deploy; PowerShell 5.1; agregar sempre no Postgres (nunca puxar tabelas inteiras — erro 1102); só migrations incrementais (reaplicar consolidado APAGA dados); `CREATE OR REPLACE VIEW` só adiciona coluna no FIM; cuidado com `name` ambíguo (qualificar alias); dashboard segue atrás de "Em breve" até o lançamento; `supabase/` não é mais versionado — para conferir schema ao vivo sem tocar em nada, dá pra ler `GET {SUPABASE_URL}/rest/v1/` com `Accept: application/openapi+json` e a service role do `.env.local`.

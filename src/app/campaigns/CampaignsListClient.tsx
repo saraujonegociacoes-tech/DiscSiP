@@ -2,14 +2,23 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Plus, Trash2, Megaphone } from 'lucide-react'
+import { Plus, Trash2, Archive, ArchiveRestore, Megaphone } from 'lucide-react'
 import { AppShell } from '@/components/blueline/AppShell'
 import { PageHeader } from '@/components/blueline/PageHeader'
 import { StatusBadge, type CallStatus } from '@/components/blueline/StatusBadge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { createCampaign, deleteCampaign } from '@/app/actions/campaigns'
+import { cn } from '@/lib/utils'
+import {
+  createCampaign,
+  deleteCampaign,
+  getCampaigns,
+  archiveCampaign,
+  unarchiveCampaign,
+} from '@/app/actions/campaigns'
 import type { Campaign } from '@/lib/types/database'
+
+type View = 'active' | 'archived'
 
 const STATUS_BADGE: Record<string, { status: CallStatus; label: string }> = {
   draft: { status: 'offline', label: 'Rascunho' },
@@ -24,13 +33,37 @@ interface Props {
 
 export function CampaignsListClient({ initialCampaigns }: Props) {
   const router = useRouter()
+  const [view, setView] = useState<View>('active')
   const [campaigns, setCampaigns] = useState<Campaign[]>(initialCampaigns)
+  const [loadingList, setLoadingList] = useState(false)
   const [newName, setNewName] = useState('')
   const [creating, setCreating] = useState(false)
   const [error, setError] = useState('')
   // Campanha aguardando confirmação de exclusão (mostra confirmar/cancelar na linha)
   const [confirmingId, setConfirmingId] = useState<string | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [archivingId, setArchivingId] = useState<string | null>(null)
+
+  const handleSwitchView = async (next: View) => {
+    if (next === view) return
+    setView(next)
+    setLoadingList(true)
+    setCampaigns(await getCampaigns(next === 'archived'))
+    setLoadingList(false)
+  }
+
+  const handleArchive = async (id: string, archive: boolean) => {
+    setArchivingId(id)
+    setError('')
+    const result = archive ? await archiveCampaign(id) : await unarchiveCampaign(id)
+    setArchivingId(null)
+    if (result.error) {
+      setError(result.error)
+      return
+    }
+    // Some da lista atual (arquivar tira da view "Ativas", desarquivar tira de "Arquivadas")
+    setCampaigns((prev) => prev.filter((c) => c.id !== id))
+  }
 
   const handleCreate = async () => {
     if (!newName.trim()) return
@@ -94,15 +127,38 @@ export function CampaignsListClient({ initialCampaigns }: Props) {
           {error && <p className="mt-2 text-xs text-destructive">{error}</p>}
         </div>
 
+        {/* Toggle Ativas/Arquivadas */}
+        <div className="flex gap-1 rounded-xl border border-border bg-card p-1 text-sm">
+          {(['active', 'archived'] as View[]).map((v) => (
+            <button
+              key={v}
+              onClick={() => handleSwitchView(v)}
+              disabled={loadingList}
+              className={cn(
+                'flex-1 rounded-lg px-3 py-1.5 font-medium transition-colors disabled:opacity-50',
+                view === v
+                  ? 'bg-primary text-primary-foreground'
+                  : 'text-muted-foreground hover:bg-accent/40'
+              )}
+            >
+              {v === 'active' ? 'Ativas' : 'Arquivadas'}
+            </button>
+          ))}
+        </div>
+
         {/* Lista */}
         {campaigns.length === 0 ? (
           <div className="flex flex-col items-center gap-3 rounded-2xl border border-border bg-gradient-card py-14 shadow-card">
             <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-muted text-muted-foreground">
               <Megaphone className="h-6 w-6" />
             </div>
-            <p className="text-sm font-medium text-foreground">Nenhuma campanha criada</p>
+            <p className="text-sm font-medium text-foreground">
+              {view === 'active' ? 'Nenhuma campanha criada' : 'Nenhuma campanha arquivada'}
+            </p>
             <p className="max-w-xs text-center text-xs text-muted-foreground">
-              Crie a primeira campanha acima para começar a configurar.
+              {view === 'active'
+                ? 'Crie a primeira campanha acima para começar a configurar.'
+                : 'Campanhas arquivadas aparecem aqui e podem ser restauradas a qualquer momento.'}
             </p>
           </div>
         ) : (
@@ -154,14 +210,29 @@ export function CampaignsListClient({ initialCampaigns }: Props) {
                               </Button>
                             </>
                           ) : (
-                            <button
-                              onClick={() => setConfirmingId(c.id)}
-                              title="Excluir campanha"
-                              aria-label={`Excluir campanha ${c.name}`}
-                              className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </button>
+                            <>
+                              <button
+                                onClick={() => handleArchive(c.id, view === 'active')}
+                                disabled={archivingId === c.id}
+                                title={view === 'active' ? 'Arquivar campanha' : 'Desarquivar campanha'}
+                                aria-label={`${view === 'active' ? 'Arquivar' : 'Desarquivar'} campanha ${c.name}`}
+                                className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-50"
+                              >
+                                {view === 'active' ? (
+                                  <Archive className="h-4 w-4" />
+                                ) : (
+                                  <ArchiveRestore className="h-4 w-4" />
+                                )}
+                              </button>
+                              <button
+                                onClick={() => setConfirmingId(c.id)}
+                                title="Excluir campanha"
+                                aria-label={`Excluir campanha ${c.name}`}
+                                className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </button>
+                            </>
                           )}
                         </div>
                       </td>

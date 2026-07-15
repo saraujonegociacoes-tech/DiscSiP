@@ -64,6 +64,8 @@ export interface Campaign {
   // Linhas discadas em paralelo por agente. 1 = power dialer 1-a-1 (padrão); >=2 liga o
   // modo preditivo (disca N, conecta quem atende primeiro, derruba as outras).
   parallel_lines: number
+  // Arquivamento reversível (distinto da exclusão definitiva). null = ativa.
+  archived_at: string | null
   created_at: string
   updated_at: string
 }

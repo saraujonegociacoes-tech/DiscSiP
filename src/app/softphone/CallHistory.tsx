@@ -3,9 +3,12 @@
 import { useEffect, useState } from 'react'
 import { PhoneIncoming, PhoneOutgoing, Phone } from 'lucide-react'
 import { getCallHistory } from '@/app/actions/dialer'
+import { PeriodPicker } from '@/components/blueline/PeriodPicker'
+import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
 import { DISPOSITIONS } from '@/lib/dispositions'
+import { currentCycle, type LeadPeriod } from '@/lib/period'
 import type { CallLog } from '@/lib/types/database'
 
 interface CallHistoryProps {
@@ -49,55 +52,83 @@ const STATUS_COLOR: Record<string, string> = {
 }
 
 export function CallHistory({ agentId }: CallHistoryProps) {
+  const [period, setPeriod] = useState<LeadPeriod>(() => currentCycle())
   const [logs, setLogs] = useState<CallLog[]>([])
   const [loading, setLoading] = useState(true)
+  const [loadingMore, setLoadingMore] = useState(false)
+  const [page, setPage] = useState(0)
+  const [hasMore, setHasMore] = useState(false)
 
+  // Troca de agente ou de período reinicia a paginação do zero.
   useEffect(() => {
-    getCallHistory(agentId).then((data) => {
-      setLogs(data)
+    setLoading(true)
+    getCallHistory(agentId, period, 0).then(({ logs, hasMore }) => {
+      setLogs(logs)
+      setHasMore(hasMore)
+      setPage(0)
       setLoading(false)
     })
-  }, [agentId])
+  }, [agentId, period])
+
+  const handleLoadMore = async () => {
+    setLoadingMore(true)
+    const next = page + 1
+    const { logs: more, hasMore: nextHasMore } = await getCallHistory(agentId, period, next)
+    setLogs((prev) => [...prev, ...more])
+    setHasMore(nextHasMore)
+    setPage(next)
+    setLoadingMore(false)
+  }
+
+  const picker = <PeriodPicker value={period} onChange={setPeriod} disabled={loading} />
 
   if (loading) {
     return (
-      <div className="space-y-2">
-        {[1, 2, 3, 4].map((i) => (
-          <div
-            key={i}
-            className="flex items-center gap-3 rounded-2xl border border-border bg-gradient-card px-4 py-3 shadow-card"
-          >
-            <Skeleton className="h-8 w-8 shrink-0 rounded-xl" />
-            <div className="flex-1 space-y-2">
-              <Skeleton className="h-3 w-28" />
-              <Skeleton className="h-2.5 w-20" />
+      <div className="space-y-3">
+        {picker}
+        <div className="space-y-2">
+          {[1, 2, 3, 4].map((i) => (
+            <div
+              key={i}
+              className="flex items-center gap-3 rounded-2xl border border-border bg-gradient-card px-4 py-3 shadow-card"
+            >
+              <Skeleton className="h-8 w-8 shrink-0 rounded-xl" />
+              <div className="flex-1 space-y-2">
+                <Skeleton className="h-3 w-28" />
+                <Skeleton className="h-2.5 w-20" />
+              </div>
+              <div className="space-y-2 text-right">
+                <Skeleton className="ml-auto h-3 w-16" />
+                <Skeleton className="ml-auto h-2.5 w-10" />
+              </div>
             </div>
-            <div className="space-y-2 text-right">
-              <Skeleton className="ml-auto h-3 w-16" />
-              <Skeleton className="ml-auto h-2.5 w-10" />
-            </div>
-          </div>
-        ))}
+          ))}
+        </div>
       </div>
     )
   }
 
   if (logs.length === 0) {
     return (
-      <div className="flex flex-col items-center gap-3 rounded-2xl border border-border bg-gradient-card py-12 shadow-card">
-        <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-muted text-muted-foreground">
-          <Phone className="h-6 w-6" />
+      <div className="space-y-3">
+        {picker}
+        <div className="flex flex-col items-center gap-3 rounded-2xl border border-border bg-gradient-card py-12 shadow-card">
+          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-muted text-muted-foreground">
+            <Phone className="h-6 w-6" />
+          </div>
+          <p className="text-sm font-medium text-foreground">Nenhuma chamada registrada</p>
+          <p className="max-w-xs text-center text-xs text-muted-foreground">
+            Nenhuma ligação no período selecionado.
+          </p>
         </div>
-        <p className="text-sm font-medium text-foreground">Nenhuma chamada registrada</p>
-        <p className="max-w-xs text-center text-xs text-muted-foreground">
-          O histórico aparece aqui após a primeira chamada discada.
-        </p>
       </div>
     )
   }
 
   return (
-    <div className="space-y-2">
+    <div className="space-y-3">
+      {picker}
+      <div className="space-y-2">
       {logs.map((log) => (
         <div
           key={log.id}
@@ -124,6 +155,14 @@ export function CallHistory({ agentId }: CallHistoryProps) {
           </div>
         </div>
       ))}
+      </div>
+      {hasMore && (
+        <div className="flex justify-center pt-1">
+          <Button variant="outline" size="sm" onClick={handleLoadMore} disabled={loadingMore}>
+            {loadingMore ? 'Carregando...' : 'Carregar mais'}
+          </Button>
+        </div>
+      )}
     </div>
   )
 }

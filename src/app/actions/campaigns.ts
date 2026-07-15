@@ -1,18 +1,20 @@
 'use server'
 
 import { createServerClient } from '@/lib/supabase/server'
-import type { Profile, Campaign, CampaignContact, CampaignStatus, ContactStatus, Department } from '@/lib/types/database'
+import type { Profile, Campaign, CampaignContact, ContactStatus, Department } from '@/lib/types/database'
 
-export async function getCampaigns(): Promise<Campaign[]> {
+// Lê de v_campaigns (status calculado a partir do estado real da campanha — ver
+// migration 20260715_campaign_status_archive.sql). includeArchived=false (padrão)
+// esconde campanhas arquivadas da lista de gestão.
+export async function getCampaigns(includeArchived = false): Promise<Campaign[]> {
   const supabase = await createServerClient()
-  const { data } = await supabase
-    .from('campaigns')
-    .select('*')
-    .order('created_at', { ascending: false })
+  let query = supabase.from('v_campaigns').select('*').order('created_at', { ascending: false })
+  if (!includeArchived) query = query.is('archived_at', null)
+  const { data } = await query
   return (data ?? []) as Campaign[]
 }
 
-// Apenas as campanhas em que o agente participa (campaign_agents)
+// Apenas as campanhas em que o agente participa (campaign_agents), excluindo arquivadas
 export async function getCampaignsForAgent(agentId: string): Promise<Campaign[]> {
   const supabase = await createServerClient()
   const { data: links } = await supabase
@@ -24,9 +26,10 @@ export async function getCampaignsForAgent(agentId: string): Promise<Campaign[]>
   if (ids.length === 0) return []
 
   const { data } = await supabase
-    .from('campaigns')
+    .from('v_campaigns')
     .select('*')
     .in('id', ids)
+    .is('archived_at', null)
     .order('created_at', { ascending: false })
   return (data ?? []) as Campaign[]
 }
@@ -78,14 +81,23 @@ export async function deleteCampaign(id: string): Promise<{ error?: string }> {
   return {}
 }
 
-export async function updateCampaignStatus(
-  id: string,
-  status: CampaignStatus
-): Promise<{ error?: string }> {
+// Arquivamento reversível (distinto de deleteCampaign, que apaga tudo). Campanha
+// arquivada some da lista do agente e do painel "ao vivo" do supervisor.
+export async function archiveCampaign(id: string): Promise<{ error?: string }> {
   const supabase = await createServerClient()
   const { error } = await supabase
     .from('campaigns')
-    .update({ status, updated_at: new Date().toISOString() })
+    .update({ archived_at: new Date().toISOString() })
+    .eq('id', id)
+  if (error) return { error: error.message }
+  return {}
+}
+
+export async function unarchiveCampaign(id: string): Promise<{ error?: string }> {
+  const supabase = await createServerClient()
+  const { error } = await supabase
+    .from('campaigns')
+    .update({ archived_at: null })
     .eq('id', id)
   if (error) return { error: error.message }
   return {}

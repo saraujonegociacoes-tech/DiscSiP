@@ -2,8 +2,8 @@
 
 import { createServerClient } from '@/lib/supabase/server'
 import { fetchAllRows } from '@/lib/supabase/paginate'
-import { PRODUCTIVE_PHASES } from '@/features/leads/content/phases'
-import { sanitizePeriod, recentCycles, type LeadPeriod } from '@/lib/leads/period'
+import { PRODUCTIVE_PHASES, WON_ORDER } from '@/features/leads/content/phases'
+import { sanitizePeriod, recentCycles, type LeadPeriod } from '@/lib/period'
 import type { LeadPhaseKind, LeadProgressRow, DuplicateResponsibilityRow } from '@/lib/types/database'
 
 // Dashboard de Leads (Pipefy) — domínio SEPARADO do discador. Estas actions leem as
@@ -136,6 +136,17 @@ export interface TrendPoint {
   conversionRate: number // 0..1
   deadRate: number // 0..1
   avgHoursToFirstContact: number | null
+}
+
+// Tempo médio por etapa (S3 — Funil aprofundado). Quanto tempo um lead fica em cada
+// etapa produtiva ANTES de sair dela (dwell time), via lead_events. sampleSize = 0 /
+// avgHours null quando não há transições completas no período (ou a migration do
+// RPC não rodou ainda) — a UI trata como "sem dados", não como zero.
+export interface StepDwellTime {
+  order: number
+  phase: string
+  avgHours: number | null
+  sampleSize: number
 }
 
 type SupabaseClient = Awaited<ReturnType<typeof createServerClient>>
@@ -552,6 +563,29 @@ export async function getLeadsTrend(): Promise<TrendPoint[]> {
       deadRate: received > 0 ? dead / received : 0,
       avgHoursToFirstContact: r?.avgHoursToFirstContact ?? null,
     }
+  })
+}
+
+// ── Funil aprofundado (Sprint 3) ──────────────────────────────────────────────
+
+// Tempo médio por etapa (RPC get_leads_dwell_time). Vazio/null se a migration ainda
+// não rodou → a UI mostra estado vazio (mesma degradação graciosa das séries do S2).
+// Só até a penúltima etapa produtiva (Venda é terminal, não tem "tempo até a próxima").
+export async function getLeadsFunnelDepth(periodInput: LeadPeriod): Promise<StepDwellTime[]> {
+  const period = sanitizePeriod(periodInput)
+  const supabase = await createServerClient()
+  const { data, error } = await supabase.rpc('get_leads_dwell_time', {
+    p_start: period.start,
+    p_end: period.end,
+  })
+  const byOrder = new Map(
+    (error || !data ? [] : (data as { funnel_order: number; avg_hours: number | null; sample_size: number }[])).map(
+      (r) => [r.funnel_order, r]
+    )
+  )
+  return PRODUCTIVE_PHASES.filter((p) => p.order < WON_ORDER).map((p) => {
+    const r = byOrder.get(p.order)
+    return { order: p.order, phase: p.name, avgHours: r?.avg_hours ?? null, sampleSize: r?.sample_size ?? 0 }
   })
 }
 

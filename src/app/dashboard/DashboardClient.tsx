@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
-import { PhoneCall, PhoneOutgoing, Target, Users, ListChecks, Sparkles } from 'lucide-react'
+import { PhoneCall, PhoneOutgoing, Target, Users, ListChecks, Sparkles, History } from 'lucide-react'
 import { AppShell } from '@/components/blueline/AppShell'
 import { PageHeader } from '@/components/blueline/PageHeader'
 import { StatusBadge, type CallStatus } from '@/components/blueline/StatusBadge'
@@ -82,6 +82,13 @@ export function DashboardClient({ stats, campaigns, callsByHour, agents }: Dashb
       <PageHeader
         title="Painel da operação"
         description="Acompanhamento em tempo real das campanhas e indicadores do time."
+        actions={
+          <Button asChild variant="outline" size="sm">
+            <Link href="/dashboard/historico">
+              <History className="mr-2 h-4 w-4" /> Histórico
+            </Link>
+          </Button>
+        }
       />
 
       {/* Métricas */}

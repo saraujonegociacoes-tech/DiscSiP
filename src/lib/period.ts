@@ -1,9 +1,9 @@
-// Período do dashboard de leads. O ciclo de meta da operação NÃO é o mês civil:
-// vai do dia 11 de um mês ao dia 10 do mês seguinte (ex.: 11/jun → 10/jul). Este
-// helper calcula o ciclo corrente e vizinhos, sempre no fuso de Brasília (o app roda
-// em UTC no Cloudflare, então o corte precisa ser fixado em BRT — mesmo motivo do
-// lib/timezone.ts). `start`/`end` saem em UTC ISO para comparar direto com
-// leads.created_at (que é UTC); `end` é EXCLUSIVO.
+// Período genérico para filtros de intervalo de data (dashboards de leads e discadora).
+// O ciclo de meta da operação NÃO é o mês civil: vai do dia 11 de um mês ao dia 10 do
+// mês seguinte (ex.: 11/jun → 10/jul). Este helper calcula o ciclo corrente e vizinhos,
+// sempre no fuso de Brasília (o app roda em UTC no Cloudflare, então o corte precisa ser
+// fixado em BRT — mesmo motivo do lib/timezone.ts). `start`/`end` saem em UTC ISO para
+// comparar direto com colunas created_at (UTC); `end` é EXCLUSIVO.
 import { BRT_TZ } from '@/lib/timezone'
 
 // Dia-âncora do ciclo: todo ciclo começa no dia 11 e termina no dia 10 do mês seguinte.

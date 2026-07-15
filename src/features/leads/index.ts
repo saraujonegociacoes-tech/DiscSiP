@@ -1,6 +1,6 @@
 // Peças apresentacionais do dashboard de leads. A composição vive no
 // app/leads/LeadsClient.tsx (dentro do AppShell), como no dashboard do discador.
-export { PeriodPicker } from './components/PeriodPicker'
+// PeriodPicker mudou para @/components/blueline/PeriodPicker (compartilhado com a discadora).
 export { LeadKpiRow } from './components/LeadKpiRow'
 export { Funnel } from './components/Funnel'
 export { PhaseDistribution } from './components/PhaseDistribution'
@@ -16,6 +16,8 @@ export { OrphanLeads } from './components/OrphanLeads'
 export { EvolutionChart } from './components/EvolutionChart'
 export { TrendChart } from './components/TrendChart'
 export { PerformancePanel } from './components/PerformancePanel'
+export { StepDwellTime } from './components/StepDwellTime'
+export { StepConversion } from './components/StepConversion'
 export { AlertsPanel, type AlertItem } from './components/AlertsPanel'
 export { LeadsTabNav, type LeadTab } from './components/LeadsTabNav'
 export { TabPlaceholder } from './components/TabPlaceholder'

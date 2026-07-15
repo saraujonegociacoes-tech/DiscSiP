@@ -2,7 +2,10 @@
 
 import { createServerClient } from '@/lib/supabase/server'
 import { hourInBRT } from '@/lib/timezone'
-import type { Campaign } from '@/lib/types/database'
+import { sanitizePeriod, type LeadPeriod } from '@/lib/period'
+import type { Campaign, CallDirection, CallStatus } from '@/lib/types/database'
+
+const HISTORY_PAGE_SIZE = 30
 
 export interface DashboardStats {
   totalContacts: number
@@ -138,4 +141,85 @@ export async function getAgentActivity(): Promise<AgentActivity[]> {
       dialerStatus: online ? (r.dialer_status ?? 'idle') : null,
     }
   })
+}
+
+export interface CallHistoryRow {
+  id: string
+  agentName: string | null
+  campaignName: string | null
+  phoneNumber: string
+  direction: CallDirection
+  status: CallStatus
+  disposition: string | null
+  durationSeconds: number
+  createdAt: string
+}
+
+// Histórico de chamadas do supervisor: período (obrigatório) + agente/campanha (opcionais),
+// paginado. Nomes de agente/campanha são resolvidos à parte (evita depender de embed/FK do
+// PostgREST) a partir dos poucos ids distintos da página atual.
+export async function getCallHistoryFiltered(params: {
+  period: LeadPeriod
+  agentId?: string
+  campaignId?: string
+  page?: number
+}): Promise<{ rows: CallHistoryRow[]; hasMore: boolean }> {
+  const period = sanitizePeriod(params.period)
+  const supabase = await createServerClient()
+  const page = params.page ?? 0
+  const from = page * HISTORY_PAGE_SIZE
+  const to = from + HISTORY_PAGE_SIZE - 1
+
+  let query = supabase
+    .from('call_logs')
+    .select('id, agent_id, campaign_id, phone_number, direction, status, disposition, duration_seconds, created_at')
+    .gte('created_at', period.start)
+    .lt('created_at', period.end)
+    .order('created_at', { ascending: false })
+    .range(from, to)
+
+  if (params.agentId) query = query.eq('agent_id', params.agentId)
+  if (params.campaignId) query = query.eq('campaign_id', params.campaignId)
+
+  const { data } = await query
+  const logs = (data ?? []) as {
+    id: string
+    agent_id: string | null
+    campaign_id: string | null
+    phone_number: string
+    direction: CallDirection
+    status: CallStatus
+    disposition: string | null
+    duration_seconds: number
+    created_at: string
+  }[]
+
+  const agentIds = [...new Set(logs.map((l) => l.agent_id).filter((v): v is string => !!v))]
+  const campaignIds = [...new Set(logs.map((l) => l.campaign_id).filter((v): v is string => !!v))]
+
+  const [agentRows, campaignRows] = await Promise.all([
+    agentIds.length
+      ? supabase.from('profiles').select('id, name').in('id', agentIds).then((r) => r.data ?? [])
+      : Promise.resolve([] as { id: string; name: string }[]),
+    campaignIds.length
+      ? supabase.from('campaigns').select('id, name').in('id', campaignIds).then((r) => r.data ?? [])
+      : Promise.resolve([] as { id: string; name: string }[]),
+  ])
+
+  const agentNames = new Map(agentRows.map((a) => [a.id, a.name]))
+  const campaignNames = new Map(campaignRows.map((c) => [c.id, c.name]))
+
+  const rows: CallHistoryRow[] = logs.map((l) => ({
+    id: l.id,
+    agentName: l.agent_id ? (agentNames.get(l.agent_id) ?? null) : null,
+    campaignName: l.campaign_id ? (campaignNames.get(l.campaign_id) ?? null) : null,
+    phoneNumber: l.phone_number,
+    direction: l.direction,
+    status: l.status,
+    disposition: l.disposition,
+    durationSeconds: l.duration_seconds,
+    createdAt: l.created_at,
+  }))
+
+  return { rows, hasMore: logs.length === HISTORY_PAGE_SIZE }
 }

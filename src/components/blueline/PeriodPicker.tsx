@@ -7,11 +7,10 @@ import {
   customPeriod,
   periodBounds,
   type LeadPeriod,
-} from '@/lib/leads/period'
+} from '@/lib/period'
 
-// Seletor de período do dashboard de leads. Default = ciclo de meta corrente (11→10);
-// permite escolher ciclos recentes ou um intervalo livre. Reutilizável (pode cair em
-// outros dashboards de métrica depois); por ora só o /leads o usa.
+// Seletor de período genérico (ciclo de meta 11→10 + intervalo livre). Default = ciclo
+// corrente. Usado pelo dashboard de leads e pelo histórico da discadora.
 export function PeriodPicker({
   value,
   onChange,

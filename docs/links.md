@@ -19,6 +19,7 @@ Dois domínios, propositalmente **não misturados**:
 ## `updates/` — features e mudanças de arquitetura
 - [`discagem-paralela-preditiva.md`](updates/discagem-paralela-preditiva.md) — discagem paralela/preditiva (estudo + testes + implementação)
 - [`discagem-em-background-dialer-engine.md`](updates/discagem-em-background-dialer-engine.md) — **design** para discar fora da tela do discador (DialerEngine) · *não implementado*
+- [`discadora-status-historico-arquivamento.md`](updates/discadora-status-historico-arquivamento.md) — status de campanha calculado, arquivamento reversível e histórico de chamadas com filtro de período (agente + supervisor)
 
 ## `fixes/` — correções de bugs
 - [`correcao-cpu-cloudflare-1102.md`](fixes/correcao-cpu-cloudflare-1102.md) — Cloudflare Error 1102 (estouro de CPU): agregar no Postgres (views security_invoker) em vez de puxar tabelas inteiras e agregar no Worker

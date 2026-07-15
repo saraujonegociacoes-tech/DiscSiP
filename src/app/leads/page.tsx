@@ -7,12 +7,13 @@ import {
   getSupervisorMetrics,
   getLeadsTimeseries,
   getLeadsTrend,
+  getLeadsFunnelDepth,
   type DuplicateAlert,
   type AgentLeadRow,
   type SupervisorMetrics,
   type TrendPoint,
 } from '@/app/actions/leads'
-import { currentCycle } from '@/lib/leads/period'
+import { currentCycle } from '@/lib/period'
 import type { Role } from '@/lib/types/database'
 import { LeadsClient } from './LeadsClient'
 import { LeadsComingSoon } from './LeadsComingSoon'
@@ -41,13 +42,14 @@ export default async function LeadsPage() {
   const isManager = MANAGER_ROLES.includes(role)
   const cycle = currentCycle()
 
-  const [data, duplicates, agentLeads, supervisor, timeseries, trend] = await Promise.all([
+  const [data, duplicates, agentLeads, supervisor, timeseries, trend, funnelDepth] = await Promise.all([
     getLeadsData(cycle),
     isManager ? getDuplicateAlerts() : Promise.resolve([] as DuplicateAlert[]),
     isManager ? Promise.resolve([] as AgentLeadRow[]) : getAgentLeads(cycle),
     isManager ? getSupervisorMetrics(cycle) : Promise.resolve(null as SupervisorMetrics | null),
     getLeadsTimeseries(cycle), // evolução diária (Visão Geral) — todos os papéis
     isManager ? getLeadsTrend() : Promise.resolve([] as TrendPoint[]), // tendência (Performance) — só gestor
+    getLeadsFunnelDepth(cycle), // tempo médio por etapa (Funil) — todos os papéis
   ])
 
   return (
@@ -62,6 +64,7 @@ export default async function LeadsPage() {
         initialSupervisor={supervisor}
         initialTimeseries={timeseries}
         initialTrend={trend}
+        initialFunnelDepth={funnelDepth}
         isManager={isManager}
       />
     </Suspense>

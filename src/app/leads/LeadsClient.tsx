@@ -13,9 +13,9 @@ import {
 } from 'lucide-react'
 import { AppShell } from '@/components/blueline/AppShell'
 import { PageHeader } from '@/components/blueline/PageHeader'
+import { PeriodPicker } from '@/components/blueline/PeriodPicker'
 import { Tabs, TabsContent } from '@/components/ui/tabs'
 import {
-  PeriodPicker,
   LeadKpiRow,
   Funnel,
   PhaseDistribution,
@@ -30,6 +30,8 @@ import {
   EvolutionChart,
   AlertsPanel,
   PerformancePanel,
+  StepDwellTime,
+  StepConversion,
   LeadsTabNav,
   TabPlaceholder,
   type LeadTab,
@@ -41,14 +43,16 @@ import {
   getAgentLeads,
   getSupervisorMetrics,
   getLeadsTimeseries,
+  getLeadsFunnelDepth,
   type LeadsData,
   type AgentLeadRow,
   type SupervisorMetrics,
   type DuplicateAlert as DuplicateAlertRow,
   type DailyPoint,
   type TrendPoint,
+  type StepDwellTime as StepDwellTimeRow,
 } from '@/app/actions/leads'
-import type { LeadPeriod } from '@/lib/leads/period'
+import type { LeadPeriod } from '@/lib/period'
 
 interface LeadsClientProps {
   initialPeriod: LeadPeriod
@@ -58,6 +62,7 @@ interface LeadsClientProps {
   initialSupervisor: SupervisorMetrics | null
   initialTimeseries: DailyPoint[]
   initialTrend: TrendPoint[]
+  initialFunnelDepth: StepDwellTimeRow[]
   isManager: boolean
 }
 
@@ -92,6 +97,7 @@ export function LeadsClient({
   initialSupervisor,
   initialTimeseries,
   initialTrend,
+  initialFunnelDepth,
   isManager,
 }: LeadsClientProps) {
   const [period, setPeriod] = useState(initialPeriod)
@@ -99,6 +105,7 @@ export function LeadsClient({
   const [agentLeads, setAgentLeads] = useState(initialAgentLeads)
   const [supervisor, setSupervisor] = useState(initialSupervisor)
   const [timeseries, setTimeseries] = useState(initialTimeseries)
+  const [funnelDepth, setFunnelDepth] = useState(initialFunnelDepth)
   // Tendência entre ciclos (Performance) não depende do período selecionado → não re-busca.
   const [trend] = useState(initialTrend)
   const [loading, setLoading] = useState(false)
@@ -168,23 +175,27 @@ export function LeadsClient({
     setLoading(true)
     try {
       if (isManager) {
-        const [d, sup, ts] = await Promise.all([
+        const [d, sup, ts, fd] = await Promise.all([
           getLeadsData(next),
           getSupervisorMetrics(next),
           getLeadsTimeseries(next),
+          getLeadsFunnelDepth(next),
         ])
         setData(d)
         setSupervisor(sup)
         setTimeseries(ts)
+        setFunnelDepth(fd)
       } else {
-        const [d, al, ts] = await Promise.all([
+        const [d, al, ts, fd] = await Promise.all([
           getLeadsData(next),
           getAgentLeads(next),
           getLeadsTimeseries(next),
+          getLeadsFunnelDepth(next),
         ])
         setData(d)
         setAgentLeads(al)
         setTimeseries(ts)
+        setFunnelDepth(fd)
       }
     } catch {
       setError('Não foi possível carregar os dados deste período. Tente novamente.')
@@ -198,23 +209,27 @@ export function LeadsClient({
   const refresh = useCallback(async () => {
     try {
       if (isManager) {
-        const [d, sup, ts] = await Promise.all([
+        const [d, sup, ts, fd] = await Promise.all([
           getLeadsData(period),
           getSupervisorMetrics(period),
           getLeadsTimeseries(period),
+          getLeadsFunnelDepth(period),
         ])
         setData(d)
         setSupervisor(sup)
         setTimeseries(ts)
+        setFunnelDepth(fd)
       } else {
-        const [d, al, ts] = await Promise.all([
+        const [d, al, ts, fd] = await Promise.all([
           getLeadsData(period),
           getAgentLeads(period),
           getLeadsTimeseries(period),
+          getLeadsFunnelDepth(period),
         ])
         setData(d)
         setAgentLeads(al)
         setTimeseries(ts)
+        setFunnelDepth(fd)
       }
     } catch {
       /* silêncio: a tela segue com o último dado bom */
@@ -300,6 +315,10 @@ export function LeadsClient({
                 data={data.phaseDistribution}
                 byResponsible={data.phaseByResponsible}
               />
+            </section>
+            <section className="mt-6 grid grid-cols-1 items-start gap-4 xl:grid-cols-2">
+              <StepDwellTime data={funnelDepth} />
+              <StepConversion stages={data.funnel} />
             </section>
           </TabsContent>
 

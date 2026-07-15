@@ -1,7 +1,10 @@
 'use server'
 
 import { createServerClient } from '@/lib/supabase/server'
+import { sanitizePeriod, type LeadPeriod } from '@/lib/period'
 import type { CallLog } from '@/lib/types/database'
+
+const HISTORY_PAGE_SIZE = 30
 
 interface SaveCallLogInput {
   agentId: string
@@ -43,14 +46,26 @@ export async function saveCallLog(
   return { id: data?.id }
 }
 
-export async function getCallHistory(agentId: string): Promise<CallLog[]> {
+// Histórico do agente filtrado por período (ciclo do PeriodPicker), paginado — um ciclo
+// inteiro tem bem mais que as 20 ligações que o histórico mostrava antes.
+export async function getCallHistory(
+  agentId: string,
+  periodInput: LeadPeriod,
+  page = 0
+): Promise<{ logs: CallLog[]; hasMore: boolean }> {
+  const period = sanitizePeriod(periodInput)
   const supabase = await createServerClient()
+  const from = page * HISTORY_PAGE_SIZE
+  const to = from + HISTORY_PAGE_SIZE - 1
   const { data } = await supabase
     .from('call_logs')
     .select('*')
     .eq('agent_id', agentId)
+    .gte('created_at', period.start)
+    .lt('created_at', period.end)
     .order('created_at', { ascending: false })
-    .limit(20)
+    .range(from, to)
 
-  return (data ?? []) as CallLog[]
+  const logs = (data ?? []) as CallLog[]
+  return { logs, hasMore: logs.length === HISTORY_PAGE_SIZE }
 }
