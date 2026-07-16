@@ -3,7 +3,17 @@
 import { useEffect } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { PhoneCall, LayoutDashboard, Megaphone, Target, Shield, HelpCircle, type LucideIcon } from 'lucide-react'
+import {
+  PhoneCall,
+  LayoutDashboard,
+  Megaphone,
+  Target,
+  Shield,
+  HelpCircle,
+  HeartHandshake,
+  Handshake,
+  type LucideIcon,
+} from 'lucide-react'
 import { useSoftphoneStore } from '@/store/softphoneStore'
 import { getCurrentProfile } from '@/app/actions/auth'
 import type { Role } from '@/lib/types/database'
@@ -23,13 +33,47 @@ import {
 import { BlueLineLogo, Mark } from '@/components/brand/BlueLineLogo'
 import { cn } from '@/lib/utils'
 
-const NAV_ITEMS: { href: string; label: string; icon: LucideIcon; roles: Role[] }[] = [
+type NavItem = { href: string; label: string; icon: LucideIcon; roles: Role[] }
+
+// Itens que não são específicos de uma vertical de negócio — todo mundo aprovado navega
+// entre eles conforme o papel, igual sempre foi.
+const OPERATION_ITEMS: NavItem[] = [
   { href: '/softphone', label: 'Discador', icon: PhoneCall, roles: ['agent', 'supervisor', 'manager', 'admin'] },
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['supervisor', 'manager', 'admin'] },
   { href: '/campaigns', label: 'Campanhas', icon: Megaphone, roles: ['supervisor', 'manager', 'admin'] },
-  { href: '/leads', label: 'Leads', icon: Target, roles: ['agent', 'supervisor', 'manager', 'admin'] },
   { href: '/admin', label: 'Admin', icon: Shield, roles: ['admin'] },
   { href: '/ajuda', label: 'Como usar?', icon: HelpCircle, roles: ['agent', 'supervisor', 'manager', 'admin'] },
+]
+
+// Painéis por vertical de negócio (departamento). Comercial, CS e Negociação são
+// departamentos SEPARADOS (não subdivisão de um maior) — cada grupo só aparece pra quem é
+// do respectivo departamento (department_slug) ou é manager/admin (vê tudo). Ver
+// docs/updates/painel-sucesso-cliente-cs.md.
+const VERTICAL_GROUPS: { slug: 'comercial' | 'cs' | 'negociacao'; label: string; items: NavItem[] }[] = [
+  {
+    slug: 'comercial',
+    label: 'Comercial',
+    items: [{ href: '/leads', label: 'Leads', icon: Target, roles: ['agent', 'supervisor', 'manager', 'admin'] }],
+  },
+  {
+    slug: 'cs',
+    label: 'Sucesso do Cliente',
+    items: [
+      { href: '/cs', label: 'Painel CS', icon: HeartHandshake, roles: ['agent', 'supervisor', 'manager', 'admin'] },
+    ],
+  },
+  {
+    slug: 'negociacao',
+    label: 'Negociação',
+    items: [
+      {
+        href: '/negociacao',
+        label: 'Painel de Negociação',
+        icon: Handshake,
+        roles: ['agent', 'supervisor', 'manager', 'admin'],
+      },
+    ],
+  },
 ]
 
 const ROLE_LABEL: Record<string, string> = {
@@ -43,7 +87,7 @@ export function Sidebar() {
   const pathname = usePathname()
   const { state } = useSidebar()
   const collapsed = state === 'collapsed'
-  const { agentId, agentName, extension, role, helperOnline, setProfile } = useSoftphoneStore()
+  const { agentId, agentName, extension, role, departmentSlug, helperOnline, setProfile } = useSoftphoneStore()
 
   // Hidrata o perfil da sessão se ainda não estiver no store (páginas que não são
   // o softphone montam a Sidebar sem o perfil carregado)
@@ -55,7 +99,15 @@ export function Sidebar() {
   }, [agentId, setProfile])
 
   // Enquanto o papel não carregou, mostra o mínimo (Discador) pra não piscar links proibidos
-  const navItems = NAV_ITEMS.filter((item) => item.roles.includes(role ?? 'agent'))
+  const operationItems = OPERATION_ITEMS.filter((item) => item.roles.includes(role ?? 'agent'))
+
+  // Manager/admin veem as 3 verticais; agente/supervisor só a do próprio departamento.
+  // Sem departamento reconhecido (slug null/não mapeado), nenhum grupo de vertical aparece.
+  const isManagerLevel = role === 'manager' || role === 'admin'
+  const verticalGroups = VERTICAL_GROUPS.filter((group) => isManagerLevel || group.slug === departmentSlug)
+    .map((group) => ({ ...group, items: group.items.filter((item) => item.roles.includes(role ?? 'agent')) }))
+    .filter((group) => group.items.length > 0)
+
   const initials = (agentName ?? '?')
     .split(' ')
     .map((p) => p[0])
@@ -74,7 +126,7 @@ export function Sidebar() {
           {!collapsed && <SidebarGroupLabel>Operação</SidebarGroupLabel>}
           <SidebarGroupContent>
             <SidebarMenu>
-              {navItems.map((item) => {
+              {operationItems.map((item) => {
                 const active = pathname === item.href || pathname.startsWith(`${item.href}/`)
                 return (
                   <SidebarMenuItem key={item.href}>
@@ -90,6 +142,29 @@ export function Sidebar() {
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
+
+        {verticalGroups.map((group) => (
+          <SidebarGroup key={group.slug}>
+            {!collapsed && <SidebarGroupLabel>{group.label}</SidebarGroupLabel>}
+            <SidebarGroupContent>
+              <SidebarMenu>
+                {group.items.map((item) => {
+                  const active = pathname === item.href || pathname.startsWith(`${item.href}/`)
+                  return (
+                    <SidebarMenuItem key={item.href}>
+                      <SidebarMenuButton asChild isActive={active} tooltip={item.label}>
+                        <Link href={item.href} className="flex items-center gap-3">
+                          <item.icon className="h-4 w-4" />
+                          <span>{item.label}</span>
+                        </Link>
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+                  )
+                })}
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        ))}
       </SidebarContent>
 
       <SidebarFooter className="border-t border-sidebar-border p-3">

@@ -19,6 +19,10 @@ export type ContactStatus =
 export interface Department {
   id: string
   name: string
+  // Identificador estável de área de negócio ('comercial' | 'cs' | 'negociacao' | null).
+  // Usado pro gating do menu lateral e do RLS dos painéis por vertical — não depende
+  // do texto de `name`, que é editável.
+  slug: string | null
   created_at: string
 }
 
@@ -31,6 +35,9 @@ export interface Profile {
   department_id: string | null
   extension: number | null
   created_at: string
+  // Não é coluna de `profiles` — resolvido à parte por getCurrentProfile() a partir de
+  // department_id, pra escopar o menu lateral por vertical (Comercial/CS/Negociação).
+  department_slug?: string | null
 }
 
 export interface CallLog {
@@ -227,4 +234,38 @@ export interface DuplicateResponsibilityRow {
   current_phase: string | null
   responsible: string | null
   updated_at: string | null
+}
+
+// ── Painel de Sucesso do Cliente (CS, Pipefy) — domínio SEPARADO do leads/comercial ──
+// Espelham as tabelas/views de supabase/migrations/20260715_cs_pipeline_schema.sql e
+// 20260716_cs_dashboard.sql. RLS mais estrito que o leads: só quem é do departamento
+// de CS (ou manager/admin) enxerga qualquer linha — ver docs/updates/painel-sucesso-
+// cliente-cs.md. Sem conceito de "fase morta/ganha" ainda (pendente de definição do
+// dono) — "cards por fase" e "tempo na fase" não dependem disso.
+
+export interface CsKpis {
+  total: number
+  withoutResponsible: number
+  distinctResponsible: number
+  avgDaysInCurrentPhase: number | null
+}
+
+export interface CsPhaseCount {
+  phaseId: string
+  name: string
+  funnelOrder: number
+  count: number
+  avgDaysInPhase: number | null
+}
+
+export interface CsAgentCount {
+  agentId: string | null
+  name: string
+  count: number
+}
+
+export interface CsDashboardData {
+  kpis: CsKpis
+  phaseDistribution: CsPhaseCount[]
+  byResponsible: Record<string, CsAgentCount[]>
 }

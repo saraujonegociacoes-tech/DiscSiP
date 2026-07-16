@@ -22,6 +22,12 @@
 > **Porquê:** muita coisa abaixo só anda com a pessoa certa do lado deles. Vale abrir o
 > canal antes de despejar perguntas.
 
+> ✅ **Resposta da Intelbras (15/07/2026):** acompanhamento técnico via canal de Suporte;
+> curadoria técnica dedicada (mais próxima) é item **contratável à parte**. Documentação:
+> API Wide Voice (collection Postman) + base de conhecimento (links enviados). Cabeçalhos
+> SIP e códigos de retorno **seguem o padrão do protocolo**, sem tabela proprietária divergente.
+> ⚠️ **Ainda falta confirmar:** contato técnico nominal e SLA — não foram endereçados.
+
 ---
 
 ## Bloco 1 — Classificação de chamadas / códigos de resultado ⭐ (o pedido central)
@@ -46,6 +52,14 @@ discador classificar com precisão (hoje inferimos por heurística de tempo/cód
 > **Porquê:** isso melhora a tabulação automática, a reciclagem de mailing (não insistir
 > em número inválido/cancelado), relatórios e várias features futuras — não só a caixa postal.
 
+> ⚠️ **Resposta da Intelbras (15/07/2026):** "a classificação segue integralmente o padrão
+> SIP (RFC 3261, 3262 e 3264) e SDP (RFC 2327). Não há uma tabela proprietária de códigos
+> Q.850, a plataforma utiliza a referência padrão do protocolo."
+> ⚠️ **Ainda falta confirmar:** não entregaram a tabela caso a caso pedida — não confirmaram
+> qual código real aparece em cada cenário específico (ocupado / não atende / caixa postal /
+> chip cancelado) no ramal de vocês. Resposta ficou no nível de protocolo, não de
+> comportamento observado.
+
 ---
 
 ## Bloco 2 — Caixa postal / AMD (problema atual, bloqueado neles) 🔴
@@ -65,6 +79,15 @@ Confirmamos na doc oficial do softphone utilizado que **ele não tem como detect
 > **Porquê:** é o único caminho para resolver a perda de 2–3 min/agente em caixa postal
 > "pelas costas do agente". Sem AMD no PABX, não há solução automática confiável na stack atual.
 
+> ⚠️ **Resposta da Intelbras (15/07/2026):** possuem AMD via módulo **"Análise de
+> Máquina"**, configurável com parâmetros: tempo total de análise, tempo de saudação,
+> tempos de silêncio (inicial, após saudação e entre palavras), duração mínima de palavra,
+> número máximo de palavras e limiar de silêncio.
+> 🔴 **Ainda falta confirmar (crítico):** não disseram se, ao detectar máquina, **derruba a
+> chamada automaticamente** ou apenas sinaliza — é a pergunta central do bloco e ficou sem
+> resposta. Também não confirmaram o mecanismo de sinalização (cabeçalho/webhook/API) nem
+> se há detecção de bipe/mensagem de operadora.
+
 ---
 
 ## Bloco 3 — Limites de capacidade (crítico para preditiva) 🔴
@@ -81,6 +104,13 @@ A preditiva multiplica chamadas simultâneas. Precisamos dimensionar **antes** d
 > **Porquê:** os testes locais foram com 1 agente; o gargalo de produção é o teto de
 > vocês, e não dá para testar isso aqui sem arriscar derrubar a operação.
 
+> ✅ **Resposta da Intelbras (15/07/2026):** "o limite de canais simultâneos é definido
+> pela quantidade de canais contratados junto à operadora, não havendo um limite técnico
+> por ramal ou por tronco na plataforma", salvo se o administrador configurar restrição de
+> 1 chamada simultânea por ramal. Boa notícia para o cenário 26×3=78.
+> ⚠️ **Ainda falta confirmar:** limite de CPS; o que acontece e com qual código a chamada é
+> rejeitada ao estourar o limite; custo/contrato para aumentar.
+
 ---
 
 ## Bloco 4 — Compliance / Anatel (risco legal da preditiva) 🟡
@@ -95,6 +125,10 @@ Discagem preditiva gera **chamadas abandonadas** (quando ninguém atende a tempo
 - 🟢 Restrições de **horário** de discagem impostas pela operadora?
 
 > **Porquê:** evita multa/bloqueio e orienta como configurar a preditiva de forma defensável.
+
+> ❌ **Resposta da Intelbras (15/07/2026):** bloco inteiro **sem resposta** — nenhum dos 5
+> subitens (taxa de abandono, mensagem padrão, CLI por campanha, listas "não perturbe",
+> horário) foi endereçado no e-mail.
 
 ---
 
@@ -111,6 +145,12 @@ funciona, mas é frágil). Se vocês tiverem API, talvez possamos eliminar boa p
 > **Porquê:** webhooks com causa real + originação por API substituiriam o softphone utilizado/helper,
 > dariam classificação confiável (resolve Blocos 1 e 2 de quebra) e reduziriam pontos de falha.
 
+> ⚠️ **Resposta da Intelbras (15/07/2026):** "disponível através da collection Postman já
+> compartilhada" (aponta pro mesmo link do Bloco 0).
+> ⚠️ **Ainda falta confirmar:** não confirma explicitamente se existem **webhooks/eventos
+> push em tempo real** (a resposta soa como API request/response, não push); não confirma
+> API de status de ramais nem API de derrubar/transferir chamada em curso.
+
 ---
 
 ## Bloco 6 — WebRTC (pode ELIMINAR o softphone utilizado) 🟢⭐
@@ -121,6 +161,12 @@ funciona, mas é frágil). Se vocês tiverem API, talvez possamos eliminar boa p
 > real de múltiplas linhas e do progresso da chamada — adeus softphone utilizado, helper, hider de
 > janela e todas as gambiarras. É a evolução mais estratégica possível desta integração.
 
+> ✅ **Resposta da Intelbras (15/07/2026):** "sim, há suporte a SIP sobre WebSocket
+> (WebRTC)."
+> ⚠️ **Ainda falta confirmar:** multi-linha por ramal via WebRTC não foi confirmada; e qual
+> codec é usado no WebRTC (ver observação geral #1 — só GSM/G729 foram confirmados como
+> habilitados, o que é atípico para WebRTC).
+
 ---
 
 ## Bloco 7 — CDR / Relatórios / Tarifação 🟡
@@ -129,6 +175,13 @@ funciona, mas é frágil). Se vocês tiverem API, talvez possamos eliminar boa p
 - 🟢 Detalhamento de **tarifação** por chamada/estado/tipo (fixo, móvel, 0800)?
 
 > **Porquê:** reconciliar nossos logs com os de vocês, auditar campanhas e controlar custo.
+
+> ⚠️ **Resposta da Intelbras (15/07/2026):** exportação/API disponível; a **causa de
+> encerramento está disponível apenas para ramais de call center**, não para ramais
+> administrativos; duração disponível; custos das chamadas **não disponíveis nativamente**
+> (podem avaliar com o time de desenvolvimento se for requisito determinante).
+> ⚠️ **Ainda falta confirmar:** se os 26 ramais dos agentes serão provisionados como
+> "ramais de call center" — só assim teremos causa de encerramento no CDR.
 
 ---
 
@@ -142,6 +195,15 @@ funciona, mas é frágil). Se vocês tiverem API, talvez possamos eliminar boa p
 > **Porquê:** chamada "muda"/cortando em escala costuma ser codec/banda/porta — melhor
 > alinhar antes de 26 ramais discando em paralelo.
 
+> ⚠️ **Resposta da Intelbras (15/07/2026):** codecs suportados = **GSM e G729** (habilitação
+> configurável por projeto/conta); banda recomendada 32–100 kbps por chamada (~0,5–1 MB por
+> minuto de conversa); suportam UDP, TCP, TLS e SRTP; faixa de portas RTP **10000–20000**;
+> "não há requisitos específicos de infraestrutura adicional (firewall, SBC, NAT, STUN ou
+> ICE)".
+> ⚠️ **Ainda falta confirmar:** ver observação geral #1 — contradiz o datasheet anexado, que
+> lista G711/G723.1/G726/iLBC/Opus/G722 entre outros. Perguntar se dá pra habilitar G.711
+> (melhor qualidade/menos overhead) e qual codec o endpoint WebRTC do Bloco 6 realmente usa.
+
 ---
 
 ## Bloco 9 — Ramais e provisionamento (26 agentes) 🟡
@@ -150,6 +212,14 @@ funciona, mas é frágil). Se vocês tiverem API, talvez possamos eliminar boa p
 - 🟢 Política de **senha/autenticação** e boas práticas de segurança dos ramais.
 
 > **Porquê:** subir 26 agentes sem retrabalho e sem conflito de registro.
+
+> ⚠️ **Resposta da Intelbras (15/07/2026):** sem limitação de quantidade de ramais na
+> solução (pode haver limitação dependente do modelo do aparelho); um mesmo ramal pode
+> ficar registrado em **até 5 dispositivos simultaneamente**; sem recomendação específica
+> adicional de autenticação/segurança além das práticas padrão.
+> ⚠️ **Ainda falta confirmar:** provisionamento em massa não foi endereçado diretamente
+> (o datasheet cita "utilitários de importação em massa" e "importar/exportar extensões" —
+> confirmar se isso vale para a conta de vocês).
 
 ---
 
@@ -162,6 +232,12 @@ Hoje discamos **`021` (CSP) + DDD + número** para todos.
 
 > **Porquê:** formato errado = chamada não completa em alguns DDDs; já tivemos esse tipo de bug.
 
+> ⚠️ **Resposta da Intelbras (15/07/2026):** "o formato de discagem é configurável, podendo
+> ser ajustado conforme a preferência de vocês, incluindo chamadas locais, longa distância,
+> celulares e fixos."
+> ⚠️ **Ainda falta confirmar:** resposta genérica — não confirmaram se `021` é de fato o
+> CSP correto desta conta especificamente.
+
 ---
 
 ## Bloco 11 — Funcionalidades futuras 🟢
@@ -172,6 +248,38 @@ Hoje discamos **`021` (CSP) + DDD + número** para todos.
 - 🟢 **SMS / WhatsApp** integrados ao PABX?
 
 > **Porquê:** roadmap — saber o que já vem "de graça" no WidevoiceX antes de construir.
+
+> **Resposta da Intelbras (15/07/2026):** ✅ gravação de chamadas disponível; ✅ monitoria
+> (escuta, whisper, barge-in) disponível; ✅ filas e URA disponíveis; ❌ **transferência via
+> API não disponível**; ✅ integração SMS/WhatsApp disponível através do **Wide Chat**
+> (produto separado).
+
+---
+
+## Observações gerais pós-resposta (15/07/2026)
+
+1. **Contradição de codecs:** o datasheet Wide Voice anexado lista G729A/B, G711A/U,
+   G723.1, G726, iLBC, GSM e (na seção de videoconferência) uma lista bem maior incluindo
+   Opus e G722 — mas a resposta direta do Bloco 8 diz que só **GSM e G729** estão
+   habilitados na conta (configurável por projeto). O datasheet parece ser material
+   genérico da linha de produto, não o que está de fato ligado para vocês. Também não
+   confirmaram se o WebRTC (Bloco 6) usa Opus ou os mesmos GSM/G729 — vale perguntar
+   diretamente, já que WebRTC com G.729/GSM é incomum no mercado.
+2. **AMD (Bloco 2) ainda em aberto no ponto mais crítico:** não confirmaram se a detecção
+   de secretária eletrônica **derruba a chamada automaticamente** ou só sinaliza. Sem essa
+   resposta, não dá pra saber se o problema de caixa postal está de fato resolvido do lado
+   deles ou se ainda precisaríamos tratar o encerramento na nossa integração.
+3. **Bloco 4 (Anatel/compliance) inteiro sem resposta** — abandono, mensagem padrão, CLI
+   por campanha, listas "não perturbe" e horário não foram mencionados.
+4. **Webhooks em tempo real (Bloco 5) não confirmados** — só apontaram a collection
+   Postman, que parece cobrir API request/response, não eventos push de chamada.
+5. **Causa de encerramento no CDR (Bloco 7) depende do tipo de ramal** — só existe para
+   "ramais de call center", não para administrativos. Precisa confirmar em qual categoria
+   os 26 ramais dos agentes serão provisionados.
+6. **Vários pontos foram respondidos em nível de protocolo/genérico** (Bloco 1 — "seguimos
+   o padrão SIP/Q.850" sem tabela caso a caso; Bloco 10 — "formato configurável" sem
+   confirmar o CSP `021` da conta) em vez de específico ao cenário real de vocês (26
+   agentes × 3 linhas).
 
 ---
 

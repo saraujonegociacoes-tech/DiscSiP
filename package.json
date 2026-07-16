@@ -7,6 +7,7 @@
     "sync:helper": "node scripts/sync-helper.mjs",
     "import:leads": "node scripts/import-leads.mjs",
     "backup:leads": "node scripts/backup-leads.mjs",
+    "import:cs-cards": "node scripts/import-cs-cards.mjs",
     "prebuild": "node scripts/sync-helper.mjs",
     "prebuild:cf": "node scripts/sync-helper.mjs",
     "build": "next build",

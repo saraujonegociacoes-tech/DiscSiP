@@ -13,6 +13,9 @@ interface AgentState {
   extension: number | null
   role: Role | null
   departmentId: string | null
+  // Slug estável do departamento ('comercial' | 'cs' | 'negociacao' | null) — escopa os
+  // grupos de vertical no Sidebar (ver setProfile).
+  departmentSlug: string | null
   callStatus: CallStatus
   callNumber: string | null
   callStartedAt: Date | null
@@ -37,6 +40,7 @@ export const useSoftphoneStore = create<AgentState>((set) => ({
   extension: null,
   role: null,
   departmentId: null,
+  departmentSlug: null,
   callStatus: 'idle',
   callNumber: null,
   callStartedAt: null,
@@ -52,6 +56,7 @@ export const useSoftphoneStore = create<AgentState>((set) => ({
       extension: profile.extension,
       role: profile.role,
       departmentId: profile.department_id,
+      departmentSlug: profile.department_slug ?? null,
     }),
 
   setCallStatus: (status, number) =>
