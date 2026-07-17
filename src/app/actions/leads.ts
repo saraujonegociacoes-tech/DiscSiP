@@ -22,8 +22,10 @@ import type { LeadPhaseKind, LeadProgressRow, DuplicateResponsibilityRow } from 
 export interface LeadKpis {
   totalLeads: number // recebidos no período
   openLeads: number
-  wonLeads: number
-  deadLeads: number
+  wonLeads: number // por finalized_at (data da venda), não created_at — ver get_leads_won_by_sale_date
+  deadLeads: number // idem, por finalized_at
+  wonCycle: number // dos ganhos acima, quantos foram CRIADOS no próprio período
+  wonRetro: number // dos ganhos acima, quantos foram criados ANTES do período (retroativo)
   conversionRate: number // 0..1 (ganhos / recebidos)
   deadRate: number // 0..1 (mortos / recebidos)
   avgHoursToFirstContact: number | null
@@ -49,6 +51,33 @@ export interface PhaseDistribution {
   kind: LeadPhaseKind | null
   order: number | null
   leads: number
+}
+
+// ── Funil "geral" (acionado no período, por updated_at) ──────────────────────
+// Mesmas DUAS formas do funil normal (cumulativo + distribuição atual), mas sobre o
+// cohort "leads com QUALQUER movimentação no período" (updated_at), não "recebidos no
+// período" (created_at) — ver get_leads_activity (migration 20260718). cycle/retro
+// classificam cada linha pelo created_at do lead: dentro do período = cycle, antes = retro.
+export interface StageActivity {
+  order: number
+  phase: string
+  total: number
+  cycle: number
+  retro: number
+}
+
+export interface PhaseActivity {
+  phase: string
+  kind: LeadPhaseKind | null
+  order: number | null
+  total: number
+  cycle: number
+  retro: number
+}
+
+export interface LeadActivity {
+  funnel: StageActivity[]
+  phaseDistribution: PhaseActivity[]
 }
 
 // Detalhamento por responsável de uma fase (drill-down ao clicar numa barra). agentId nulo =
@@ -154,18 +183,25 @@ type SupabaseClient = Awaited<ReturnType<typeof createServerClient>>
 // ── Shapers puros (compartilhados entre o caminho RPC e o fallback em memória) ──
 // Recebem agregados JÁ pequenos e produzem a forma final. Nada aqui pode truncar.
 
+// wonCycle/wonRetro default a won/0: até a RPC get_leads_won_by_sale_date rodar (ou no
+// fallback antes do merge em getLeadsData), assume tudo "do ciclo" — degradação graciosa,
+// mesmo padrão das outras métricas novas (ver getLeadsFunnelDepth).
 function kpisFromCounts(
   total: number,
   open: number,
   won: number,
   dead: number,
-  avgFtc: number | null
+  avgFtc: number | null,
+  wonCycle: number = won,
+  wonRetro: number = 0
 ): LeadKpis {
   return {
     totalLeads: total,
     openLeads: open,
     wonLeads: won,
     deadLeads: dead,
+    wonCycle,
+    wonRetro,
     conversionRate: total > 0 ? won / total : 0,
     deadRate: total > 0 ? dead / total : 0,
     avgHoursToFirstContact: avgFtc,
@@ -324,7 +360,7 @@ async function dashboardFromScan(
   supabase: SupabaseClient,
   period: LeadPeriod
 ): Promise<LeadsData> {
-  const [rows, agentsRes] = await Promise.all([
+  const [rows, agentsRes, finalizedRows] = await Promise.all([
     fetchAllRows<LeadProgressRow>(
       (from, to) =>
         supabase
@@ -336,6 +372,21 @@ async function dashboardFromScan(
           .range(from, to) as unknown as PromiseLike<{ data: LeadProgressRow[] | null }>
     ),
     supabase.from('lead_agents').select('id, pipefy_name'),
+    // Ganhos/mortos do KPI principal são por DATA DE VENDA (finalized_at), não created_at —
+    // mesma correção da RPC get_leads_won_by_sale_date. Conjunto SEPARADO de `rows`: um lead
+    // pode ter sido criado fora do período e vendido dentro dele (ver comentário no topo do
+    // arquivo). Ranking/canal continuam usando `rows` (fora de escopo deste fix).
+    fetchAllRows<LeadProgressRow>(
+      (from, to) =>
+        supabase
+          .from('v_lead_progress')
+          .select('lead_id, is_won, is_dead, created_at')
+          .gte('finalized_at', period.start)
+          .lt('finalized_at', period.end)
+          .or('is_won.eq.true,is_dead.eq.true')
+          .order('lead_id', { ascending: true })
+          .range(from, to) as unknown as PromiseLike<{ data: LeadProgressRow[] | null }>
+    ),
   ])
 
   const nameById = new Map(
@@ -348,17 +399,27 @@ async function dashboardFromScan(
   // KPIs. A média do 1º contato ignora os retroativos (contato < criação → horas < 0):
   // são leads antigos com data real de contato anterior à entrada no pipe, não tempo de resposta.
   let open = 0
-  let won = 0
-  let dead = 0
   const ftc: number[] = []
   for (const r of rows) {
     if (r.is_open) open++
-    if (r.is_won) won++
-    if (r.is_dead) dead++
     if (r.hours_to_first_contact != null && r.hours_to_first_contact >= 0)
       ftc.push(r.hours_to_first_contact)
   }
   const total = rows.length
+
+  // Ganhos/mortos + split ciclo × retroativo, a partir de finalizedRows (por finalized_at).
+  let won = 0
+  let wonCycle = 0
+  let dead = 0
+  for (const r of finalizedRows) {
+    const inCycle = r.created_at != null && r.created_at >= period.start && r.created_at < period.end
+    if (r.is_won) {
+      won++
+      if (inCycle) wonCycle++
+    }
+    if (r.is_dead) dead++
+  }
+  const wonRetro = won - wonCycle
 
   // Funil (cumulativo): quem alcançou cada ordem ou além. A ordem 0 (Recebidos) é ancorada
   // em TODOS os recebidos — todo lead passou por Recebidos, mesmo o morto sem evento produtivo
@@ -489,7 +550,7 @@ async function dashboardFromScan(
   }))
 
   return {
-    kpis: kpisFromCounts(total, open, won, dead, avg1(ftc)),
+    kpis: kpisFromCounts(total, open, won, dead, avg1(ftc), wonCycle, wonRetro),
     funnel: buildFunnel(reachedByOrder),
     phaseDistribution,
     deadReasons,
@@ -502,11 +563,52 @@ async function dashboardFromScan(
   }
 }
 
-// Tudo que deriva dos leads do período. RPC (contado no banco) ou fallback paginado.
+interface WonBySaleDate {
+  won: number
+  dead: number
+  wonCycle: number
+  wonRetro: number
+}
+
+// Ganhos/mortos por DATA DE VENDA (RPC get_leads_won_by_sale_date — migration 20260717),
+// com split ciclo × retroativo. Substitui o won/dead de get_leads_dashboard (que conta por
+// created_at) nos KPIs de topo. null se a migration ainda não rodou → getLeadsData degrada
+// pro comportamento antigo (mesmo padrão de dashboardFromRpc/getLeadsTimeseries).
+async function wonBySaleDate(
+  supabase: SupabaseClient,
+  period: LeadPeriod
+): Promise<WonBySaleDate | null> {
+  const { data, error } = await supabase.rpc('get_leads_won_by_sale_date', {
+    p_start: period.start,
+    p_end: period.end,
+  })
+  if (error || !data) return null
+  return data as unknown as WonBySaleDate
+}
+
+// Tudo que deriva dos leads do período. RPC (contado no banco) ou fallback paginado, com o
+// won/dead de topo corrigido por data de venda (ver wonBySaleDate). Funil/ranking/canal
+// continuam vindo do dashboard base (fora de escopo desta correção).
 export async function getLeadsData(periodInput: LeadPeriod): Promise<LeadsData> {
   const period = sanitizePeriod(periodInput) // saneia o período vindo do cliente
   const supabase = await createServerClient()
-  return (await dashboardFromRpc(supabase, period)) ?? dashboardFromScan(supabase, period)
+  const [base, sale] = await Promise.all([
+    (async () => (await dashboardFromRpc(supabase, period)) ?? dashboardFromScan(supabase, period))(),
+    wonBySaleDate(supabase, period),
+  ])
+  if (!sale) return base
+  return {
+    ...base,
+    kpis: {
+      ...base.kpis,
+      wonLeads: sale.won,
+      deadLeads: sale.dead,
+      wonCycle: sale.wonCycle,
+      wonRetro: sale.wonRetro,
+      conversionRate: base.kpis.totalLeads > 0 ? sale.won / base.kpis.totalLeads : 0,
+      deadRate: base.kpis.totalLeads > 0 ? sale.dead / base.kpis.totalLeads : 0,
+    },
+  }
 }
 
 // ── Séries temporais (Sprint 2) ───────────────────────────────────────────────
@@ -587,6 +689,39 @@ export async function getLeadsFunnelDepth(periodInput: LeadPeriod): Promise<Step
     const r = byOrder.get(p.order)
     return { order: p.order, phase: p.name, avgHours: r?.avg_hours ?? null, sampleSize: r?.sample_size ?? 0 }
   })
+}
+
+interface ActivityRpc {
+  funnelByOrder: Record<string, { total: number; cycle: number; retro: number }>
+  phaseDistribution: { phase: string; kind: LeadPhaseKind | null; order: number | null; total: number; cycle: number; retro: number }[]
+}
+
+// Funil "geral" (RPC get_leads_activity — migration 20260718): mesmas duas formas do funil
+// normal, mas sobre "leads com movimentação no período" (updated_at), não "recebidos no
+// período" (created_at) — um lead de ciclo anterior mexido hoje aparece aqui. Vazio se a
+// migration ainda não rodou (mesma degradação graciosa das outras métricas novas).
+export async function getLeadsActivity(periodInput: LeadPeriod): Promise<LeadActivity> {
+  const period = sanitizePeriod(periodInput)
+  const supabase = await createServerClient()
+  const { data, error } = await supabase.rpc('get_leads_activity', {
+    p_start: period.start,
+    p_end: period.end,
+  })
+  if (error || !data) return { funnel: [], phaseDistribution: [] }
+  const d = data as unknown as ActivityRpc
+  const funnel: StageActivity[] = PRODUCTIVE_PHASES.map((p) => {
+    const r = d.funnelByOrder?.[String(p.order)]
+    return { order: p.order, phase: p.name, total: r?.total ?? 0, cycle: r?.cycle ?? 0, retro: r?.retro ?? 0 }
+  })
+  const phaseDistribution: PhaseActivity[] = (d.phaseDistribution ?? []).map((r) => ({
+    phase: r.phase,
+    kind: r.kind,
+    order: r.order,
+    total: r.total,
+    cycle: r.cycle,
+    retro: r.retro,
+  }))
+  return { funnel, phaseDistribution }
 }
 
 // ── Visão do agente (S2): fila de trabalho + desfechos do período ────────────

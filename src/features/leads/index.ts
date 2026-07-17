@@ -4,6 +4,8 @@
 export { LeadKpiRow } from './components/LeadKpiRow'
 export { Funnel } from './components/Funnel'
 export { PhaseDistribution } from './components/PhaseDistribution'
+export { FunnelActivity } from './components/FunnelActivity'
+export { PhaseDistributionActivity } from './components/PhaseDistributionActivity'
 export { ResponsibleBreakdown } from './components/ResponsibleBreakdown'
 export { DeadReasonsDonut } from './components/DeadReasonsDonut'
 export { DeathByAttempt } from './components/DeathByAttempt'

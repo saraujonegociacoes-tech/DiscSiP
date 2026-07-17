@@ -19,6 +19,8 @@ import {
   LeadKpiRow,
   Funnel,
   PhaseDistribution,
+  FunnelActivity,
+  PhaseDistributionActivity,
   DeadReasonsDonut,
   DeathByAttempt,
   LeadsTable,
@@ -44,6 +46,7 @@ import {
   getSupervisorMetrics,
   getLeadsTimeseries,
   getLeadsFunnelDepth,
+  getLeadsActivity,
   type LeadsData,
   type AgentLeadRow,
   type SupervisorMetrics,
@@ -51,6 +54,7 @@ import {
   type DailyPoint,
   type TrendPoint,
   type StepDwellTime as StepDwellTimeRow,
+  type LeadActivity,
 } from '@/app/actions/leads'
 import type { LeadPeriod } from '@/lib/period'
 
@@ -63,6 +67,7 @@ interface LeadsClientProps {
   initialTimeseries: DailyPoint[]
   initialTrend: TrendPoint[]
   initialFunnelDepth: StepDwellTimeRow[]
+  initialActivity: LeadActivity
   isManager: boolean
 }
 
@@ -98,6 +103,7 @@ export function LeadsClient({
   initialTimeseries,
   initialTrend,
   initialFunnelDepth,
+  initialActivity,
   isManager,
 }: LeadsClientProps) {
   const [period, setPeriod] = useState(initialPeriod)
@@ -106,6 +112,7 @@ export function LeadsClient({
   const [supervisor, setSupervisor] = useState(initialSupervisor)
   const [timeseries, setTimeseries] = useState(initialTimeseries)
   const [funnelDepth, setFunnelDepth] = useState(initialFunnelDepth)
+  const [activity, setActivity] = useState(initialActivity)
   // Tendência entre ciclos (Performance) não depende do período selecionado → não re-busca.
   const [trend] = useState(initialTrend)
   const [loading, setLoading] = useState(false)
@@ -175,27 +182,31 @@ export function LeadsClient({
     setLoading(true)
     try {
       if (isManager) {
-        const [d, sup, ts, fd] = await Promise.all([
+        const [d, sup, ts, fd, act] = await Promise.all([
           getLeadsData(next),
           getSupervisorMetrics(next),
           getLeadsTimeseries(next),
           getLeadsFunnelDepth(next),
+          getLeadsActivity(next),
         ])
         setData(d)
         setSupervisor(sup)
         setTimeseries(ts)
         setFunnelDepth(fd)
+        setActivity(act)
       } else {
-        const [d, al, ts, fd] = await Promise.all([
+        const [d, al, ts, fd, act] = await Promise.all([
           getLeadsData(next),
           getAgentLeads(next),
           getLeadsTimeseries(next),
           getLeadsFunnelDepth(next),
+          getLeadsActivity(next),
         ])
         setData(d)
         setAgentLeads(al)
         setTimeseries(ts)
         setFunnelDepth(fd)
+        setActivity(act)
       }
     } catch {
       setError('Não foi possível carregar os dados deste período. Tente novamente.')
@@ -209,27 +220,31 @@ export function LeadsClient({
   const refresh = useCallback(async () => {
     try {
       if (isManager) {
-        const [d, sup, ts, fd] = await Promise.all([
+        const [d, sup, ts, fd, act] = await Promise.all([
           getLeadsData(period),
           getSupervisorMetrics(period),
           getLeadsTimeseries(period),
           getLeadsFunnelDepth(period),
+          getLeadsActivity(period),
         ])
         setData(d)
         setSupervisor(sup)
         setTimeseries(ts)
         setFunnelDepth(fd)
+        setActivity(act)
       } else {
-        const [d, al, ts, fd] = await Promise.all([
+        const [d, al, ts, fd, act] = await Promise.all([
           getLeadsData(period),
           getAgentLeads(period),
           getLeadsTimeseries(period),
           getLeadsFunnelDepth(period),
+          getLeadsActivity(period),
         ])
         setData(d)
         setAgentLeads(al)
         setTimeseries(ts)
         setFunnelDepth(fd)
+        setActivity(act)
       }
     } catch {
       /* silêncio: a tela segue com o último dado bom */
@@ -315,6 +330,13 @@ export function LeadsClient({
                 data={data.phaseDistribution}
                 byResponsible={data.phaseByResponsible}
               />
+            </section>
+            <h3 className="mb-1 mt-8 text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+              Acionado no período (por atualização, não por criação)
+            </h3>
+            <section className="grid grid-cols-1 items-start gap-4 xl:grid-cols-2">
+              <FunnelActivity stages={activity.funnel} />
+              <PhaseDistributionActivity data={activity.phaseDistribution} />
             </section>
             <section className="mt-6 grid grid-cols-1 items-start gap-4 xl:grid-cols-2">
               <StepDwellTime data={funnelDepth} />

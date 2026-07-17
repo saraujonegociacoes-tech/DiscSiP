@@ -8,6 +8,7 @@ import {
   getLeadsTimeseries,
   getLeadsTrend,
   getLeadsFunnelDepth,
+  getLeadsActivity,
   type DuplicateAlert,
   type AgentLeadRow,
   type SupervisorMetrics,
@@ -42,15 +43,17 @@ export default async function LeadsPage() {
   const isManager = MANAGER_ROLES.includes(role)
   const cycle = currentCycle()
 
-  const [data, duplicates, agentLeads, supervisor, timeseries, trend, funnelDepth] = await Promise.all([
-    getLeadsData(cycle),
-    isManager ? getDuplicateAlerts() : Promise.resolve([] as DuplicateAlert[]),
-    isManager ? Promise.resolve([] as AgentLeadRow[]) : getAgentLeads(cycle),
-    isManager ? getSupervisorMetrics(cycle) : Promise.resolve(null as SupervisorMetrics | null),
-    getLeadsTimeseries(cycle), // evolução diária (Visão Geral) — todos os papéis
-    isManager ? getLeadsTrend() : Promise.resolve([] as TrendPoint[]), // tendência (Performance) — só gestor
-    getLeadsFunnelDepth(cycle), // tempo médio por etapa (Funil) — todos os papéis
-  ])
+  const [data, duplicates, agentLeads, supervisor, timeseries, trend, funnelDepth, activity] =
+    await Promise.all([
+      getLeadsData(cycle),
+      isManager ? getDuplicateAlerts() : Promise.resolve([] as DuplicateAlert[]),
+      isManager ? Promise.resolve([] as AgentLeadRow[]) : getAgentLeads(cycle),
+      isManager ? getSupervisorMetrics(cycle) : Promise.resolve(null as SupervisorMetrics | null),
+      getLeadsTimeseries(cycle), // evolução diária (Visão Geral) — todos os papéis
+      isManager ? getLeadsTrend() : Promise.resolve([] as TrendPoint[]), // tendência (Performance) — só gestor
+      getLeadsFunnelDepth(cycle), // tempo médio por etapa (Funil) — todos os papéis
+      getLeadsActivity(cycle), // funil geral por updated_at (Funil) — todos os papéis
+    ])
 
   return (
     // Suspense: o LeadsClient usa useSearchParams (aba ativa em ?aba=), que exige um limite
@@ -65,6 +68,7 @@ export default async function LeadsPage() {
         initialTimeseries={timeseries}
         initialTrend={trend}
         initialFunnelDepth={funnelDepth}
+        initialActivity={activity}
         isManager={isManager}
       />
     </Suspense>
