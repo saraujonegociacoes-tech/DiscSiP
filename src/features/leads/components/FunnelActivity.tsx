@@ -8,6 +8,7 @@ import {
   CartesianGrid,
   Tooltip,
   Legend,
+  LabelList,
   ResponsiveContainer,
 } from 'recharts'
 import { useChartTheme } from '@/components/blueline/useChartTheme'
@@ -16,8 +17,10 @@ import type { StageActivity } from '@/app/actions/leads'
 // Funil "geral" — mesmo fluxo cumulativo do Funnel.tsx (quantos leads ALCANÇARAM cada
 // etapa), mas sobre "leads com movimentação no período" (updated_at), não "recebidos no
 // período" (created_at). Cada barra empilha ciclo (criado no período) × retroativo (criado
-// antes) — 2 séries categóricas, cores reaproveitadas do resto do painel (mesmo par de
-// StuckCard/LeadsTable pra ciclo/retroativo), sempre com legenda (skill dataviz).
+// antes), com o total no fim da barra. Cor: ciclo = primary; retroativo = categorical[5]
+// (rosa) — NÃO o `warning` (laranja) usado em StuckCard/LeadsTable, que aqui já satura o
+// olho de tanto aparecer noutros cards da mesma tela; par validado (skill dataviz —
+// script/validate_palette.js, luz e escuro, sem colidir com o vermelho de "morta").
 export function FunnelActivity({ stages }: { stages: StageActivity[] }) {
   const ct = useChartTheme()
   const hasData = stages.some((s) => s.total > 0)
@@ -38,7 +41,7 @@ export function FunnelActivity({ stages }: { stages: StageActivity[] }) {
             <BarChart
               layout="vertical"
               data={stages}
-              margin={{ top: 4, right: 24, left: 8, bottom: 4 }}
+              margin={{ top: 4, right: 40, left: 8, bottom: 4 }}
               barCategoryGap={6}
             >
               <CartesianGrid stroke={ct.grid} horizontal={false} />
@@ -65,10 +68,16 @@ export function FunnelActivity({ stages }: { stages: StageActivity[] }) {
               <Bar
                 dataKey="retro"
                 stackId="activity"
-                fill={ct.series.warning}
+                fill={ct.categorical[5]}
                 name="Retroativos"
                 radius={[0, 4, 4, 0]}
-              />
+              >
+                <LabelList
+                  dataKey="total"
+                  position="right"
+                  style={{ fill: ct.axis, fontSize: 11 }}
+                />
+              </Bar>
             </BarChart>
           </ResponsiveContainer>
         </div>

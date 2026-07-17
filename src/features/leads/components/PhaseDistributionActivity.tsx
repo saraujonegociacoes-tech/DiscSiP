@@ -8,6 +8,7 @@ import {
   CartesianGrid,
   Tooltip,
   Legend,
+  LabelList,
   ResponsiveContainer,
 } from 'recharts'
 import { useChartTheme } from '@/components/blueline/useChartTheme'
@@ -15,9 +16,12 @@ import type { PhaseActivity } from '@/app/actions/leads'
 
 // Distribuição por fase ATUAL — mesma leitura do PhaseDistribution.tsx (onde os leads
 // estão agora), mas sobre "leads com movimentação no período" (updated_at), não
-// "recebidos no período" (created_at). Cada barra empilha ciclo × retroativo; como o fill
-// já codifica essa identidade, fases mortas são sinalizadas no rótulo do eixo (texto em
-// vermelho) em vez de recolorir a barra — texto nunca carrega a cor da série (skill dataviz).
+// "recebidos no período" (created_at). Cada barra empilha ciclo × retroativo, com o total
+// no fim da barra; como o fill já codifica essa identidade, fases mortas são sinalizadas no
+// rótulo do eixo (texto em vermelho) em vez de recolorir a barra — texto nunca carrega a cor
+// da série (skill dataviz). Cor: ciclo = primary; retroativo = categorical[5] (rosa), não o
+// `warning` (laranja) — evita colidir com o vermelho de "morta" e com o laranja já saturado
+// noutros cards da mesma tela; par validado (script/validate_palette.js, luz e escuro).
 export function PhaseDistributionActivity({ data }: { data: PhaseActivity[] }) {
   const ct = useChartTheme()
   const hasData = data.some((d) => d.total > 0)
@@ -56,7 +60,7 @@ export function PhaseDistributionActivity({ data }: { data: PhaseActivity[] }) {
             <BarChart
               layout="vertical"
               data={data}
-              margin={{ top: 4, right: 24, left: 8, bottom: 4 }}
+              margin={{ top: 4, right: 40, left: 8, bottom: 4 }}
               barCategoryGap={6}
             >
               <CartesianGrid stroke={ct.grid} horizontal={false} />
@@ -83,10 +87,16 @@ export function PhaseDistributionActivity({ data }: { data: PhaseActivity[] }) {
               <Bar
                 dataKey="retro"
                 stackId="activity"
-                fill={ct.series.warning}
+                fill={ct.categorical[5]}
                 name="Retroativos"
                 radius={[0, 4, 4, 0]}
-              />
+              >
+                <LabelList
+                  dataKey="total"
+                  position="right"
+                  style={{ fill: ct.axis, fontSize: 11 }}
+                />
+              </Bar>
             </BarChart>
           </ResponsiveContainer>
         </div>
