@@ -13,6 +13,7 @@ import {
   HeartHandshake,
   Handshake,
   Flame,
+  FolderKanban,
   type LucideIcon,
 } from 'lucide-react'
 import { useSoftphoneStore } from '@/store/softphoneStore'
@@ -51,7 +52,7 @@ const OPERATION_ITEMS: NavItem[] = [
 // departamentos SEPARADOS (não subdivisão de um maior) — cada grupo só aparece pra quem é
 // do respectivo departamento (department_slug) ou é manager/admin (vê tudo). Ver
 // docs/updates/painel-sucesso-cliente-cs.md.
-const VERTICAL_GROUPS: { slug: 'comercial' | 'cs' | 'negociacao'; label: string; items: NavItem[] }[] = [
+const VERTICAL_GROUPS: { slug: 'comercial' | 'cs' | 'negociacao' | 'ti'; label: string; items: NavItem[] }[] = [
   {
     slug: 'comercial',
     label: 'Comercial',
@@ -75,6 +76,11 @@ const VERTICAL_GROUPS: { slug: 'comercial' | 'cs' | 'negociacao'; label: string;
         roles: ['agent', 'supervisor', 'manager', 'admin'],
       },
     ],
+  },
+  {
+    slug: 'ti',
+    label: 'Desenvolvimento / TI',
+    items: [{ href: '/projects', label: 'Projetos', icon: FolderKanban, roles: ['manager', 'admin'] }],
   },
 ]
 
