@@ -304,10 +304,7 @@ export function LeadsClient({
               />
             </section>
             <section className="mt-6 grid grid-cols-1 items-start gap-4 xl:grid-cols-2">
-              <PhaseDistribution
-                data={data.phaseDistribution}
-                byResponsible={data.phaseByResponsible}
-              />
+              <PhaseDistribution data={data.phaseDistribution} period={period} />
               <DeadReasonsDonut reasons={data.deadReasons} />
             </section>
           </TabsContent>
@@ -325,22 +322,19 @@ export function LeadsClient({
           {/* 🎯 Funil — "Onde estou perdendo leads no processo?" (fluxo cumulativo + volume atual) */}
           <TabsContent value="funil" className="mt-6">
             <section className="grid grid-cols-1 items-start gap-4 xl:grid-cols-2">
-              <Funnel stages={data.funnel} byResponsible={data.funnelByResponsible} />
-              <PhaseDistribution
-                data={data.phaseDistribution}
-                byResponsible={data.phaseByResponsible}
-              />
+              <Funnel stages={data.funnel} period={period} />
+              <PhaseDistribution data={data.phaseDistribution} period={period} />
             </section>
             <h3 className="mb-1 mt-8 text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">
               Acionado no período (por atualização, não por criação)
             </h3>
             <section className="grid grid-cols-1 items-start gap-4 xl:grid-cols-2">
-              <FunnelActivity stages={activity.funnel} />
-              <PhaseDistributionActivity data={activity.phaseDistribution} />
+              <FunnelActivity stages={activity.funnel} period={period} />
+              <PhaseDistributionActivity data={activity.phaseDistribution} period={period} />
             </section>
             <section className="mt-6 grid grid-cols-1 items-start gap-4 xl:grid-cols-2">
               <StepDwellTime data={funnelDepth} />
-              <StepConversion stages={data.funnel} />
+              <StepConversion stages={data.funnel} byResponsible={data.funnelByResponsible} />
             </section>
           </TabsContent>
 

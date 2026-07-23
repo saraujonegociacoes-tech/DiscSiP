@@ -63,8 +63,10 @@ query CsDump($pipeId: ID!, $cursor: String, $size: Int!) {
     edges { node {
       id title created_at updated_at finished_at done
       current_phase { id name }
+      phases_history { phase { id } lastTimeIn }
       assignees { id name email }
       fields { name value array_value datetime_value field { id } }
+      comments { id text created_at author_name author { id name } }
     } }
   }
 }`

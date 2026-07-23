@@ -1,0 +1,126 @@
+PAINEL CS — PÁGINA 1 (VISÃO GERAL + JANELAS)
+Alternativas de visualização para teste
+
+O QUE A PÁGINA PRECISA REVELAR
+------------------------------
+Uma relação de 2 dimensões: IDADE do card (dias desde a criação, em 4 janelas:
+1-30 / 31-90 / 91-180 / 181+) x FASE atual (uma das ~35 do pipe, na ordem do funil).
+O sinal operacional que importa é o DESCASAMENTO idade x fase:
+  - card 181+ dias ainda em Triagem/Negociação  = ALERTA (cliente parado/abandonado)
+  - card 181+ dias no 18o Mês                    = saudável (acompanhamento normal)
+Também precisa mostrar, por fase: TOTAL de cards e TEMPO MÉDIO na fase.
+
+COMUM ÀS 3 ALTERNATIVAS
+-----------------------
+- Filtro de período obrigatório (foto "as-of": idade medida até o fim do período,
+  ou "agora" no ciclo atual).
+- Toggle Ativos / Inativos / Todos (inativo = card em fase terminal:
+  Quitados, Distratos, Arquivado, Concluído, Distribuição Processual).
+- Drill-down clicável -> lista dos cards daquele recorte, do mais antigo pro mais
+  novo, com responsável e link do Pipefy (https://app.pipefy.com/open-cards/{id}).
+- Dado disponível hoje: fase atual, idade, responsável, ativo/inativo. O "tempo médio
+  na fase" hoje é aproximado (poucos eventos reais; melhora quando o Make rodar).
+
+
+==================================================================================
+ALTERNATIVA 1 — MATRIZ FASE x IDADE (HEATMAP)   [recomendada]
+==================================================================================
+O QUE É
+  Um único componente resolve as DUAS tarefas (janelas x fase E total/tempo por fase).
+EIXOS E CODIFICAÇÃO
+  - Linhas  = fases, na ordem do funil (Triagem -> ... -> 24o Mês -> saídas).
+  - Colunas = as 4 janelas de idade  +  coluna "Total"  +  coluna "Tempo médio".
+  - Cor da célula = nº de cards naquela fase+janela (rampa sequencial: mais escuro =
+    mais cards). Nº impresso na célula.
+  - Leitura: uma COLUNA = distribuição por fase dentro da janela; uma LINHA = como os
+    cards de uma fase se espalham por idade; células acesas FORA da diagonal (fase
+    inicial + idade alta) = alerta.
+MOCKUP
+  Fase \ Idade   1-30  31-90  91-180  181+ | Total  T.médio
+  Triagem          12     3      1     .   |   16      8d
+  Apresentacao     18     9      2     1   |   30     12d
+  Negociacao       22   [31]     8    [5]! |   66     24d
+  1o Mes            4    14     11     7   |   36     41d
+     ... (scroll vertical nas 35 fases) ...
+  18o Mes           .     .      2   [28]  |   30    210d
+  Quitados          5    12      9    15   |   41      --
+  ----------------------------------------------------------
+  cor = nº de cards (escuro = mais) | [..]! fora da diagonal = alerta
+  clique numa célula -> cards daquela fase+janela (resp. + link)
+PRÓS
+  - Mostra a relação idade x fase de forma direta (o insight de "card preso").
+  - Já embute total por fase + tempo médio (não precisa de 2o gráfico).
+  - Compacto: linhas finas + scroll interno; escala pras 35 fases.
+  - Comparável (células alinhadas), ao contrário de 4 pizzas.
+CONTRAS
+  - Menos "impactante" à primeira vista que um gráfico de pontos.
+  - Muitas linhas exigem scroll (mitigado por agrupar fases, se quiser).
+
+
+==================================================================================
+ALTERNATIVA 2 — ENXAME IDADE x FASE (BEESWARM / DOT PLOT)
+==================================================================================
+O QUE É
+  Cada card é UM ponto; a nuvem revela clusters e outliers.
+EIXOS E CODIFICAÇÃO
+  - Eixo X = idade (dias, contínuo).
+  - Eixo Y = fase (ordem do funil).
+  - Cor do ponto = ativo/inativo (ou por sinal da fase final).
+  - Jitter/beeswarm pra não sobrepor os pontos.
+MOCKUP
+  fase ^
+  Quitados  |            .  ..  ... ....
+  18o Mes   |                   ..  ****
+     :      |
+  Negociacao| ****** **  .    .            !
+  Apresent. | ***** .
+  Triagem   | **** .
+            +---------------------------------->
+             0d    30    90    180    365+   idade
+  1 ponto = 1 card | cor = ativo/inativo
+  pontos embaixo-à-direita (fase inicial + muito velho) = presos há meses
+PRÓS
+  - Muito visual/impactante; outliers "saltam" na hora.
+  - Mostra a distribuição real (não só buckets), inclusive dentro da janela.
+CONTRAS
+  - Com ~1484 pontos fica denso; lê tendência melhor que número exato.
+  - "Total por fase + tempo médio" NÃO cabe aqui -> precisaria de uma tabela
+    companheira ao lado.
+  - Drill-down é por região/ponto (menos óbvio que clicar numa célula/fatia).
+
+
+==================================================================================
+ALTERNATIVA 3 — 4 BARRAS EMPILHADAS ALINHADAS  (as "pizzas consertadas")
+==================================================================================
+O QUE É
+  Em vez de 4 pizzas, 4 barras horizontais empilhadas — uma por janela — alinhadas
+  verticalmente para permitir comparação.
+EIXOS E CODIFICAÇÃO
+  - 1 barra por janela de idade (4 barras).
+  - Segmentos da barra = fases (ou grupos de fase); largura = nº de cards.
+  - Rótulo do total no fim de cada barra.
+MOCKUP
+  1-30d   |###Triagem###Apres##Negoc##1oM##.|  120
+  31-90d  |##Apres####Negoc###1-3oM###.     |  210
+  91-180d |#Negoc###4-6oM####7-12oM###.     |  180
+  181+d   |####13-24oM####Quit##Arq##.      |  340
+  4 barras (1 por janela), fatias = fases, empilhadas e alinhadas
+  -> comparáveis (o que 4 pizzas separadas não são)
+PRÓS
+  - Familiar e fácil de ler; comparação entre janelas num relance.
+  - Menos "pesado" que a matriz.
+CONTRAS
+  - Ainda sofre com muitas fases: exige agrupar (ex.: meses em faixas 1-3/4-6/...),
+    perdendo o detalhe de qual mês.
+  - NÃO mostra tempo médio -> viria num gráfico/tabela à parte.
+  - Não expõe o descasamento idade x fase tão bem quanto a matriz.
+
+
+RESUMO
+------
+- Alt 1 (matriz/heatmap): mais informativa e completa (recomendada) — 1 componente
+  faz tudo, e é a que melhor mostra o "card preso".
+- Alt 2 (enxame): a mais bonita/impactante, mas precisa de tabela auxiliar e lê
+  melhor tendência que número.
+- Alt 3 (barras empilhadas): a mais conservadora/familiar, mas precisa agrupar fases
+  e não cobre tempo médio.

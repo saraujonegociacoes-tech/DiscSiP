@@ -87,5 +87,13 @@ export async function updateSession(request: NextRequest) {
     return NextResponse.redirect(url)
   }
 
+  // Aquecimento WhatsApp: módulo sensível (risco de bloqueio de conta/BM) — só
+  // supervisor/manager/admin (defesa além do RLS e da navegação). Agente não entra.
+  if (pathname.startsWith('/aquecimento') && !['supervisor', 'manager', 'admin'].includes(profile?.role ?? '')) {
+    const url = request.nextUrl.clone()
+    url.pathname = '/softphone'
+    return NextResponse.redirect(url)
+  }
+
   return supabaseResponse
 }

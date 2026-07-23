@@ -724,6 +724,60 @@ export async function getLeadsActivity(periodInput: LeadPeriod): Promise<LeadAct
   return { funnel, phaseDistribution }
 }
 
+// ── Drill de card por responsável (aba Funil) — lazy, 2 passos ───────────────
+// Clicar numa barra abre os RESPONSÁVEIS daquele recorte (nível 1, leve); clicar num
+// responsável carrega os CARDS dele (nível 2). Evita puxar milhares de cards de uma vez.
+// RPCs get_leads_drill_agents/get_leads_drill_cards (migration 20260723c). p_key: funnel* =
+// ordem ("alcançou ≥ ordem", 0=todos); phase* = nome da fase atual.
+export type LeadDrillDimension = 'funnel' | 'phase' | 'funnel_activity' | 'phase_activity'
+
+export interface LeadDrillAgent {
+  agentId: string | null
+  name: string
+  count: number
+}
+
+export interface LeadDrillCard {
+  pipefyCardId: string
+  title: string | null
+}
+
+export async function getLeadsDrillAgents(
+  dimension: LeadDrillDimension,
+  key: string,
+  periodInput: LeadPeriod,
+): Promise<LeadDrillAgent[]> {
+  const period = sanitizePeriod(periodInput)
+  const supabase = await createServerClient()
+  const { data, error } = await supabase.rpc('get_leads_drill_agents', {
+    p_dimension: dimension,
+    p_key: key,
+    p_start: period.start,
+    p_end: period.end,
+  })
+  if (error || !data) return []
+  return data as unknown as LeadDrillAgent[]
+}
+
+export async function getLeadsDrillCards(
+  dimension: LeadDrillDimension,
+  key: string,
+  agentId: string | null,
+  periodInput: LeadPeriod,
+): Promise<LeadDrillCard[]> {
+  const period = sanitizePeriod(periodInput)
+  const supabase = await createServerClient()
+  const { data, error } = await supabase.rpc('get_leads_drill_cards', {
+    p_dimension: dimension,
+    p_key: key,
+    p_agent: agentId,
+    p_start: period.start,
+    p_end: period.end,
+  })
+  if (error || !data) return []
+  return data as unknown as LeadDrillCard[]
+}
+
 // ── Visão do agente (S2): fila de trabalho + desfechos do período ────────────
 
 export type AgentLeadStatus = 'won' | 'dead' | 'stuck' | 'open'

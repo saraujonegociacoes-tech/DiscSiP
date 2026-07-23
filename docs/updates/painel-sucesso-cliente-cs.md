@@ -1,300 +1,269 @@
 # Painel de Sucesso do Cliente (CS) — separado do Painel de Leads (sprints)
 
-> Criado em 2026-07-15. Planejado em conjunto com o dono (plan mode) antes de qualquer
-> código. Réplica do padrão do dashboard de Leads (Pipefy → Make → Supabase) para o pipe
-> de **Sucesso do Cliente**, mas como domínio **separado** — não pode se misturar com o
-> painel de Leads, que existe na discadora só por causa do comercial.
+> Criado em 2026-07-15. **Reformulado em 2026-07-21** (decisão do dono): o dashboard de
+> CS foi repensado do zero — saímos do modelo "visão geral de funil" (cards por fase /
+> tempo em fase / contato periódico) para um **painel em 4 páginas** voltado a controle
+> de operação (Equipe, Visão Geral/Janelas, Minutas, Pagamentos). A fundação de
+> ingestão e permissões (Sprint 0 e 1) continua válida; o que muda é a camada de
+> dashboard. Réplica do padrão do dashboard de Leads (Pipefy → Make → Supabase) para o
+> pipe de **Sucesso do Cliente**, como domínio **separado**.
 
 ## Por que separado
 
 - O painel de Leads é sobre o **comercial**. O painel de CS é sobre outro departamento,
-  com métricas diferentes (cards por fase, tempo em fase, responsável, contato periódico
-  feito ou não). Não fazem sentido na mesma tela nem para o mesmo público.
+  com métricas diferentes. Não fazem sentido na mesma tela nem para o mesmo público.
 - `Comercial`, `CS` e `Negociação` já são **departamentos separados** na tabela
   `departments` — não uma subdivisão de um departamento maior.
-- Só quem é do departamento de CS deve acessar o painel de CS (e, futuramente, só quem é
-  de Negociação acessa o painel de Negociação). Supervisor, gerente e admin também
-  precisavam de uma regra clara — ver decisões abaixo.
+- Só quem é do departamento de CS deve acessar o painel de CS. `manager`/`admin` veem as
+  3 verticais; `agent`/`supervisor` só a própria. Gating por `departments.slug`.
 
 ## Decisões travadas
 
 1. **`departments.slug`** — identificador estável (`comercial` | `cs` | `negociacao` |
-   `null`) além do `name` (que é texto livre e editável). Todo o gating (menu lateral,
-   RLS dos dados de CS) usa o slug, nunca o nome.
-2. **Escopo de acesso por vertical:**
-   - `agent` / `supervisor` → só enxergam a vertical do próprio departamento
-     (`profiles.department_id` → `departments.slug`).
-   - `manager` / `admin` → enxergam as 3 verticais sempre, igual já é a intenção
-     documentada em `src/features/ajuda/content/roles.ts` ("gerente enxerga o negócio
-     inteiro").
-   - Isso é uma mudança em relação ao supervisor de Leads hoje ser o mesmo balde que
-     manager/admin em alguns pontos — CS nasce com supervisor **restrito à própria área**
-     desde o início.
-3. **Arquitetura de dados: réplica isolada por vertical, não schema genérico multi-pipe.**
-   Pergunta feita pelo dono: qual é o melhor a longo prazo, considerando escalabilidade e
-   sem atrapalhar a integração Make? Decisão (meu recado, não é preferência do dono):
-   - Um schema único (`cards` + `pipe_id`) pareceria mais DRY, mas o mapeamento de campos
-     do Pipefy já é específico por pipe mesmo — um RPC genérico ainda precisaria de uma
-     tabela de configuração por pipe pra saber o que mapeia pra quê. A complexidade não
-     some, só muda de lugar — e passa a arriscar quebrar o comercial (já em produção)
-     toda vez que se mexe em CS ou, no futuro, em Negociação.
-   - Os cenários do Make **já são isolados por pipe** por natureza (1 cenário por pipe
-     Pipefy), então schema unificado não simplifica a integração Make — só complica, ao
-     forçar um RPC de ingestão único a lidar com formatos diferentes.
-   - Cada vertical ganha suas próprias tabelas/RPCs (`cs_*`, e no futuro `negociacao_*`),
-     seguindo o **mesmo blueprint** de nomes de coluna/formato de RPC do que já existe em
-     `leads`/`lead_events`/`lead_phases`/`lead_agents` — isolamento total de blast radius,
-     e continua rápido de replicar pra próxima vertical porque o padrão já é validado.
-     Tabela leve de registro (`pipefy_pipe_configs`) fica só como metadado central de
-     "quais pipes estão integrados", sem guardar cards.
-4. **Negociação entra no menu já como "Em breve"** (mesmo componente de placeholder do
-   Leads/CS), sem tabela nem dado por trás — ainda não existe nenhuma aplicação pra essa
-   vertical.
+   `null`). Todo o gating (menu lateral, RLS dos dados de CS) usa o slug, nunca o `name`
+   (texto livre).
+2. **Escopo de acesso por vertical:** `agent`/`supervisor` só enxergam a própria
+   vertical; `manager`/`admin` enxergam as 3. CS nasce com supervisor **restrito à
+   própria área**.
+3. **Arquitetura de dados: réplica isolada por vertical, não schema genérico
+   multi-pipe.** Cada vertical tem suas tabelas/RPCs (`cs_*`), seguindo o blueprint de
+   `leads`/`lead_events`/`lead_phases`/`lead_agents`. Isolamento total de blast radius.
+4. **Dado sensível: ingerir TUDO em `cs_cards.metadata`** (jsonb, por field-id). O pipe
+   carrega CPF/RG/endereço/telefone/dados financeiros de clientes reais (esteira de
+   negociação de dívida). Por isso o RLS de `cs_cards`/`cs_card_events` é mais estrito:
+   só quem é do departamento de CS (ou manager/admin) lê qualquer linha.
+5. **Ciclo 11→10 e filtros de período (reformulação 2026-07-21).** O painel de CS passa
+   a ter **ciclo do dia 11 ao dia 10 do mês seguinte**, igual ao de Leads, reusando
+   [`src/lib/period.ts`](../../src/lib/period.ts) (`CYCLE_ANCHOR_DAY = 11`,
+   `currentCycle`/`recentCycles`/`customPeriod`) e o
+   [`PeriodPicker`](../../src/components/blueline/PeriodPicker.tsx) — ambos já
+   domain-agnostic. **Filtro de período é obrigatório em todas as páginas** (decisão do
+   dono: "de extrema importância").
 
-## Visão geral das sprints
+---
 
-| Sprint | O quê | Status |
+## Reformulação 2026-07-21 — painel em 4 páginas
+
+Decisão do dono: **abrir mão do dashboard de CS atual e começar do zero.** O modelo
+antigo (distribuição por fase + tempo em fase + contato periódico — antigas Sprints 2 e
+3, ver histórico ao final) fica **superado**. O código da Sprint 2 (`get_cs_dashboard`,
+`CsKpiRow`/`CsPhaseDistribution`/`CsDwellByPhase`/`CsResponsibleBreakdown`,
+`CsClient`) será reconstruído sob a nova arquitetura.
+
+### Layout das 4 páginas (abas do `/cs`)
+
+| Aba | Página | Base de dado |
 |---|---|---|
-| **0** | Fundação de navegação e permissões (`departments.slug`, grupos no menu, rotas placeholder `/cs` e `/negociacao`) | ✅ Entregue |
-| **1** | Schema + ingestão do CS (tabelas `cs_*`, RPCs, script de backfill, cenário Make) | 🟡 Backfill feito (1484 cards, 0 falhas) — falta montar o cenário no Make |
-| **2** | Painel CS: visão geral (cards por fase, tempo em fase, responsável) | ✅ Entregue — falta ligar a flag e verificar com sessão real |
-| **3** | Métrica de contato periódico | ⬜ Planejada |
-| **4+** | Iterativo (métricas que forem surgindo) + replicar blueprint pra Negociação quando houver a 1ª aplicação | ⬜ Planejada |
+| 1 | **Visão Geral + Janelas** | Snapshot atual (`pipefy_created_at`) — pronto pra construir |
+| 2 | **Equipe** | **Série temporal** — movimento + comentário por ciclo (dado NÃO existe ainda) |
+| 3 | **Controle de Minutas** | Snapshot atual (campos de resguardo/etiqueta/desconto) |
+| 4 | **Controle de Pagamento + Insights** | Snapshot (projeções) + série temporal (histórico) |
 
-`tsc --noEmit` e `npm run lint` verdes na Sprint 0. Nada commitado (o dono controla o
-git). Migration **aplicada e conferida** no Supabase (15/jul) — 1 departamento por slug,
-sem órfãos: `comercial` → "Comercial", `cs` → "Sucesso do Cliente", `negociacao` →
-"Negociação".
+### A pedra grande: a Equipe é série temporal e o dado não existe ainda
 
----
+Introspecção do estado atual (2026-07-21, 1484 cards):
 
-## Sprint 0 — Fundação de navegação e permissões (entregue)
+- **Histórico de movimento não existe.** Os únicos eventos em `cs_card_events` são os do
+  backfill: **1000 cards com 1 evento, 484 com zero.** Nenhuma transição real capturada.
+- **Comentários não são ingeridos.** `cs_cards.metadata` guarda só os `fields` do card,
+  não os comentários do Pipefy.
+- **Mudança de campo ao longo do tempo não é guardada** — só o snapshot atual.
 
-### `departments.slug`
-Migration `supabase/migrations/20260715_departments_slug.sql`: coluna `slug text NULL`
-com `CHECK (slug IN ('comercial','cs','negociacao'))`, índice único parcial (1
-departamento por slug), e um backfill **best-effort** por `name ILIKE` (comercial/cs/
-negociação) — os nomes reais das linhas não estavam disponíveis localmente (schema só
-existe no Supabase, `supabase/` não é mais versionado, ver
-[`../../docs/updates/discadora-status-historico-arquivamento.md`](discadora-status-historico-arquivamento.md)
-e a nota de plataforma nele). **Aplicada e conferida pelo dono (15/jul):** 1
-departamento por slug, sem órfãos — `comercial` → "Comercial", `cs` → "Sucesso do
-Cliente", `negociacao` → "Negociação".
-
-### Tipos e resolução do departamento do usuário
-- `src/lib/types/database.ts` — `Department.slug`; `Profile.department_slug` (campo
-  derivado, não é coluna de `profiles`).
-- `src/app/actions/auth.ts` (`getCurrentProfile`) — depois de buscar o perfil, resolve
-  `department_slug` numa 2ª query por `department_id` (sem embed/FK do PostgREST — mesma
-  cautela já usada no histórico de chamadas do supervisor).
-- `src/store/softphoneStore.ts` — novo campo `departmentSlug`, hidratado em `setProfile`.
-
-### Menu lateral (`src/components/Sidebar.tsx`)
-Antes: uma lista plana (`NAV_ITEMS`) dentro de um único grupo "Operação". Agora:
-- **Operação** (inalterado): Discador, Dashboard, Campanhas, Admin, Ajuda.
-- **Comercial** (novo grupo): Leads — sai de dentro de "Operação" e ganha grupo próprio.
-- **Sucesso do Cliente** (novo grupo): Painel CS (`/cs`).
-- **Negociação** (novo grupo): Painel de Negociação (`/negociacao`).
-
-Regra de visibilidade dos 3 grupos de vertical: `manager`/`admin` sempre veem os 3;
-`agent`/`supervisor` só veem o grupo cujo slug bate com `departmentSlug` do próprio
-perfil. Sem departamento reconhecido, nenhum grupo de vertical aparece (comportamento
-seguro — "Operação" continua igual pra todo mundo).
-
-### Rotas placeholder
-- `src/app/cs/page.tsx` + `CsComingSoon.tsx` — tela "Em breve" do painel de CS.
-- `src/app/negociacao/page.tsx` — tela "Em breve" do painel de Negociação, sempre (sem
-  flag — ainda não há previsão de sprint pra essa vertical).
-- Nenhum dos dois usa flag de lançamento ainda (`NEXT_PUBLIC_CS_ENABLED` só entra na
-  Sprint 2, junto com o dashboard real — sem isso o flag não teria nenhum efeito, então
-  ficou fora do escopo da Sprint 0 pra não sobrar código morto).
-- Extraído `src/components/blueline/ComingSoon.tsx` (genérico, `title`/`description`/
-  `message`) a partir do que era só `LeadsComingSoon.tsx`, e reaproveitado pelos 3
-  painéis (Leads, CS, Negociação) — evita 3 componentes quase idênticos.
-
-### Segurança em camadas
-Nenhuma rota nova ganhou restrição no `middleware.ts` — mesmo comportamento de `/leads`
-hoje (qualquer usuário aprovado consegue abrir a URL; o menu lateral só *oferece* o link
-pra quem faz sentido). Como `/cs` e `/negociacao` ainda não têm dado nenhum atrás, não há
-o que vazar. **Retomar esse ponto na Sprint 2**: quando o painel de CS tiver dado real, o
-RLS das tabelas `cs_*` já escopa por departamento (ver decisão 3), mas vale avaliar um
-guard de página adicional (como já existe pra `/admin`) por defesa em profundidade.
-
-### Verificação feita
-`npx tsc --noEmit` e `npm run lint` sem erros novos (só warnings/erros pré-existentes em
-`local-helper/`, `public/helper/` e artefatos de build — nada nos arquivos tocados). Smoke
-test: subi o dev server localmente e chamei `/login`, `/leads`, `/cs`, `/negociacao` sem
-sessão — todas as rotas novas respondem `307` pro login (mesmo comportamento de `/leads`
-hoje), sem erro 500. **Falta verificação com sessão real** (ver checklist abaixo).
+Consequência: **a página de Equipe só começa a existir depois que** (a) o cenário do
+Make estiver rodando e capturando transições, (b) a gente ingerir **comentários** e (c)
+a gente guardar **histórico dos campos de negociação**. Antes disso ela nasce vazia — não
+há como "mostrar número real hoje". O trabalho de hoje pra ela é **montar a fundação pra
+começar a acumular a partir de agora**. As páginas 1, 3 e 4 rendem valor visível já.
 
 ---
 
-## Sprint 1 — Fundação de dados do CS (código pronto, falta aplicar)
+## Página 1 — Visão Geral + Janelas
 
-### Descoberta do pipe real
-Pipe **"3.3 - Customer Success"** (`305801110`), **35 fases**: Triagem → Apresentação →
-Negociação do Cliente → **24 fases mensais** (1° a 24° Mês, acompanhamento pós-
-negociação de dívida) → saídas: Quitados, Concluído, Distratos, Acordos Vencidos,
-Arquivado (827 cards — de longe o maior grupo, precisa de definição do dono do que
-significa antes da Sprint 2), Falta de Contato, Distribuição Processual, Pendente envio
-de carta de quitação.
+Gráfico de **pizza** classificando os cards por **idade desde a criação**
+(`now - pipefy_created_at`) em 4 janelas:
 
-**Achado que muda o plano original:** o "contato periódico" já é rastreado por campos
-próprios em cada fase mensal (ex.: *"Data do atendimento"* / *"Data do [próximo]
-atendimento"*) — **não** pela API de `activities()` como a hipótese inicial supunha. O
-id desses campos muda a cada mês (`data_do_atendimento_1`, `_2`, `_3`...); a Sprint 3
-vai precisar de uma tabela pequena de mapeamento fase → campo. Reparo à parte: a fase
-"16° Mês" parece ter rótulo e tipo trocados entre os dois campos de data (o `due_date`
-tem rótulo de "último" e o `date` tem rótulo de "próximo") — vale o dono conferir no
-Pipefy quando puder.
+| Janela | Idade |
+|---|---|
+| 1 | 1 – 30 dias |
+| 2 | 31 – 90 dias |
+| 3 | 91 – 180 dias |
+| 4 | 181+ dias |
 
-### Decisão de dado sensível
-O pipe carrega dado pessoal de clientes reais (CPF, RG, endereço, telefone, nome dos
-pais, data de nascimento) — natural numa esteira de negociação de dívida. **Decisão do
-dono: ingerir TUDO** em `cs_cards.metadata` (jsonb, por field-id), em vez de selecionar
-só campos operacionais. Por isso o RLS de `cs_cards`/`cs_card_events` ficou mais
-estrito que o de `cs_phases`/`cs_agents`: só quem é do departamento de CS (ou
-manager/admin) lê qualquer linha das tabelas de CS — ninguém do comercial ou de
-negociação enxerga nada daqui, nem via API direta.
+**Drill-down em 2 níveis:**
+1. Clica no total de uma janela → total de cards da janela **por responsável**.
+2. Clica no total de uma pessoa → **lista dos cards** dela naquela janela, ordenada do
+   **mais antigo pro mais novo**, com a **URL do card** no Pipefy.
 
-### O que foi escrito
-- `supabase/migrations/20260715_cs_pipeline_schema.sql` — tabelas `cs_phases`
-  (seedada com as 35 fases reais), `cs_agents`, `cs_cards`, `cs_card_events`; helpers
-  de RLS com namespace `cs_*` (pra não colidir com o que já existe pro leads, que não
-  dá pra conferir localmente); policies de SELECT (fora do CS não vê nada; dentro do
-  CS, agente=o próprio card, supervisor=o departamento, manager/admin=tudo); RPCs
-  `SECURITY DEFINER` `ingest_cs_card(node jsonb)` / `ingest_cs_event(payload jsonb)`,
-  executáveis só por `service_role` (`REVOKE ALL FROM PUBLIC, anon, authenticated`
-  explícito — o front nunca escreve direto).
-  - Diferença de design em relação ao leads: **um card só vira evento de transição
-    quando a fase muda de fato** (compara por `phase_id`, não por nome, pra não gerar
-    transição falsa se alguém só renomear uma fase no Pipefy) — evita inflar o cálculo
-    de tempo-em-fase da Sprint 2 com "transições" fantasmas toda vez que um campo
-    qualquer do card é editado.
-  - **Responsável = último elemento de `assignees`** quando há 2+ (mesma assunção do
-    leads — "mais recente é o último" — **a confirmar** com um caso real).
-- `scripts/import-cs-cards.mjs` (`npm run import:cs-cards`) — carga histórica. Ao
-  contrário do `import-leads.mjs` (que remonta o payload em JS), este manda o **node
-  cru** pra `ingest_cs_card` — o mapeamento de campo mora só no SQL, uma única fonte de
-  verdade, sem duplicar lógica em JS.
-- `docs/docs_dashboard_cs/` (silo novo, mesmo padrão de `docs/docs_dashboard_pipefy/`):
-  `README.md` + `make-integracao-cs.md` (roteiro do cenário Make, pipe `305801110`,
-  ainda não montado).
-- `.env.example` (`CS_PIPEFY_PIPE_ID`) e `package.json` (`import:cs-cards`).
+- URL do card: `https://app.pipefy.com/open-cards/{pipefy_card_id}` (temos `pipefy_card_id`).
+- Respeita o filtro de período (idade calculada relativa ao fim do período selecionado,
+  ou "agora" no ciclo corrente — **a confirmar** na implementação).
+- Totalmente construível com o dado atual.
 
-### Falta pra fechar a Sprint 1
-1. **Dono aplica** `20260715_cs_pipeline_schema.sql` no Supabase e confere (`SELECT
-   count(*) FROM cs_phases` → 35).
-2. Rodar `npm run import:cs-cards` (carga histórica) e conferir a contagem batendo
-   com o Pipefy.
-3. Confirmar a assunção de "responsável = último assignee" com um card real de 2+
-   assignees.
-4. Montar o cenário no Make seguindo `docs/docs_dashboard_cs/make-integracao-cs.md`.
+## Página 2 — Equipe (série temporal)
 
-## Sprint 2 — Painel CS: visão geral (entregue)
+Controle das movimentações dentro do pipe **por responsável, no ciclo** (11→10, filtrável
+por período). `atualização = comentário no card` (decisão do dono).
 
-**Sem parâmetro de período** (diferente do leads): "quantos cards por fase" e
-"responsável" são perguntas de estado ATUAL (quantos clientes estão em cada mês de
-acompanhamento agora), não de uma janela de tempo — o leads tem ciclo de meta
-comercial, o CS não. Pode ganhar filtro de período depois, se fizer falta.
+**4 métricas por responsável** (bucket de cada card no ciclo):
 
-### Camada de dados
-`supabase/migrations/20260716_cs_dashboard.sql`:
-- **`v_cs_progress`** (`security_invoker`) — 1 linha por card: fase atual, `funnel_order`,
-  responsável, e `days_in_current_phase` (desde o último evento conhecido pra essa fase;
-  sem evento, cai pro `pipefy_created_at`, e por último pro `synced_at`).
-- **`get_cs_dashboard()`** — agrega tudo numa chamada só no Postgres (mesmo cuidado do
-  erro 1102 — nunca puxar tabela inteira pro Worker): `kpis` (total, sem responsável,
-  responsáveis distintos, tempo médio na fase atual), `phaseDistribution` (contagem +
-  tempo médio por fase, nas 35 fases, ordenado por `funnel_order`), `byResponsible`
-  (drill-down por fase → lista de responsáveis, pro clique-pra-detalhar).
-- Sem `SECURITY DEFINER` — roda com o RLS de quem chamou (o mesmo RLS estrito da
-  Sprint 1: só CS + manager/admin veem qualquer linha; dentro do CS, agente=o próprio,
-  supervisor=o departamento).
+| Métrica | Moveu de fase? | Comentou? |
+|---|---|---|
+| Movido com atualização | sim | sim |
+| Movido sem atualização | sim | não |
+| Só atualização (sem mover) | não | sim |
+| Parado (não atualizou nem moveu) | não | não |
 
-### App
-- `src/lib/types/database.ts` — `CsKpis`, `CsPhaseCount`, `CsAgentCount`,
-  `CsDashboardData`.
-- `src/app/actions/cs.ts` — `getCsDashboard()`, chama a RPC e tipa o retorno.
-- `src/features/cs/components/` — `CsKpiRow` (4 KPIs), `CsPhaseDistribution` (barras
-  horizontais, 35 fases, altura dinâmica pelo nº de fases, clique abre
-  `CsResponsibleBreakdown`), `CsDwellByPhase` (barras horizontais de tempo médio na
-  fase atual, só fases com card). Réplica local do padrão de
-  `src/features/leads/components/PhaseDistribution.tsx`/`StepDwellTime.tsx`/
-  `ResponsibleBreakdown.tsx` — sem componente compartilhado entre os dois domínios
-  (mesma decisão de isolamento da Sprint 1).
-- `src/app/cs/page.tsx` — gate `NEXT_PUBLIC_CS_ENABLED` (mesmo padrão do
-  `NEXT_PUBLIC_LEADS_ENABLED`, introduzido só agora que existe conteúdo real atrás
-  dele); `src/app/cs/CsClient.tsx` — composição (KPIs + 2 gráficos lado a lado). Sem
-  abas ainda — uma página só, do jeito que foi pedido (o `/leads` só ganhou topbar de
-  7 abas depois de várias sprints; não faz sentido copiar essa complexidade agora).
+Mais: **quantos cards cada responsável recebeu no ciclo e onde parou** (classificação por
+fase de destino).
 
-### Limitações conhecidas
-- **"Tempo na fase atual" é uma aproximação, não o tempo exato desde a entrada na
-  fase.** Hoje cada card só tem 1 evento em `cs_card_events` (o da carga histórica, que
-  registra `updated_at` do card no momento do backfill — não necessariamente o momento
-  em que ele entrou na fase atual). Fica mais preciso conforme o cenário do Make rodar
-  e capturar transições de fase de verdade.
-- **Sem classificação de fase** (o que é "sucesso" vs "encerrado sem sucesso", o que
-  `Arquivado` significa) — as 35 fases aparecem todas com a mesma cor. Não bloqueava
-  esta sprint (cards por fase / tempo / responsável não dependem disso), mas falta
-  pra métricas futuras tipo "taxa de sucesso".
-- Sem filtro de período — todo o painel é sempre "agora".
+### Vieses a tratar (regras do dono)
 
-## Sprint 3 — Contato periódico (planejada)
+- **Fase "Aguardando pagamento": ignorar** — nem a entrada nem a saída dessa fase contam
+  como movimento.  ⚠ *Pendência:* essa fase não aparece nas 35 fases seedadas (ver
+  Pendências) — reconciliar id no Pipefy.
+- **Fase "Negociação": separar** — movimentos de entrada/saída da negociação não entram
+  na contagem geral; a negociação tem controle próprio (abaixo). ⚠ *Pendência:*
+  confirmar se "Negociação" = a fase `Negociação do Cliente` (funnel_order 2) ou outra.
 
-O schema GraphQL que o dono levantou traz `activities(cardUuid: ID, ...)` — sinal de que
-o contato periódico é rastreado via **atividades do card** no Pipefy, não um campo
-simples. Precisa definir com o dono, antes de implementar: qual atividade conta como
-"contato" e qual a cadência esperada (a cada quantos dias um card "vence"). Guardar em
-`cs_card_contacts` ou `cs_cards.last_periodic_contact_at`. Widget: cards "em dia" vs
-"atrasados", filtrável por responsável e fase.
+### Controle de negociação (dentro da Equipe)
 
-## Sprint 4+ — Iterativo (planejada)
+Quantas negociações foram feitas no ciclo e **quantas tiveram os campos da fase
+atualizados** (o gatilho de "negociação feita" = **a confirmar**: entrada na fase de
+negociação? mudança nos 5 campos?).
 
-Buffer para métricas que o dono for lembrando com o tempo (mesmo padrão de crescimento
-incremental que `/leads` teve — ver
-[`novo-visual-dashleads.md`](novo-visual-dashleads.md)). Quando existir a 1ª aplicação de
-Negociação, replicar o mesmo blueprint (`negociacao_*`, RPCs, grupo do menu passa a
-apontar pra rota real).
+**Os 5 campos de negociação existem no `metadata`** (introspecção 2026-07-21, ~1043/1484
+preenchidos), em ordem de prioridade do processo:
+
+| Prioridade | Campo (rótulo Pipefy) | field-id |
+|---|---|---|
+| 1° | Q.D - Valor da Quitação com Desconto | `q_d_valor_da_quita_o_com_desconto` |
+| 2° | Q.A - Valor da Quitação Atualizada sem Desconto | `q_a_valor_da_quita_o_atualizada_sem_desconto` |
+| 3° | P.A - Parcelas em Atraso | `p_a_parcelas_em_atraso` |
+| 4° | P.P - Parcelas Pagas | `p_p_parcelas_a_pagar` |
+| 5° | P.V - Parcelas à Vencer | `p_v_parcelas_vencer` |
+
+**Classificação de completude** (do snapshot atual — construível já):
+
+- **Completa:** todos os 5 preenchidos.
+- **Parcialmente completa:** 3–4 preenchidos — informar quais faltam.
+- **Incompleta:** 1–2 preenchidos — informar quais faltam.
+  ⚠ *Pendência:* o dono descreveu "Parcial = 3-4" e "Incompleta = 1-3", que se sobrepõem
+  no 3. Assumindo o corte **Parcial 3-4 / Incompleta 1-2** — confirmar.
+
+**Anti-"update insignificante":** a preocupação do dono é que `updated_at` pode ser
+burlado por uma mudança mínima (ex.: Q.D `12000,00` → `12000,01`). Para não ficar no
+escuro: guardar **histórico dos valores** dos 5 campos (`cs_negotiation_snapshots` ou
+`cs_card_field_changes`) e marcar como "atualização relevante" só quando o delta passa de
+um limiar (ex.: valores > R$X ou variação > Y%). Fica registrado o que mudou, quando e por
+quanto — dá pra auditar. **Requer ingestão nova** (não temos histórico de campo hoje).
+
+## Página 3 — Controle de Minutas
+
+Controle das minutas com: **URL, valor da minuta, última negociação, valor resguardado,
+% de desconto (etiqueta)**. Buckets por vencimento: **Vencidas · Mensal · Trimestral ·
+Semestral**. Mais um espaço de **notificações com insights** de oportunidade (quitações,
+antecipações em geral).
+
+Campos candidatos já no `metadata` (introspecção 2026-07-21):
+- % desconto / etiqueta: `sele_o_de_etiqueta` ("Etiqueta"), `do_desconto_do_cliente_atualmente`.
+- Valor resguardado: `valor_resguardado_at_o_momento`, `valor_resguardados_dos_clientes`
+  ("Valor da Quitação final do cliente"), e a série mensal `valor_de_resguardo_N`.
+
+⚠ *Pendência forte:* **não achei um campo claro de "Minuta" nem "Valor da Minuta" nem uma
+URL de minuta** no catálogo. Precisa o dono apontar quais field-ids são a minuta (ou se
+"minuta" se deriva de outra coisa — cálculo/contrato anexado?). Sem isso, a página 3 não
+sai do papel.
+
+## Página 4 — Controle de Pagamento + Insights
+
+- **Projeções** e **quando vão pagar**: `valor_da_parcela` ("Valor da Parcela"),
+  `data_de_vencimento_da_parcela_do_cliente` ("Dia de Vencimento da Parcela do Cliente"),
+  `data_da_quita_o` ("Data da quitação"), e contagens de parcelas (`p_p`/`p_a`/`p_v` +
+  `copy_of_quantidade_de_parcelas_em_pagas` = "Total de Parcelas do Financiamento").
+  Projeção construível do snapshot.
+- **Histórico de quanto o cliente já pagou**: ⚠ *Pendência* — não temos série temporal de
+  pagamento. Ou (a) deriva de `P.P - Parcelas Pagas` snapshotado ao longo do tempo (mesma
+  ingestão de histórico da Equipe), ou (b) há uma fonte de pagamento fora do Pipefy.
+  Definir com o dono.
+
+## Classificação das fases finais (dono, 2026-07-21)
+
+Usada pra cor/sinal nas páginas (bom/ruim/neutro):
+
+| Fase | Sinal |
+|---|---|
+| Quitado(s) | **Bom** |
+| Distratos | **Ruim** |
+| Arquivado | Neutro |
+| Concluído | Neutro |
+| Distribuição (Processual) | Neutro |
 
 ---
 
-## Checklist de verificação (Sprint 0)
+## Ingestão nova necessária (fundação da Equipe e do histórico)
 
-- [x] `tsc --noEmit` / `npm run lint` sem erros novos.
-- [x] Smoke test sem sessão (`/login`, `/leads`, `/cs`, `/negociacao` → `307`, sem 500).
-- [x] **Dono rodou a migration** `20260715_departments_slug.sql` no Supabase (15/jul) —
-      1 linha por slug, sem órfãos.
-- [ ] Logar com um usuário de cada combinação (agente/supervisor/manager/admin ×
-      comercial/cs/sem-departamento) e conferir que o menu lateral mostra só os grupos
-      esperados.
+O que a reformulação exige além do que a Sprint 1 já ingere:
 
-### Sprint 1
-- [x] Dono aplica `20260715_cs_pipeline_schema.sql` — conferido: as 5 primeiras fases
-      batem em ordem (Triagem, Apresentação, Negociação do Cliente, 1° Mês, 2° Mês).
-- [x] `npm run import:cs-cards` — **1484 cards, 0 falhas, 50 páginas.** Conferido
-      contra a soma de `cards_count` das 35 fases da introspecção (0+0+10+...+827 =
-      1484) — bate exato, nenhum card ficou de fora.
-- [x] `responsabilidade_duplicada=1` — só 1 card em 1484 com 2+ assignees. Risco baixo
-      da assunção "responsável = último elemento" estar errada; não bloqueia a Sprint 2.
-- [ ] Cenário Make montado e testado (1 rodada manual, ver retorno 200 da RPC).
+1. **Comentários** — nova tabela `cs_card_comments` (`pipefy_card_id`, `author`,
+   `text`/`hash`, `created_at`) + captura no Make (GraphQL passa a pedir
+   `comments { ... }`) + RPC de ingestão. Base de `atualização = comentário`.
+2. **Histórico dos campos de negociação** — snapshot dos 5 campos a cada ingestão, com
+   detecção de delta relevante (anti-update-insignificante). Base do controle de
+   negociação e do histórico de pagamento.
+3. **Transições reais** — já suportadas por `ingest_cs_card` (grava evento quando
+   `phase_id` muda); só falta **o Make rodar**. Regras de viés (ignorar "Aguardando
+   pagamento", separar "Negociação") entram no cálculo do dashboard, não na ingestão.
 
-### Sprint 2
-- [x] `tsc --noEmit` / `npm run lint` sem erros novos.
-- [x] Smoke test sem sessão (`/cs` → `307` pro login, sem 500).
-- [ ] Dono aplica `20260716_cs_dashboard.sql` no Supabase.
-- [ ] Ligar `NEXT_PUBLIC_CS_ENABLED=1` localmente e conferir com sessão real (de cada
-      papel: agente do CS, supervisor do CS, manager/admin) — `kpis.total` deve bater
-      com 1484 pra quem vê tudo (manager/admin), e ser um subconjunto pro agente.
-- [ ] Conferir visualmente o gráfico de 35 fases (altura/legibilidade) num card real.
+Detalhes do cenário: [`make-integracao-cs.md`](make-integracao-cs.md) (atualizado com a
+reformulação).
+
+## Pendências / perguntas abertas
+
+1. **Fase "Aguardando pagamento"** — não está nas 35 fases seedadas. Existe hoje no pipe?
+   Qual o id? (Mudança de pipe? O dono citou "Mudanças no pipe (Ignorar): Pós-fase".)
+2. **Fase "Negociação"** — é `Negociação do Cliente` (order 2) ou outra fase?
+3. **Gatilho de "negociação feita"** — entrada na fase? mudança nos 5 campos? ambos?
+4. **Minuta** — quais field-ids são URL / valor da minuta? (não encontrados no catálogo).
+5. **Corte de completude** — Parcial 3-4 / Incompleta 1-2 (assumido) vs "1-3" (falado).
+6. **Histórico de pagamento** — deriva do snapshot de `P.P` ao longo do tempo ou fonte externa?
+7. **Atribuição por responsável** — o autor do comentário pode diferir do responsável do
+   card; contamos pelo responsável (assignee) ou pelo autor da ação?
+8. **Limiar de "update relevante"** — que delta em Q.D/Q.A/parcelas conta como significativo?
+
+---
+
+## Fundação já entregue (Sprints 0 e 1 — continuam válidas)
+
+### Sprint 0 — Navegação e permissões (entregue)
+- `departments.slug` (migration `20260715_departments_slug.sql`, aplicada e conferida).
+- Tipos: `Department.slug`, `Profile.department_slug` (derivado via 2ª query, sem embed FK).
+- `softphoneStore.departmentSlug`, hidratado em `setProfile`.
+- Menu lateral (`src/components/Sidebar.tsx`): grupos Operação / Comercial / Sucesso do
+  Cliente / Negociação, com visibilidade por papel+slug.
+- Rotas placeholder `/cs` e `/negociacao`; `ComingSoon` genérico reusado.
+
+### Sprint 1 — Schema + ingestão do CS (entregue, base da reformulação)
+- `20260715_cs_pipeline_schema.sql`: tabelas `cs_phases` (35 fases seedadas), `cs_agents`,
+  `cs_cards`, `cs_card_events`; RLS estrito; RPCs `ingest_cs_card`/`ingest_cs_event`
+  (`SECURITY DEFINER`, só `service_role`). Aplicada e conferida.
+- `scripts/import-cs-cards.mjs` (`npm run import:cs-cards`) — carga histórica: **1484
+  cards, 0 falhas**. Manda o node cru pra `ingest_cs_card` (field-mapping mora só no SQL).
+- Responsável = último elemento de `assignees` (só 1 card em 1484 com 2+ assignees).
+- **Falta:** montar o cenário no Make (agora expandido — ver `make-integracao-cs.md`).
+
+## Histórico superado (não construir)
+
+- **Antiga Sprint 2** — "visão geral": cards por fase (35 barras), tempo em fase,
+  responsável via drill-down. Migration `20260716_cs_dashboard.sql` (`v_cs_progress` +
+  `get_cs_dashboard`) **aplicada no Supabase**, mas o conceito foi substituído pelas 4
+  páginas. A view/RPC podem ser reaproveitadas em parte ou descartadas na reconstrução.
+- **Antiga Sprint 3** — "contato periódico" por campos `data_do_proximo_atendimento_N`.
+  Substituída; os campos de atendimento continuam no `metadata` e podem servir a métricas
+  futuras, mas não são mais o eixo do painel.
 
 ## Referências
 
-- Plano completo desta iniciativa (contexto e alternativas descartadas):
-  `C:\Users\Filipe Crepaldi\.claude\plans\ent-o-eu-preciso-replicar-shimmering-bengio.md`
-  (arquivo local do agente, fora do repo).
-- [`../docs_dashboard_pipefy/README.md`](../docs_dashboard_pipefy/README.md) — silo do
-  dashboard de Leads, modelo usado pro `docs_dashboard_cs/`.
-- [`../docs_dashboard_cs/README.md`](../docs_dashboard_cs/README.md) — silo do painel
-  de CS (schema, ingestão, cenário Make).
+- [`dashboard-cs-indice.md`](dashboard-cs-indice.md) — índice do painel de CS.
+- [`dashboard-leads-indice.md`](dashboard-leads-indice.md) — painel irmão (modelo).
+- [`make-integracao-cs.md`](make-integracao-cs.md) — cenário Pipefy → Make → Supabase.
+- [`src/lib/period.ts`](../../src/lib/period.ts) — ciclo 11→10 e períodos (reusado).

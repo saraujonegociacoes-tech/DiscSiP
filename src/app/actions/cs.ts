@@ -1,53 +1,99 @@
 'use server'
 
 import { createServerClient } from '@/lib/supabase/server'
-import type { CsDashboardData, CsKpis, CsPhaseCount, CsAgentCount } from '@/lib/types/database'
+import { sanitizePeriod, type LeadPeriod } from '@/lib/period'
+import type {
+  CsMatrixData,
+  CsMatrixCard,
+  CsTeamData,
+  CsTeamMovementAgent,
+  CsTeamMovementTotals,
+  CsTeamNegotiationAgent,
+  CsTeamNegotiationTotals,
+} from '@/lib/types/database'
 
-// Painel de Sucesso do Cliente (CS, Pipefy) — domínio SEPARADO do leads/comercial. Lê a
-// RPC agregada get_cs_dashboard() via createServerClient() (propaga auth.uid() → RLS): o
-// RLS de cs_cards já escopa por papel+departamento (agente=o próprio card, supervisor=o
-// departamento de CS, manager/admin=tudo, quem não é do CS não vê nada) — não duplicamos
-// essa lógica aqui.
+// Painel de Sucesso do Cliente (CS, Pipefy) — domínio SEPARADO do leads/comercial.
 //
-// Sem parâmetro de período (ver migration 20260716_cs_dashboard.sql): "quantos cards por
-// fase" e "responsável" são estado ATUAL, não uma janela de tempo.
+// PÁGINA 1 (Matriz Fase × Idade): lê a RPC get_cs_matrix(p_end) via createServerClient()
+// (propaga auth.uid() → RLS). O RLS de cs_cards já escopa por papel+departamento (agente =
+// o próprio card, supervisor = o departamento de CS, manager/admin = tudo, quem não é do CS
+// não vê nada) — não duplicamos isso aqui.
+//
+// A idade é calculada AS-OF o fim do período (decisão do dono: "foto na data"); por isso a
+// action passa só `period.end`. A matriz (fase × janela), total, tempo médio e o drill-down
+// por célula moram no cliente (src/features/cs/components/CsMatrix.tsx) sobre `cards`.
 
-interface DashboardRpc {
-  kpis?: {
-    total: number
-    without_responsible: number
-    distinct_responsible: number
-    avg_days_in_current_phase: number | null
-  }
-  phaseDistribution?: CsPhaseCount[]
-  byResponsible?: Record<string, CsAgentCount[]>
+interface MatrixRpc {
+  referenceAt?: string
+  cards?: CsMatrixCard[]
 }
 
-const EMPTY_KPIS: CsKpis = {
-  total: 0,
-  withoutResponsible: 0,
-  distinctResponsible: 0,
-  avgDaysInCurrentPhase: null,
-}
-
-export async function getCsDashboard(): Promise<CsDashboardData> {
+export async function getCsMatrix(period: LeadPeriod): Promise<CsMatrixData> {
+  const p = sanitizePeriod(period)
   const supabase = await createServerClient()
-  const { data, error } = await supabase.rpc('get_cs_dashboard')
+  const { data, error } = await supabase.rpc('get_cs_matrix', { p_end: p.end })
   if (error || !data) {
-    return { kpis: EMPTY_KPIS, phaseDistribution: [], byResponsible: {} }
+    // Degrada (não quebra) se a migration ainda não foi aplicada ou não houver acesso.
+    return { referenceAt: p.end, cards: [] }
   }
-  const d = data as unknown as DashboardRpc
-  const k = d.kpis
+  const d = data as unknown as MatrixRpc
   return {
-    kpis: k
-      ? {
-          total: k.total,
-          withoutResponsible: k.without_responsible,
-          distinctResponsible: k.distinct_responsible,
-          avgDaysInCurrentPhase: k.avg_days_in_current_phase,
-        }
-      : EMPTY_KPIS,
-    phaseDistribution: d.phaseDistribution ?? [],
-    byResponsible: d.byResponsible ?? {},
+    referenceAt: d.referenceAt ?? p.end,
+    cards: d.cards ?? [],
+  }
+}
+
+// PÁGINA 2 (Equipe): lê get_cs_team(p_start, p_end). Diferente da P1, esta página é uma
+// JANELA DE TEMPO (ciclo 11→10, filtrável) — passamos start+end. O RLS escopa igual.
+// A parte de série temporal (movimento/comentário/negociação por ciclo) nasce ~vazia e
+// enche conforme o Make acumula; a completude já vem do snapshot atual.
+
+const EMPTY_MOVE_TOTALS: CsTeamMovementTotals = {
+  received: 0,
+  movedWithUpdate: 0,
+  movedNoUpdate: 0,
+  onlyUpdate: 0,
+  idle: 0,
+}
+
+const EMPTY_NEG_TOTALS: CsTeamNegotiationTotals = {
+  total: 0,
+  completa: 0,
+  parcial: 0,
+  incompleta: 0,
+}
+
+interface TeamRpc {
+  periodStart?: string
+  periodEnd?: string
+  movement?: CsTeamMovementAgent[]
+  movementTotals?: CsTeamMovementTotals
+  negotiations?: CsTeamNegotiationAgent[]
+  negotiationTotals?: CsTeamNegotiationTotals
+}
+
+export async function getCsTeam(period: LeadPeriod): Promise<CsTeamData> {
+  const p = sanitizePeriod(period)
+  const supabase = await createServerClient()
+  const { data, error } = await supabase.rpc('get_cs_team', { p_start: p.start, p_end: p.end })
+  if (error || !data) {
+    // Degrada (não quebra) se a migration ainda não foi aplicada ou não houver acesso.
+    return {
+      periodStart: p.start,
+      periodEnd: p.end,
+      movement: [],
+      movementTotals: EMPTY_MOVE_TOTALS,
+      negotiations: [],
+      negotiationTotals: EMPTY_NEG_TOTALS,
+    }
+  }
+  const d = data as unknown as TeamRpc
+  return {
+    periodStart: d.periodStart ?? p.start,
+    periodEnd: d.periodEnd ?? p.end,
+    movement: d.movement ?? [],
+    movementTotals: d.movementTotals ?? EMPTY_MOVE_TOTALS,
+    negotiations: d.negotiations ?? [],
+    negotiationTotals: d.negotiationTotals ?? EMPTY_NEG_TOTALS,
   }
 }

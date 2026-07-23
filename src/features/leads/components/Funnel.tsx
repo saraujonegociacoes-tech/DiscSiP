@@ -12,19 +12,14 @@ import {
   ResponsiveContainer,
 } from 'recharts'
 import { useChartTheme } from '@/components/blueline/useChartTheme'
-import { ResponsibleBreakdown } from './ResponsibleBreakdown'
-import type { FunnelStage, AgentCount } from '@/app/actions/leads'
+import { LeadsAgentDrill } from './LeadsAgentDrill'
+import type { FunnelStage } from '@/app/actions/leads'
+import type { LeadPeriod } from '@/lib/period'
 
 // Funil de acionamento (S2) — barras horizontais (magnitude), série única. Cada etapa conta
 // quantos leads do período ALCANÇARAM aquela ordem ou além (ordem 0 = todos os recebidos).
-// Clicar numa barra abre o detalhamento por responsável (quem passou por aquela etapa).
-export function Funnel({
-  stages,
-  byResponsible = {},
-}: {
-  stages: FunnelStage[]
-  byResponsible?: Record<string, AgentCount[]>
-}) {
+// Clicar numa barra abre o drill por responsável → cards + link do Pipefy (lazy).
+export function Funnel({ stages, period }: { stages: FunnelStage[]; period: LeadPeriod }) {
   const ct = useChartTheme()
   const [selected, setSelected] = useState<FunnelStage | null>(null)
   const hasData = stages.some((s) => s.leadsReached > 0)
@@ -97,9 +92,11 @@ export function Funnel({
             </ResponsiveContainer>
           </div>
           {selected && (
-            <ResponsibleBreakdown
+            <LeadsAgentDrill
+              dimension="funnel"
+              dimKey={String(selected.order)}
               title={`Alcançaram ${selected.phase}`}
-              rows={byResponsible[String(selected.order)] ?? []}
+              period={period}
               onClose={() => setSelected(null)}
             />
           )}

@@ -237,35 +237,187 @@ export interface DuplicateResponsibilityRow {
 }
 
 // ── Painel de Sucesso do Cliente (CS, Pipefy) — domínio SEPARADO do leads/comercial ──
-// Espelham as tabelas/views de supabase/migrations/20260715_cs_pipeline_schema.sql e
-// 20260716_cs_dashboard.sql. RLS mais estrito que o leads: só quem é do departamento
-// de CS (ou manager/admin) enxerga qualquer linha — ver docs/updates/painel-sucesso-
-// cliente-cs.md. Sem conceito de "fase morta/ganha" ainda (pendente de definição do
-// dono) — "cards por fase" e "tempo na fase" não dependem disso.
-
-export interface CsKpis {
-  total: number
-  withoutResponsible: number
-  distinctResponsible: number
-  avgDaysInCurrentPhase: number | null
-}
-
-export interface CsPhaseCount {
-  phaseId: string
-  name: string
-  funnelOrder: number
-  count: number
-  avgDaysInPhase: number | null
-}
-
-export interface CsAgentCount {
+// Painel de CS reformulado (2026-07-21) — painel de 4 abas, ver docs/updates/
+// painel-sucesso-cliente-cs.md. Domínio SEPARADO do leads: RLS mais estrito (só quem é
+// do departamento de CS, ou manager/admin, enxerga qualquer linha).
+//
+// PÁGINA 1 (Matriz Fase × Idade): a RPC get_cs_matrix (migration
+// 20260721_cs_age_windows.sql) devolve os cards escopados pelo RLS com a idade calculada
+// AS-OF o fim do período, mais fase/ordem do funil/tempo na fase. A matriz (fase × janela
+// 1-30/31-90/91-180/181+), o total e o tempo médio por fase, o filtro ativo/inativo e o
+// drill-down por célula acontecem no cliente sobre `cards`.
+export interface CsMatrixCard {
+  pipefyCardId: string
+  title: string | null // nome do cliente (dado sensível — só chega a quem o RLS libera)
+  ageDays: number // referenceAt - pipefy_created_at, em dias (>= 0)
+  dwellDays: number // tempo na fase atual, em dias (>= 0); ~idade enquanto faltar evento
   agentId: string | null
-  name: string
-  count: number
+  agentName: string // "Sem responsável" quando agentId é null
+  active: boolean // false = card em fase terminal (inativo)
+  phaseId: string | null
+  phase: string // nome da fase (denormalizado); "Sem fase" se não casar
+  funnelOrder: number | null // ordem no funil (null se a fase não estiver seedada)
 }
 
-export interface CsDashboardData {
-  kpis: CsKpis
-  phaseDistribution: CsPhaseCount[]
-  byResponsible: Record<string, CsAgentCount[]>
+export interface CsMatrixData {
+  referenceAt: string // LEAST(fim do período, now()) — a "data da foto" (ISO)
+  cards: CsMatrixCard[]
+}
+
+// PÁGINA 2 (Equipe): a RPC get_cs_team(p_start, p_end) (migrations 20260722 + 20260723_v2)
+// devolve, numa chamada só, o resumo por responsável no PERÍODO. Duas seções independentes:
+//
+// 1) MOVIMENTO (coorte = cards ATIVOS): moveu de fase no período × comentou no período,
+//    ignorando entrada/saída de fases is_negotiation/exclude_from_movement. "Atualizou" =
+//    qualquer comentário. + cards recebidos (troca de responsável).
+export interface CsTeamMovementAgent {
+  agentId: string | null
+  agentName: string // "Sem responsável" quando agentId é null
+  received: number // cards recebidos no período (troca de responsável)
+  movedWithUpdate: number // moveu de fase E comentou
+  movedNoUpdate: number // moveu de fase E não comentou
+  onlyUpdate: number // não moveu E comentou
+  idle: number // não moveu E não comentou (sem mover/atualizar)
+}
+export type CsTeamMovementTotals = Omit<CsTeamMovementAgent, 'agentId' | 'agentName'>
+
+// 2) NEGOCIAÇÕES FEITAS NO PERÍODO (card com mudança real nos 5 campos no período),
+//    classificadas pela completude ATUAL. Completa=5 · Parcial=3–4 com Q.D · Incompleta=resto.
+//    `cards` alimenta o drill-down (campos faltando + link do Pipefy).
+export type CsNegotiationClass = 'completa' | 'parcial' | 'incompleta'
+
+export interface CsNegotiationCard {
+  pipefyCardId: string
+  title: string | null
+  cls: CsNegotiationClass
+  missing: string[] // rótulos dos 5 campos vazios agora (ex.: ['Q.A','P.V']); [] se completa
+}
+
+export interface CsTeamNegotiationAgent {
+  agentId: string | null
+  agentName: string
+  total: number
+  completa: number
+  parcial: number
+  incompleta: number
+  cards: CsNegotiationCard[]
+}
+export type CsTeamNegotiationTotals = Pick<
+  CsTeamNegotiationAgent,
+  'total' | 'completa' | 'parcial' | 'incompleta'
+>
+
+export interface CsTeamData {
+  periodStart: string // ISO (início do período, inclusivo)
+  periodEnd: string // ISO (fim do período, exclusivo)
+  movement: CsTeamMovementAgent[]
+  movementTotals: CsTeamMovementTotals
+  negotiations: CsTeamNegotiationAgent[]
+  negotiationTotals: CsTeamNegotiationTotals
+}
+
+// ── Aquecimento de números WhatsApp — domínio SEPARADO ──────────────────────
+// Espelham as tabelas de supabase/migrations/20260719_warmup_schema.sql. Módulo
+// sensível: só manager/admin leem/configuram (RLS). As tabelas de execução
+// (conversations/messages) só são escritas pelo tick/callback via service_role.
+
+export type WarmupNumberStatus = 'active' | 'paused' | 'blocked' | 'cooling'
+export type WarmupQualityRating = 'GREEN' | 'YELLOW' | 'RED'
+export type WarmupTemplateKind = 'template' | 'session_snippet'
+export type WarmupMessageType = 'template' | 'session'
+export type WarmupDispatchMode = 'live' | 'dry_run'
+export type WarmupConversationStatus = 'active' | 'idle' | 'closed'
+
+// Número do pool. `sender_id` = phone_number_id da Meta; `phone_number` = E.164.
+export interface WarmupNumber {
+  id: string
+  sender_id: string
+  phone_number: string
+  display_name: string | null
+  waba_id: string | null
+  status: WarmupNumberStatus
+  participating: boolean
+  added_at: string
+  quality_rating: WarmupQualityRating | null
+  notes: string | null
+  created_at: string
+  updated_at: string
+}
+
+// Modo de aquecimento: 'sessao' = intensivo num período fixo (ex.: 24h);
+// 'gradual' = rampa multi-dia (warmup_ramp_stages).
+export type WarmupMode = 'sessao' | 'gradual'
+
+// Configuração em key/value. Chaves com valor padrão no código (getWarmupSettings/
+// readSettings), então funcionam mesmo sem seed — a primeira gravação as cria.
+export interface WarmupSettings {
+  qntd_numbers: number
+  max_numbers_cap: number
+  dry_run: boolean
+  tick_max_sends: number
+  min_gap_minutes: number
+  max_gap_minutes: number
+  // ── Modo e parâmetros do modo Sessão ──
+  warmup_mode: WarmupMode
+  sessao_duracao_horas: number
+  sessao_msgs_por_numero: number
+  sessao_conversas_por_numero: number
+  sessao_iniciada_em: string | null // ISO; null = sessão não iniciada
+}
+
+export interface WarmupRampStage {
+  id: number
+  day_from: number
+  day_to: number | null
+  daily_message_cap: number
+  new_conversations_per_day_cap: number
+}
+
+// Catálogo único: template aprovado (abre conversa) ou frase livre de sessão.
+export interface WarmupTemplate {
+  id: string
+  kind: WarmupTemplateKind
+  meta_template_name: string | null
+  meta_template_language: string | null
+  body: string
+  active: boolean
+  created_at: string
+}
+
+export interface WarmupConversation {
+  id: string
+  number_a_id: string
+  number_b_id: string
+  opener_number_id: string
+  opened_at: string
+  last_message_at: string
+  last_sender_id: string | null
+  message_count: number
+  status: WarmupConversationStatus
+}
+
+export interface WarmupMessage {
+  id: string
+  conversation_id: string | null
+  from_number_id: string
+  to_number_id: string
+  message_type: WarmupMessageType
+  template_id: string | null
+  content: string | null
+  dispatch_mode: WarmupDispatchMode
+  make_dispatch_ok: boolean | null
+  graph_message_id: string | null
+  error_detail: string | null
+  sent_at: string
+}
+
+// Estatística por número exibida no painel (dias aquecendo, volume, etc.).
+export interface WarmupNumberStats {
+  numberId: string
+  daysWarming: number
+  sentTotal: number
+  sentLive: number
+  sentDryRun: number
+  sentToday: number
+  dailyCap: number
 }

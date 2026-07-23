@@ -1,0 +1,33 @@
+name: Aquecimento WhatsApp — Tick
+
+# Cloudflare Pages não tem Cron Triggers (recurso exclusivo de Workers), então o
+# "tick" do aquecimento é acionado por GitHub Actions batendo o endpoint HTTP —
+# mesmo padrão do supabase-keepalive.yml. O pacing real (quais pares falam agora,
+# gap entre mensagens) é decidido DENTRO do tick; o cron só garante a frequência.
+#
+# Secrets necessários (Settings > Secrets and variables > Actions):
+#   BLUELINE_URL         — URL pública do deploy (ex: https://app.exemplo.com)
+#   WARMUP_CRON_SECRET   — mesmo valor da env var no Cloudflare
+on:
+  schedule:
+    - cron: '*/10 * * * *'   # a cada ~10 min (GitHub não garante o minuto exato)
+  workflow_dispatch:
+
+jobs:
+  tick:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Chama o tick do aquecimento
+        run: |
+          RESPONSE=$(curl -s -w "\n%{http_code}" \
+            -X POST \
+            -H "X-Warmup-Cron-Secret: ${{ secrets.WARMUP_CRON_SECRET }}" \
+            "${{ secrets.BLUELINE_URL }}/api/aquecimento/tick")
+          BODY=$(echo "$RESPONSE" | head -n -1)
+          STATUS=$(echo "$RESPONSE" | tail -n 1)
+          echo "HTTP $STATUS"
+          echo "$BODY"
+          if [ "$STATUS" != "200" ]; then
+            echo "Tick falhou com status $STATUS"
+            exit 1
+          fi

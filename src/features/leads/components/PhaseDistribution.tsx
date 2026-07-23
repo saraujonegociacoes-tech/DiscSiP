@@ -13,19 +13,20 @@ import {
   ResponsiveContainer,
 } from 'recharts'
 import { useChartTheme } from '@/components/blueline/useChartTheme'
-import { ResponsibleBreakdown } from './ResponsibleBreakdown'
-import type { PhaseDistribution as PhaseDistributionRow, AgentCount } from '@/app/actions/leads'
+import { LeadsAgentDrill } from './LeadsAgentDrill'
+import type { PhaseDistribution as PhaseDistributionRow } from '@/app/actions/leads'
+import type { LeadPeriod } from '@/lib/period'
 
 // Distribuição por fase ATUAL — barras horizontais do VOLUME atual (quantos leads do período
 // estão agora em cada fase). Complementa o Funil (fluxo cumulativo): aqui a soma bate com o
-// total. Fases mortas em vermelho (cor por significado). Clicar numa barra abre o detalhamento
-// por responsável (quem está parado ali). Espelha o padrão do Funnel + useChartTheme.
+// total. Fases mortas em vermelho (cor por significado). Clicar numa barra abre o drill por
+// responsável → cards + link do Pipefy (lazy). Espelha o padrão do Funnel + useChartTheme.
 export function PhaseDistribution({
   data,
-  byResponsible = {},
+  period,
 }: {
   data: PhaseDistributionRow[]
-  byResponsible?: Record<string, AgentCount[]>
+  period: LeadPeriod
 }) {
   const ct = useChartTheme()
   const [selected, setSelected] = useState<string | null>(null)
@@ -104,9 +105,11 @@ export function PhaseDistribution({
             </ResponsiveContainer>
           </div>
           {selected && (
-            <ResponsibleBreakdown
+            <LeadsAgentDrill
+              dimension="phase"
+              dimKey={selected}
               title={selected}
-              rows={byResponsible[selected] ?? []}
+              period={period}
               onClose={() => setSelected(null)}
             />
           )}

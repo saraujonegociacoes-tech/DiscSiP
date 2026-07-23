@@ -12,6 +12,7 @@ import {
   HelpCircle,
   HeartHandshake,
   Handshake,
+  Flame,
   type LucideIcon,
 } from 'lucide-react'
 import { useSoftphoneStore } from '@/store/softphoneStore'
@@ -39,6 +40,7 @@ type NavItem = { href: string; label: string; icon: LucideIcon; roles: Role[] }
 // entre eles conforme o papel, igual sempre foi.
 const OPERATION_ITEMS: NavItem[] = [
   { href: '/softphone', label: 'Discador', icon: PhoneCall, roles: ['agent', 'supervisor', 'manager', 'admin'] },
+  { href: '/aquecimento', label: 'Warmup Whatsapp', icon: Flame, roles: ['supervisor', 'manager', 'admin'] },
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['supervisor', 'manager', 'admin'] },
   { href: '/campaigns', label: 'Campanhas', icon: Megaphone, roles: ['supervisor', 'manager', 'admin'] },
   { href: '/admin', label: 'Admin', icon: Shield, roles: ['admin'] },
