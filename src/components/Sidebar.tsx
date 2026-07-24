@@ -32,7 +32,7 @@ import {
   SidebarFooter,
   useSidebar,
 } from '@/components/ui/sidebar'
-import { BlueLineLogo, Mark } from '@/components/brand/BlueLineLogo'
+import { BlueDeskLogo, Mark } from '@/components/brand/BlueDeskLogo'
 import { cn } from '@/lib/utils'
 
 type NavItem = { href: string; label: string; icon: LucideIcon; roles: Role[] }
@@ -126,7 +126,7 @@ export function Sidebar() {
   return (
     <UiSidebar collapsible="icon" className="border-r border-sidebar-border">
       <SidebarHeader className="border-b border-sidebar-border px-3 py-4">
-        {collapsed ? <Mark className="mx-auto" /> : <BlueLineLogo />}
+        {collapsed ? <Mark className="mx-auto" /> : <BlueDeskLogo />}
       </SidebarHeader>
 
       <SidebarContent>

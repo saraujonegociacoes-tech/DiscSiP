@@ -1,4 +1,4 @@
-# Blue Line — Discagem Paralela / Preditiva (estudo de viabilidade + testes)
+# Blue Desk — Discagem Paralela / Preditiva (estudo de viabilidade + testes)
 
 > Criado em 2026-06-19. Registro do estudo e dos testes empíricos da feature de
 > **discagem paralela** (discar N números ao mesmo tempo, conectar o primeiro que
@@ -25,7 +25,7 @@ ligação ser produtiva/improdutiva) para **discagem preditiva/paralela**:
 
 A avaliação inicial supôs que preditiva exigiria backend de telefonia server-side
 (Asterisk/FreeSWITCH originando chamadas + AMD + bridge), o que reabriria o problema
-de infra que a arquitetura do Blue Line foi feita pra evitar (`ws://` only, sem IP fixo,
+de infra que a arquitetura do Blue Desk foi feita pra evitar (`ws://` only, sem IP fixo,
 sem API Intelbras). **Isso foi refutado pelos testes.** A feature é viável com a
 arquitetura atual (helper + softphone utilizado em multi-call), graças a duas descobertas:
 
@@ -151,8 +151,8 @@ Nada de infra nova — tudo "código de app":
 - Chaves relevantes do `[Settings]`: `singleMode=0`, `minimized=1`, `callWaiting=1`,
   `maxConcurrentCalls=0` (só limita **entrada**, não atrapalha saída), `disableMessaging=0`,
   `bringToFrontOnIncoming=0`, `autoHangUpTime=0`.
-- Hooks de evento apontam para `C:\Users\Public\blueline-helper\on-call-*.bat`
-  (o doc antigo cita `discsip-helper` — desatualizado; a pasta atual é `blueline-helper`).
+- Hooks de evento apontam para `C:\Users\Public\bluedesk-helper\on-call-*.bat`
+  (o doc antigo cita `discsip-helper` — desatualizado; a pasta atual é `bluedesk-helper`).
 - Helper em `http://localhost:3001` (`HELPER_URL` em `src/lib/constants.ts`).
 
 ### Como testar manualmente (reprodução)

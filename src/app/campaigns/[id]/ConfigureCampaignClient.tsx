@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import { ArrowLeft } from 'lucide-react'
-import { AppShell } from '@/components/blueline/AppShell'
+import { AppShell } from '@/components/bluedesk/AppShell'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { updateCampaignConfig, setCampaignAgents } from '@/app/actions/campaigns'
@@ -281,7 +281,7 @@ export function ConfigureCampaignClient({
         <section className="rounded-2xl border border-border bg-gradient-card p-5 shadow-card">
           <h2 className="text-sm font-semibold text-foreground">Notificar o gerente</h2>
           <p className="mb-4 mt-1 text-xs text-muted-foreground">
-            Ao registrar um destes resultados, o Blue Line envia os dados do lead ao Make
+            Ao registrar um destes resultados, o Blue Desk envia os dados do lead ao Make
             (que dispara email/WhatsApp). Nenhum selecionado = sem notificação.
           </p>
           <div className="flex flex-wrap gap-2">

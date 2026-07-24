@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react'
 import { AlertCircle, Download, ExternalLink, X } from 'lucide-react'
-import { useTheme } from '@/components/blueline/theme'
+import { useTheme } from '@/components/bluedesk/theme'
 import { BRT_TZ } from '@/lib/timezone'
 import type { CsMatrixData, CsMatrixCard } from '@/lib/types/database'
 

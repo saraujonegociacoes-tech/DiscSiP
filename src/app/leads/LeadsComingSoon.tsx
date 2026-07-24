@@ -1,6 +1,6 @@
 'use client'
 
-import { ComingSoon } from '@/components/blueline/ComingSoon'
+import { ComingSoon } from '@/components/bluedesk/ComingSoon'
 
 // Placeholder de lançamento do dashboard de leads. Enquanto NEXT_PUBLIC_LEADS_ENABLED não
 // estiver ligado, /leads mostra este "Em breve" (gate em src/app/leads/page.tsx).

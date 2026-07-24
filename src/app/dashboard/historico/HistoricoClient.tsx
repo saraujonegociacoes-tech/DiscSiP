@@ -2,9 +2,9 @@
 
 import { useEffect, useState } from 'react'
 import { PhoneIncoming, PhoneOutgoing } from 'lucide-react'
-import { AppShell } from '@/components/blueline/AppShell'
-import { PageHeader } from '@/components/blueline/PageHeader'
-import { PeriodPicker } from '@/components/blueline/PeriodPicker'
+import { AppShell } from '@/components/bluedesk/AppShell'
+import { PageHeader } from '@/components/bluedesk/PageHeader'
+import { PeriodPicker } from '@/components/bluedesk/PeriodPicker'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { DISPOSITIONS } from '@/lib/dispositions'

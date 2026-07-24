@@ -62,7 +62,7 @@ export function CreateProjectDialog() {
             <div className="grid grid-cols-3 gap-3">
               <div className="col-span-2 space-y-2">
                 <Label htmlFor="name">Nome</Label>
-                <Input id="name" name="name" placeholder="Blue Line App" required />
+                <Input id="name" name="name" placeholder="Blue Desk App" required />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="key">Chave</Label>

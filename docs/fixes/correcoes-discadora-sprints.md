@@ -1,4 +1,4 @@
-# Blue Line / Blue Line — Correções da Discadora (plano por sprints)
+# Blue Desk / Blue Desk — Correções da Discadora (plano por sprints)
 
 > Criado em 2026-06-24. Conceito e planejamento das correções dos bugs reportados
 > após o lançamento da **discagem paralela/preditiva** (helper v1.6 + front-end).
@@ -132,7 +132,7 @@ AMD precisa rodar **onde o áudio existe**: no **Intelbras WidevoiceX**. Descobe
 
 Encaminhamento conforme a resposta:
 - **Sim, derruba:** validar em 1 teste real (cai em caixa → `cmdCallEnd` → helper avança).
-  Possivelmente **nada a implementar** no Blue Line.
+  Possivelmente **nada a implementar** no Blue Desk.
 - **Sinaliza, mas não derruba:** avaliar se dá para o PABX ser configurado para derrubar;
   via softphone utilizado puro, inalcançável.
 - **Não tem AMD:** então não existe solução automática confiável com a stack atual. As
@@ -141,7 +141,7 @@ Encaminhamento conforme a resposta:
   custo da caixa postal. Reabrir a decisão com o usuário.
 
 ### Arquivos prováveis
-- Provavelmente **nenhum** no Blue Line (a solução vive no PABX). Se o teste exigir tabular
+- Provavelmente **nenhum** no Blue Desk (a solução vive no PABX). Se o teste exigir tabular
   o `cmdCallEnd` de máquina de forma diferente, aí sim mexe em `usePowerDialer.ts`.
 
 ### Risco / esforço

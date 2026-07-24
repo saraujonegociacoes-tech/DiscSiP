@@ -4,7 +4,7 @@ import { Rocket } from 'lucide-react'
 // Placeholder "Em preparação" das abas de CS ainda não construídas (Equipe, Minutas,
 // Pagamento — dependem de ingestão nova e de pendências do dono, ver docs/updates/
 // painel-sucesso-cliente-cs.md). Réplica local de src/features/leads/components/
-// TabPlaceholder.tsx (domínio SEPARADO). Theme-aware via tokens da Blue Line.
+// TabPlaceholder.tsx (domínio SEPARADO). Theme-aware via tokens da Blue Desk.
 export function CsTabPlaceholder({
   icon: Icon = Rocket,
   title = 'Em breve nesta aba',

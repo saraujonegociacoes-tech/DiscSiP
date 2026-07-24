@@ -16,14 +16,14 @@ do Discador, do Dashboard de Leads e do Painel de CS (RLS, tabelas e rotas próp
 ## O que é
 Até 6 números WhatsApp da **mesma BM** (várias WABAs) conversam entre si automaticamente
 para construir reputação/quality rating antes de entrarem em campanhas de disparo real. O
-Blue Line é o plano de controle (decide quem/quando/o quê, grava histórico, dispara o Make);
+Blue Desk é o plano de controle (decide quem/quando/o quê, grava histórico, dispara o Make);
 o **Make** executa a chamada na Graph API da Meta e devolve o resultado.
 
 ## Regra central (janela de 24h)
 A Cloud API exige **template aprovado** para abrir qualquer conversa sem sessão de 24h ativa
 (não dá para fugir 100%). Cada conversa **abre com 1 template leve** e segue em **texto
 livre variado** dentro das 24h. A janela é derivada do próprio `warmup_messages` (a janela
-abre em quem recebeu; os dois lados são do Blue Line) — **sem** webhook de status da Meta no
+abre em quem recebeu; os dois lados são do Blue Desk) — **sem** webhook de status da Meta no
 MVP. Detalhe em [`aquecimento-whatsapp.md`](aquecimento-whatsapp.md), decisão 3.
 
 ## Schema + orquestração (Sprints 1–3)

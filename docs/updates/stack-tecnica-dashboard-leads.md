@@ -3,7 +3,7 @@
 Documento de referência da stack definida para o dashboard de autoavaliação (agente) e visão gerencial (supervisor), com o que cada peça supre e por quê foi escolhida.
 
 > ⚠ **Atualização (03/jul/2026):** o *plano de dados* (Pipefy → Make → Supabase, RLS + Realtime + Views) foi
-> mantido. O que **mudou** ao virar uma seção da Blue Line: o frontend **não é React+Vite no Cloudflare Pages** —
+> mantido. O que **mudou** ao virar uma seção da Blue Desk: o frontend **não é React+Vite no Cloudflare Pages** —
 > é uma **rota nativa do Next** (`/leads`) reusando Recharts/Radix/Tailwind/Supabase/RBAC que já existem.
 > E o Make **não usa webhook**: é um **poll agendado com filtro delta** (24/7) chamando `rpc/ingest_lead_card`.
 > Ver [`sprints-dashboard-leads.md`](sprints-dashboard-leads.md) e [`make-integracao-pipefy.md`](make-integracao-pipefy.md).
@@ -13,11 +13,11 @@ Documento de referência da stack definida para o dashboard de autoavaliação (
 ## Visão geral
 
 ```
-Pipefy (CRM) → Make (automação) → Supabase (banco + auth + realtime) → Next/Blue Line (frontend)
+Pipefy (CRM) → Make (automação) → Supabase (banco + auth + realtime) → Next/Blue Desk (frontend)
 ```
 
 Cada camada resolve um problema específico do conceito. Nenhuma peça é redundante com outra.
-*(Nota: o desenho original dizia "Cloudflare Pages"; virou rota do Next na Blue Line — ver atualização acima.)*
+*(Nota: o desenho original dizia "Cloudflare Pages"; virou rota do Next na Blue Desk — ver atualização acima.)*
 
 ---
 

@@ -1,6 +1,6 @@
 # Sprints — Dashboard de fluxo de leads (Pipefy)
 
-Plano de execução do dashboard de leads como **seção própria** dentro da Blue Line.
+Plano de execução do dashboard de leads como **seção própria** dentro da Blue Desk.
 Este documento é o roadmap; os três documentos-irmãos deste silo são a fonte de verdade de _o quê_ e _por quê_:
 
 - [`stack-tecnica-dashboard-leads.md`](stack-tecnica-dashboard-leads.md) — stack e o que cada peça supre
@@ -46,8 +46,8 @@ Este documento é o roadmap; os três documentos-irmãos deste silo são a fonte
 
 Decisões já fechadas com o dono do produto (não reabrir sem motivo):
 
-1. **Seção própria, mesmo app.** O dashboard de leads é uma seção independente (`/leads`), acessível pelo mesmo login/deploy da Blue Line — **não** é um app à parte, e **não** se mistura com o dashboard do discador (`/dashboard`). "Discadora é discadora; dashboard de leads é outra."
-2. **Reusar a stack da Blue Line, descartar Vite/Pages.** O _plano de dados_ do doc de stack (Pipefy → Make → Supabase, com RLS + Realtime + Views) é 100% aproveitado. A _casca_ proposta (React + Vite no Cloudflare Pages) é descartada em favor de uma **rota nativa do Next**, reusando Recharts, Radix, Tailwind, os clientes Supabase e o RBAC que já existem.
+1. **Seção própria, mesmo app.** O dashboard de leads é uma seção independente (`/leads`), acessível pelo mesmo login/deploy da Blue Desk — **não** é um app à parte, e **não** se mistura com o dashboard do discador (`/dashboard`). "Discadora é discadora; dashboard de leads é outra."
+2. **Reusar a stack da Blue Desk, descartar Vite/Pages.** O _plano de dados_ do doc de stack (Pipefy → Make → Supabase, com RLS + Realtime + Views) é 100% aproveitado. A _casca_ proposta (React + Vite no Cloudflare Pages) é descartada em favor de uma **rota nativa do Next**, reusando Recharts, Radix, Tailwind, os clientes Supabase e o RBAC que já existem.
 3. **Isolamento de dados agora, ponte pronta pra depois.** Os leads vivem em tabelas próprias, **sem** reconciliar com os `profiles` do discador. A dimensão de agente do Pipefy carrega uma coluna `profile_id` _nullable_ e vazia por ora — no dia em que cruzar "desempenho no discador × no funil" for desejado, vira _backfill_, não remigração. Não é agora.
 4. **Design system existente, não "Midnight Indigo".** A seção usa o tema _theme-aware_ que já existe (`theme.tsx`, `useChartTheme.ts`, `KpiCard`), não a paleta dark/glow proposta — para não virar uma ilha visualmente estrangeira. (Coerente com a própria ressalva do `panoramavisual.md`.)
 5. **Duas visões via papéis existentes.** "Agente" (autoavaliação) e "Supervisor" (gerencial/ranking) mapeiam nos papéis `agent/supervisor/manager/admin` que o RBAC já tem. O escopo é garantido no banco (RLS), não no frontend, e segue o **mesmo modelo do discador**: agente vê **o seu**; **supervisor vê o do seu departamento + os órfãos** (leads sem responsável, para triagem); manager/admin veem **tudo**. A ponte de equipe é `lead_agents.profile_id → profiles.department_id`. Ver `20260707_leads_supervisor_scope.sql` (o S0 tinha posto supervisor no mesmo balde que manager — corrigido 07/jul).

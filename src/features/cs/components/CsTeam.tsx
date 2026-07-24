@@ -11,7 +11,7 @@ import {
   ExternalLink,
   X,
 } from 'lucide-react'
-import { PeriodPicker } from '@/components/blueline/PeriodPicker'
+import { PeriodPicker } from '@/components/bluedesk/PeriodPicker'
 import { currentCycle, type LeadPeriod } from '@/lib/period'
 import { getCsTeam } from '@/app/actions/cs'
 import { cn } from '@/lib/utils'

@@ -68,7 +68,7 @@
 }
 
 /*
- * Blue Line — Power Dialer
+ * Blue Desk — Power Dialer
  * LIGHT theme = :root (default)  ·  DARK theme = .dark
  * Brand: #000020 #001F5B #0066CC #00C2A8 #FFB020 #FF4D4F #D9E1F2 #FFFFFF
  */
@@ -263,6 +263,29 @@
   html, body, [data-theme-transition] {
     transition: background-color 350ms ease, color 350ms ease, border-color 350ms ease;
   }
+
+  /* ─── Scrollbar padrão GLOBAL — fina e temática em TODA a app (janela + qualquer
+     container com overflow). Substitui a barra cinza padrão do SO em todas as abas.
+     `scrollbar-width`/`scrollbar-color` no `*` cobrem Firefox (inclusive containers
+     aninhados); os pseudo-elementos `::-webkit-scrollbar` não-escopados cobrem
+     Chromium/WebKit. Theme-aware via tokens — mesma linguagem visual da utility
+     `scrollbar-slim`. ─── */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in oklch, var(--color-muted-foreground) 32%, transparent) transparent;
+  }
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb {
+    background-color: color-mix(in oklch, var(--color-muted-foreground) 28%, transparent);
+    border-radius: 9999px;
+    border: 3px solid transparent;
+    background-clip: padding-box;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background-color: color-mix(in oklch, var(--color-muted-foreground) 50%, transparent);
+  }
+  ::-webkit-scrollbar-corner { background: transparent; }
 }
 
 /* ─── utilities ─── */
@@ -314,24 +337,24 @@
   &:hover::after { transform: translateX(100%); }
 }
 
-@keyframes blueline-pulse-ring {
+@keyframes bluedesk-pulse-ring {
   0%   { box-shadow: 0 0 0 0   oklch(0.70 0.13 184 / 0.55); }
   70%  { box-shadow: 0 0 0 14px oklch(0.70 0.13 184 / 0);   }
   100% { box-shadow: 0 0 0 0   oklch(0.70 0.13 184 / 0);    }
 }
-@utility pulse-ring { animation: blueline-pulse-ring 2s ease-out infinite; }
+@utility pulse-ring { animation: bluedesk-pulse-ring 2s ease-out infinite; }
 
-@keyframes blueline-float {
+@keyframes bluedesk-float {
   0%, 100% { transform: translateY(0); }
   50%      { transform: translateY(-3px); }
 }
-@utility floaty { animation: blueline-float 5s ease-in-out infinite; }
+@utility floaty { animation: bluedesk-float 5s ease-in-out infinite; }
 
-@keyframes blueline-fade-up {
+@keyframes bluedesk-fade-up {
   from { opacity: 0; transform: translateY(8px); }
   to   { opacity: 1; transform: translateY(0); }
 }
-@utility fade-up { animation: blueline-fade-up 400ms cubic-bezier(.2,.7,.3,1) both; }
+@utility fade-up { animation: bluedesk-fade-up 400ms cubic-bezier(.2,.7,.3,1) both; }
 
 /* Scrollbar fino e temático (substitui a barra cinza padrão do SO em containers com
    overflow interno). Trilho transparente; thumb com "respiro" (borda transparente +

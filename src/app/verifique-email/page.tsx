@@ -1,13 +1,13 @@
 import Link from 'next/link'
 import { Mail } from 'lucide-react'
-import { BlueLineLogo } from '@/components/brand/BlueLineLogo'
+import { BlueDeskLogo } from '@/components/brand/BlueDeskLogo'
 
 export default function VerifiqueEmailPage() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-background bg-gradient-mesh p-4">
       <div className="w-full max-w-md rounded-2xl border border-border bg-gradient-card p-8 text-center shadow-elevated">
         <div className="mb-6 flex justify-center">
-          <BlueLineLogo />
+          <BlueDeskLogo />
         </div>
         <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-primary text-primary-foreground shadow-glow">
           <Mail className="h-6 w-6" />

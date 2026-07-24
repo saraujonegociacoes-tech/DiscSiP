@@ -10,7 +10,7 @@ import {
   LabelList,
   ResponsiveContainer,
 } from 'recharts'
-import { useChartTheme } from '@/components/blueline/useChartTheme'
+import { useChartTheme } from '@/components/bluedesk/useChartTheme'
 import type { DeathByAttempt as DeathByAttemptRow } from '@/app/actions/leads'
 
 // Em qual tentativa o lead mais morre (S3) — barras horizontais, série única. Cada barra é

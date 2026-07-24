@@ -24,7 +24,7 @@ export function AgentBlock() {
         id="helper"
         eyebrow="Helper local"
         title="A ponte entre o navegador e o softphone utilizado"
-        description="Sem o helper rodando, o Blue Line não consegue acionar o softphone utilizado. O banner no topo do Dialer mostra o estado."
+        description="Sem o helper rodando, o Blue Desk não consegue acionar o softphone utilizado. O banner no topo do Dialer mostra o estado."
       >
         <HelperStatus />
       </Section>

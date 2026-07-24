@@ -2,7 +2,7 @@
 
 Análise da proposta visual recebida (paleta, tipografia, animação e layout), à parte da discussão sobre dado/arquitetura já registrada em outro documento.
 
-> ⚠ **Decisão (03/jul/2026):** a seção usará o **design system que já existe na Blue Line** (`theme.tsx`,
+> ⚠ **Decisão (03/jul/2026):** a seção usará o **design system que já existe na Blue Desk** (`theme.tsx`,
 > `useChartTheme.ts`, `KpiCard`, tokens theme-aware), **não** a paleta "Midnight Indigo" — para não virar uma
 > ilha visual dentro do app. Esta análise segue útil como referência de tom (count-up sóbrio, som opt-in), mas a
 > paleta/base vem do app. Ver princípios em [`sprints-dashboard-leads.md`](sprints-dashboard-leads.md).

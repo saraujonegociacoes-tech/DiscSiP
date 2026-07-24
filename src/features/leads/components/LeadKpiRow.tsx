@@ -1,7 +1,7 @@
 'use client'
 
 import { Inbox, Hourglass, Trophy, TrendingDown, Timer, AlertTriangle } from 'lucide-react'
-import { KpiCard } from '@/components/blueline/KpiCard'
+import { KpiCard } from '@/components/bluedesk/KpiCard'
 import { useCountUp } from '@/features/leads/useCountUp'
 import type { LeadKpis } from '@/app/actions/leads'
 

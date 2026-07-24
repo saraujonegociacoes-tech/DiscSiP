@@ -1,7 +1,7 @@
 /**
- * Tipos do modulo Monday (tarefas/sprints), escritos a mao no padrao do Blue Line
+ * Tipos do modulo Monday (tarefas/sprints), escritos a mao no padrao do Blue Desk
  * (mesma abordagem de src/lib/types/database.ts). Espelham as tabelas monday_* da
- * migration. Os "profiles" sao reusados do Blue Line (coluna `name`, sem avatar_url).
+ * migration. Os "profiles" sao reusados do Blue Desk (coluna `name`, sem avatar_url).
  */
 
 export type MondayTaskStatus = 'todo' | 'working' | 'review' | 'done' | 'stuck'
@@ -115,7 +115,7 @@ export interface MondayBurndownPoint {
   remaining: number | null
 }
 
-/** Subconjunto do profile do Blue Line usado para responsavel/membro. */
+/** Subconjunto do profile do Blue Desk usado para responsavel/membro. */
 export interface MondayMemberProfile {
   id: string
   name: string | null

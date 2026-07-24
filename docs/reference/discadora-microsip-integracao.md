@@ -1,4 +1,4 @@
-# Blue Line — Integração com softphone utilizado (discagem, encerramento, eventos)
+# Blue Desk — Integração com softphone utilizado (discagem, encerramento, eventos)
 
 > Estado consolidado da sessão. Fonte de verdade da integração discador ↔ softphone utilizado.
 > Complementa `arquitetura-e-proximos-passos.md` (mesma pasta `docs/reference/`).
@@ -7,15 +7,15 @@
 
 ## 1. Objetivo do fluxo (decisão do usuário)
 
-Fluxo desejado, com softphone utilizado e helper **invisíveis** (agente só usa o Blue Line):
+Fluxo desejado, com softphone utilizado e helper **invisíveis** (agente só usa o Blue Desk):
 
 ```
-Iniciar discagem → liga → botão "Encerrar" (no Blue Line) encerra a chamada
+Iniciar discagem → liga → botão "Encerrar" (no Blue Desk) encerra a chamada
 → aparece tabulação → agente qualifica → roda a próxima → ... até a lista acabar
 ```
 
 Meta: **1 clique por contato** (só a qualificação). Hoje são 3 (desligar no softphone utilizado +
-Encerrar no Blue Line + qualificar).
+Encerrar no Blue Desk + qualificar).
 
 ---
 
@@ -72,7 +72,7 @@ Express na porta 3001. Endpoints:
 - `POST /call` `{ number }` → disca via `microsip.exe <numero>` (fallback `tel:`)
 - `POST /hangup` → `microsip.exe "msip:hangupall"`
 - `GET /event/call-start?number=` e `GET /event/call-end?number=` → recebem do softphone utilizado (via curl nos .bat)
-- `GET /events` → último evento `{ id, type, number, at }` (Blue Line faz polling)
+- `GET /events` → último evento `{ id, type, number, at }` (Blue Desk faz polling)
 
 Normalização de número (`formatNumber`): tira não-dígitos e o código de país (`+55`/`55`) e **sempre**
 prefixa o CSP `021`, discando `021 + DDD + número` (ex: `11952085529` → `02111952085529`,
@@ -110,7 +110,7 @@ Fix: mover os hooks para um caminho SEM espaço — `C:\Users\Public\discsip-hel
 todo Windows, gravável sem admin, serve p/ qualquer usuário, inclusive nomes com espaço/acento).
 Automatizado em `local-helper/setup-hooks.ps1` (chamado pelo `instalar.bat`). NÃO precisa recompilar.
 
-### Sub-sprint B — wiring no Blue Line (FEITO em parte)
+### Sub-sprint B — wiring no Blue Desk (FEITO em parte)
 - ✅ Botão "Encerrar" → `POST /hangup` + `setCallStatus('ended')` (`SoftphoneClient.tsx`, `handleHangup`)
 - ✅ Polling em `/events` (`usePowerDialer.ts`): enquanto `callStatus==='calling'`, 1ª leitura vira baseline;
   evento novo `call-end`/`call-busy` → `setCallStatus('ended')` → tabulação aparece sozinha. Cobre os 2 fluxos

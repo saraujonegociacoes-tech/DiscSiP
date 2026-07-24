@@ -2,7 +2,7 @@
 
 import { useMemo } from 'react'
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts'
-import { useChartTheme } from '@/components/blueline/useChartTheme'
+import { useChartTheme } from '@/components/bluedesk/useChartTheme'
 import type { DeadReason } from '@/app/actions/leads'
 
 // Motivos de lead morto (S2) — donut (composição categórica) + legenda rotulada com

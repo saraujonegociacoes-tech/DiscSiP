@@ -1,5 +1,5 @@
 @echo off
-title Blue Line Helper
+title Blue Desk Helper
 cd /d "%~dp0"
 
 :loop

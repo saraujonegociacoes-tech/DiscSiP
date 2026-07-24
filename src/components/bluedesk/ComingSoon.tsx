@@ -1,8 +1,8 @@
 'use client'
 
 import { Rocket } from 'lucide-react'
-import { AppShell } from '@/components/blueline/AppShell'
-import { PageHeader } from '@/components/blueline/PageHeader'
+import { AppShell } from '@/components/bluedesk/AppShell'
+import { PageHeader } from '@/components/bluedesk/PageHeader'
 
 interface ComingSoonProps {
   title: string
@@ -12,7 +12,7 @@ interface ComingSoonProps {
 
 // Placeholder de lançamento reusado pelos painéis por vertical (Leads, CS, Negociação)
 // enquanto não são liberados. Reusa o chrome padrão (AppShell + PageHeader) e os tokens
-// de design da Blue Line — theme-aware.
+// de design da Blue Desk — theme-aware.
 export function ComingSoon({ title, description, message }: ComingSoonProps) {
   return (
     <AppShell>

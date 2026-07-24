@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { PhoneIncoming, PhoneOutgoing, Phone } from 'lucide-react'
 import { getCallHistory } from '@/app/actions/dialer'
-import { PeriodPicker } from '@/components/blueline/PeriodPicker'
+import { PeriodPicker } from '@/components/bluedesk/PeriodPicker'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'

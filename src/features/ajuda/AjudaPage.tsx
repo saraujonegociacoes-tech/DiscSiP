@@ -4,7 +4,7 @@ import Link from "next/link";
 import { ArrowLeft, Moon, Sun } from "lucide-react";
 import "./styles.css";
 import { ROLES, roleIncludes, type Role } from "./content/roles";
-import { useTheme } from "@/components/blueline/theme";
+import { useTheme } from "@/components/bluedesk/theme";
 import { ParallaxBackdrop } from "./components/ParallaxLayer";
 import { RoleBadge } from "./components/RoleBadge";
 import { Section } from "./components/Section";
@@ -17,7 +17,7 @@ import { ManagerNote } from "./blocks/ManagerNote";
 import { AdminBlock } from "./blocks/AdminBlock";
 
 export interface AjudaPageProps {
-  /** Papel do usuário logado. Vem do RBAC do Blue Line. */
+  /** Papel do usuário logado. Vem do RBAC do Blue Desk. */
   role: Role;
   /** Opcional — habilita um seletor flutuante para preview/dev. */
   onRoleChange?: (r: Role) => void;
@@ -87,7 +87,7 @@ export function AjudaPage({ role, onRoleChange }: AjudaPageProps) {
       >
         <span className="aj-chip" style={{ marginBottom: 18 }}>Como usar?</span>
         <h1 style={{ margin: "0 auto", maxWidth: 820 }}>
-          O guia do <span style={{ background: "linear-gradient(90deg, #5BA8FF, #1E6FE0)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>Blue Line</span>, do seu jeito.
+          O guia do <span style={{ background: "linear-gradient(90deg, #5BA8FF, #1E6FE0)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>Blue Desk</span>, do seu jeito.
         </h1>
         <p style={{ margin: "20px auto 28px", maxWidth: 620, fontSize: "1.08rem" }}>
           Esta página se adapta ao seu papel. Você vê apenas o que precisa para trabalhar — nem mais, nem menos.
@@ -126,7 +126,7 @@ export function AjudaPage({ role, onRoleChange }: AjudaPageProps) {
         </Section>
 
         <footer style={{ textAlign: "center", padding: "40px 24px 72px", color: "var(--aj-muted)", fontSize: "0.85rem" }}>
-          Blue Line · Power Dialer
+          Blue Desk · Power Dialer
         </footer>
       </main>
     </div>

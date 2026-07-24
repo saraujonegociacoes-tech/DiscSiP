@@ -11,7 +11,7 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from 'recharts'
-import { useChartTheme } from '@/components/blueline/useChartTheme'
+import { useChartTheme } from '@/components/bluedesk/useChartTheme'
 import type { TrendPoint } from '@/app/actions/leads'
 
 type Tone = 'primary' | 'success' | 'warning' | 'danger'

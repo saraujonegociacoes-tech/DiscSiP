@@ -1,4 +1,4 @@
-// Fonte única do tipo Role: o RBAC do Blue Line. Não duplicar aqui.
+// Fonte única do tipo Role: o RBAC do Blue Desk. Não duplicar aqui.
 import type { Role } from "@/lib/types/database";
 export type { Role };
 
