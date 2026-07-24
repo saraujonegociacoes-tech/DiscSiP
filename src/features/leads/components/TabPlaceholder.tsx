@@ -3,7 +3,7 @@ import { Rocket } from 'lucide-react'
 
 // Placeholder "Em breve nesta aba" — usado nas abas cujo conteúdo chega numa sprint futura
 // (Performance na Sprint 2; explorador de Leads do gestor na Sprint 5). Mesma linguagem
-// visual do LeadsComingSoon, em escala menor. Theme-aware via tokens da Blue Line.
+// visual do LeadsComingSoon, em escala menor. Theme-aware via tokens da Blue Desk.
 export function TabPlaceholder({
   icon: Icon = Rocket,
   title = 'Em breve nesta aba',

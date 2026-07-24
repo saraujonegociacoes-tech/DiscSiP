@@ -1,8 +1,8 @@
-# Integração Blue Line → Make → Meta (Aquecimento WhatsApp)
+# Integração Blue Desk → Make → Meta (Aquecimento WhatsApp)
 
 Ao contrário dos cenários de Pipefy (poll que **entra** no Supabase), aqui o fluxo é ao
-contrário: o **Blue Line dispara** o Make, que executa a chamada na **Graph API da Meta** e
-**devolve** o resultado. O Blue Line é o plano de controle; o Make é só o braço executor —
+contrário: o **Blue Desk dispara** o Make, que executa a chamada na **Graph API da Meta** e
+**devolve** o resultado. O Blue Desk é o plano de controle; o Make é só o braço executor —
 toda decisão (quem fala com quem, template ou sessão) já vem pronta no payload.
 
 > **Estado (20/jul):** o **Cenário 1 ("Aquecimento · Disparo") já está montado no Make.** O
@@ -40,7 +40,7 @@ na WABA dele.
    **nunca** hardcoded num módulo.
 
 > Pré-requisito de cada número: estar **registrado na Cloud API** (ter `phone_number_id`).
-> Esse `phone_number_id` é o `sender_id` cadastrado em `warmup_numbers` no painel do Blue Line.
+> Esse `phone_number_id` é o `sender_id` cadastrado em `warmup_numbers` no painel do Blue Desk.
 
 **Decisão fixada:** usar o **módulo HTTP genérico** do Make (não o app nativo "WhatsApp
 Business Cloud"), porque o app nativo tende a amarrar a conexão a um phone_number_id fixo — e
@@ -72,7 +72,7 @@ Recebe o POST de `sendWarmupNotification`. A URL gerada pelo Make vira o valor d
 | `receiver.receiver_number` | E.164 → `to` da mensagem |
 | `template.name` / `template.language` | presentes só quando `template` |
 | `session_text` | presente só quando `session` |
-| `dry_run` | em `dry_run` o Blue Line **nem chama** o Make (no-op na origem) — não deve chegar aqui |
+| `dry_run` | em `dry_run` o Blue Desk **nem chama** o Make (no-op na origem) — não deve chegar aqui |
 
 ### 2. Router — ramo A (`message_type = template`)
 HTTP → Make a request:
@@ -109,7 +109,7 @@ Mesma URL/headers, corpo:
 }
 ```
 
-### 3. Callback para o Blue Line (nos dois ramos)
+### 3. Callback para o Blue Desk (nos dois ramos)
 Ligue a rota de **erro** do módulo HTTP (botão direito → Add error handler) para também cair
 aqui, de modo que sucesso **e** falha reportem. HTTP → Make a request:
 
@@ -155,11 +155,11 @@ Developers → App → Webhooks → objeto `whatsapp_business_account`):
 ```
 Custom webhook (evento da Meta, responde o hub.challenge)
   → Router por tipo
-      ├─ phone_number_quality_update       → HTTP → Blue Line (atualiza quality_rating/status)
-      └─ message_template_status_update     → HTTP → Blue Line (desativa template reprovado)
+      ├─ phone_number_quality_update       → HTTP → Blue Desk (atualiza quality_rating/status)
+      └─ message_template_status_update     → HTTP → Blue Desk (desativa template reprovado)
 ```
 
-Exige um novo endpoint Blue Line (ex.: `/api/aquecimento/quality-update`) — a implementar na
+Exige um novo endpoint Blue Desk (ex.: `/api/aquecimento/quality-update`) — a implementar na
 Sprint 5. Elimina a checagem manual do quality rating no Meta Business Suite.
 
 ---

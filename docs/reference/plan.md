@@ -1,10 +1,10 @@
-# Blue Line — Restilização da interface do Blue Line
+# Blue Desk — Restilização da interface do Blue Desk
 
-Recriar a interface inteira aplicando a identidade visual **Blue Line Power Dialer**. Foco 100% em UI/visual: tokens, tema dark institucional, layout, componentes e telas. Nenhuma lógica de negócio, integração SIP, Supabase ou helper local é tocada — entrego um shell visual navegável que depois pode ser plugado ao backend real do Blue Line.
+Recriar a interface inteira aplicando a identidade visual **Blue Desk Power Dialer**. Foco 100% em UI/visual: tokens, tema dark institucional, layout, componentes e telas. Nenhuma lógica de negócio, integração SIP, Supabase ou helper local é tocada — entrego um shell visual navegável que depois pode ser plugado ao backend real do Blue Desk.
 
 ## 1. Design system (src/styles.css)
 
-Substituir o tema padrão pelo tema Blue Line dark, todo via tokens semânticos `oklch`:
+Substituir o tema padrão pelo tema Blue Desk dark, todo via tokens semânticos `oklch`:
 
 - `--background` `#000020` · `--sidebar` `#000A30` · `--card` `#07133F` · `--accent/hover` `#0B1D55`
 - `--primary` `#0066CC` · `--secondary` `#001F5B` · `--success` (ciano) `#00C2A8`
@@ -16,11 +16,11 @@ Substituir o tema padrão pelo tema Blue Line dark, todo via tokens semânticos 
 
 Forçar tema escuro por padrão (classe `dark` no `<html>`).
 
-## 2. Logo Blue Line
+## 2. Logo Blue Desk
 
-Componente SVG `BlueLineLogo` reutilizável:
+Componente SVG `BlueDeskLogo` reutilizável:
 - Símbolo: ondas de voz / linha de transmissão estilizada em gradiente azul→ciano (sem telefone/headset)
-- Variante completa: símbolo + "BLUE LINE" / "POWER DIALER"
+- Variante completa: símbolo + "BLUE DESK" / "POWER DIALER"
 - Variante compacta: só o símbolo (favicon, sidebar colapsada)
 - Favicon gerado a partir do mesmo símbolo
 
@@ -71,4 +71,4 @@ SaaS corporativo de vendas — nada de telemarketing/call-center. Tipografia Int
 - Upload e parsing real de `.csv/.xlsx`
 - Persistência — tudo com mocks em memória só para o visual
 
-Resultado: um app navegável idêntico em estrutura ao Blue Line, totalmente vestido com a marca Blue Line, pronto para depois ser conectado ao backend existente.
+Resultado: um app navegável idêntico em estrutura ao Blue Desk, totalmente vestido com a marca Blue Desk, pronto para depois ser conectado ao backend existente.

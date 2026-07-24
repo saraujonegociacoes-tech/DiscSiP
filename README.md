@@ -1,6 +1,6 @@
-# Sistema da Araújo (Blue Line)
+# Sistema da Araújo (Blue Desk)
 
-Sistema web para a **Araujo Negociações**, organizado em **verticais de negócio** (departamentos), todas no mesmo app Next.js: o **Discador** (Blue Line, o módulo original — discagem semi-automática via PABX **Intelbras WidevoiceX**), o **Dashboard de Leads** (funil comercial vindo do Pipefy) e o **Painel de Sucesso do Cliente** (CS, outro pipe do Pipefy). Uma quarta vertical, **Negociação**, já tem espaço reservado no menu mas ainda não tem aplicação construída.
+Sistema web para a **Araujo Negociações**, organizado em **verticais de negócio** (departamentos), todas no mesmo app Next.js: o **Discador** (Blue Desk, o módulo original — discagem semi-automática via PABX **Intelbras WidevoiceX**), o **Dashboard de Leads** (funil comercial vindo do Pipefy) e o **Painel de Sucesso do Cliente** (CS, outro pipe do Pipefy). Uma quarta vertical, **Negociação**, já tem espaço reservado no menu mas ainda não tem aplicação construída.
 
 Discador, Leads e CS são **domínios de produto separados** (schema, RLS e RPCs próprios no Supabase) que compartilham a mesma base de código, autenticação (RBAC) e deploy — não são apps distintos.
 
@@ -8,7 +8,7 @@ Há ainda um módulo de **infra** (não uma vertical de departamento): o **Warmu
 
 - **App:** https://discsip.pages.dev
 - **Deploy:** Cloudflare Pages (deploy automático no push para `main`)
-- **Repositório:** https://github.com/saraujonegociacoes-tech/DiscSiP
+- **Repositório:** https://github.com/saraujonegociacoes-tech/bluedesk
 - **PABX (Discador):** Intelbras WidevoiceX (`widevoice8.intelbras.com.br`) — ramais 5125–5150
 
 > Documentação técnica aprofundada em [`docs/links.md`](docs/links.md) (índice geral por
@@ -160,7 +160,7 @@ construir reputação/quality rating antes de entrarem em campanha. Atrás da fl
 desenhado para ser extraível. Detalhes completos em
 [`docs/updates/aquecimento-whatsapp-indice.md`](docs/updates/aquecimento-whatsapp-indice.md).
 
-- **Plano de controle vs. braço executor:** o Blue Line decide quem fala com quem, quando e o
+- **Plano de controle vs. braço executor:** o Blue Desk decide quem fala com quem, quando e o
   quê, grava o histórico e dispara o **Make** por webhook; o envio real à **Graph API da
   Meta** acontece no Make (mesma filosofia do Pipefy→Make). Ver
   [`docs/updates/make-integracao-aquecimento.md`](docs/updates/make-integracao-aquecimento.md).
@@ -272,7 +272,7 @@ reabre o `node` quando o helper sai com código 42 (após se atualizar).
 | `atualizar.bat` | Atualizador manual: mata só o node do helper → `npm install` → sobe oculto (a atualização do código em si é via app, `/update`) |
 | `start.bat` | Inicia o helper manualmente com console (debug); reabre o node ao sair com código 42 (auto-update) |
 | `start-hidden.vbs` | Inicia o helper sem janela (usado no startup) |
-| `setup-hooks.ps1` | Copia os `on-call-*.bat` para `C:\Users\Public\blueline-helper` (caminho sem espaços) e grava os hooks `cmdCallStart/End/Busy` + `minimized=1` no `microsip.ini` |
+| `setup-hooks.ps1` | Copia os `on-call-*.bat` para `C:\Users\Public\bluedesk-helper` (caminho sem espaços) e grava os hooks `cmdCallStart/End/Busy` + `minimized=1` no `microsip.ini` |
 | `on-call-start/end/busy.bat` | Disparados pelo softphone utilizado; fazem `curl` para os endpoints `/event/*` do helper |
 
 **Instalação (uma vez por máquina, com o softphone utilizado fechado):**
@@ -296,7 +296,7 @@ Pré-requisito: Node.js instalado.
 | Parse de mailing | `xlsx` (SheetJS), client-side com dynamic import |
 | Discagem | softphone utilizado + helper local Node.js/Express |
 | Ingestão Leads/CS | Pipefy (funis) → Make (sincronização quase real-time) → RPCs de ingestão no Supabase |
-| Aquecimento WhatsApp | Blue Line (plano de controle) → Make (braço executor) → Graph API da Meta; tick agendado por GitHub Actions |
+| Aquecimento WhatsApp | Blue Desk (plano de controle) → Make (braço executor) → Graph API da Meta; tick agendado por GitHub Actions |
 
 ---
 

@@ -6,14 +6,14 @@ type Props = {
   tagline?: boolean;
 };
 
-export function BlueLineLogo({ className, variant = "full", tagline = true }: Props) {
+export function BlueDeskLogo({ className, variant = "full", tagline = true }: Props) {
   return (
     <div className={cn("flex items-center gap-3", className)}>
       <Mark />
       {variant === "full" && (
         <div className="leading-none">
           <div className="text-[15px] font-bold tracking-[0.18em] text-foreground">
-            BLUE LINE
+            BLUE DESK
           </div>
           {tagline && (
             <div className="mt-1 text-[10px] font-medium tracking-[0.32em] text-muted-foreground">

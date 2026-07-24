@@ -12,7 +12,7 @@ import {
   LabelList,
   ResponsiveContainer,
 } from 'recharts'
-import { useChartTheme } from '@/components/blueline/useChartTheme'
+import { useChartTheme } from '@/components/bluedesk/useChartTheme'
 import { LeadsAgentDrill } from './LeadsAgentDrill'
 import type { StageActivity } from '@/app/actions/leads'
 import type { LeadPeriod } from '@/lib/period'

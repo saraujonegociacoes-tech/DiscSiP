@@ -24,7 +24,7 @@ isso com até **6 números da mesma BM conversando entre si**.
 
 ## Decisões travadas
 
-1. **Blue Line é o plano de controle; o Make é o braço executor.** O app decide QUEM fala
+1. **Blue Desk é o plano de controle; o Make é o braço executor.** O app decide QUEM fala
    com QUEM, QUANDO e O QUÊ, grava o histórico e dispara o Make por webhook (reaproveitando
    o padrão de `notifications.ts`). O envio real à Graph API da Meta acontece **no Make** —
    não há chamada direta à Graph API no Next.js (mesma filosofia do Pipefy→Make dos outros
@@ -38,7 +38,7 @@ isso com até **6 números da mesma BM conversando entre si**.
    gambiarra.
 3. **A janela de 24h é derivada do próprio histórico, sem webhook de status da Meta.** A
    janela de atendimento do WhatsApp abre no número que **recebeu** uma mensagem. Como os
-   dois lados da conversa são controlados pelo Blue Line, a regra
+   dois lados da conversa são controlados pelo Blue Desk, a regra
    `pode_enviar_sessão(de=X, para=Y)` ⟺ *existe mensagem Y→X nas últimas 24h em
    `warmup_messages`* é suficiente. **Nenhum callback de entrega/leitura da Meta é
    necessário para o MVP funcionar** — simplifica muito o desenho.
@@ -315,7 +315,7 @@ WABAs (1 token, 1 conexão reutilizável).
 
 Cenário separado no Make recebendo os webhooks de conta da Meta
 (`phone_number_quality_update`, `message_template_status_update`, `account_review_update`) e
-chamando um novo endpoint Blue Line para atualizar `warmup_numbers.quality_rating`/`status`
+chamando um novo endpoint Blue Desk para atualizar `warmup_numbers.quality_rating`/`status`
 e desativar templates reprovados **automaticamente** — elimina a checagem manual no Meta
 Business Suite. Depende de configurar os webhooks no App da Meta (passo fora do código).
 Só depois do cenário de Disparo validado em produção com números reais.

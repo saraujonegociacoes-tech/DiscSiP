@@ -1,6 +1,6 @@
 // Peças apresentacionais do dashboard de leads. A composição vive no
 // app/leads/LeadsClient.tsx (dentro do AppShell), como no dashboard do discador.
-// PeriodPicker mudou para @/components/blueline/PeriodPicker (compartilhado com a discadora).
+// PeriodPicker mudou para @/components/bluedesk/PeriodPicker (compartilhado com a discadora).
 export { LeadKpiRow } from './components/LeadKpiRow'
 export { Funnel } from './components/Funnel'
 export { PhaseDistribution } from './components/PhaseDistribution'

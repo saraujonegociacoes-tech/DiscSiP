@@ -4,7 +4,7 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { BlueLineLogo } from '@/components/brand/BlueLineLogo'
+import { BlueDeskLogo } from '@/components/brand/BlueDeskLogo'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -47,7 +47,7 @@ export default function LoginPage() {
       <div className="relative hidden overflow-hidden lg:block bg-gradient-premium">
         <div className="absolute inset-0 opacity-30 [background-image:radial-gradient(circle_at_30%_20%,white,transparent_40%)]" />
         <div className="relative flex h-full flex-col justify-between p-10 text-white">
-          <BlueLineLogo />
+          <BlueDeskLogo />
           <div className="max-w-md">
             <h2 className="text-4xl font-semibold leading-tight tracking-tight">
               Conectando conversas que geram resultados.
@@ -67,7 +67,7 @@ export default function LoginPage() {
       <div className="flex items-center justify-center px-6 py-12">
         <div className="w-full max-w-sm">
           <div className="mb-8 flex justify-center lg:hidden">
-            <BlueLineLogo />
+            <BlueDeskLogo />
           </div>
           <h1 className="text-2xl font-semibold tracking-tight text-foreground">Entrar na plataforma</h1>
           <p className="mt-2 text-sm text-muted-foreground">Use suas credenciais corporativas.</p>

@@ -3,7 +3,7 @@
 import type { ReactNode } from 'react'
 import { SidebarProvider, SidebarTrigger } from '@/components/ui/sidebar'
 import { Sidebar } from '@/components/Sidebar'
-import { ThemeToggle } from '@/components/blueline/ThemeToggle'
+import { ThemeToggle } from '@/components/bluedesk/ThemeToggle'
 
 /**
  * Casca padrão das telas internas: sidebar colapsável (RBAC) + header fixo.

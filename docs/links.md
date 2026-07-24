@@ -1,4 +1,4 @@
-# Documentação — Blue Line
+# Documentação — Blue Desk
 
 Organização por **domínio** e, dentro dele, por tipo. O README do projeto fica na raiz (`../README.md`).
 
@@ -73,4 +73,4 @@ vertical de departamento. Índice completo em
 [`updates/aquecimento-whatsapp-indice.md`](updates/aquecimento-whatsapp-indice.md).
 
 - [`updates/aquecimento-whatsapp.md`](updates/aquecimento-whatsapp.md) — roadmap em sprints + todas as decisões travadas
-- [`updates/make-integracao-aquecimento.md`](updates/make-integracao-aquecimento.md) — cenários Blue Line → Make → Meta (Graph API), System User único da BM
+- [`updates/make-integracao-aquecimento.md`](updates/make-integracao-aquecimento.md) — cenários Blue Desk → Make → Meta (Graph API), System User único da BM

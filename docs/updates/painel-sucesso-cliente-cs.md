@@ -36,7 +36,7 @@
    a ter **ciclo do dia 11 ao dia 10 do mês seguinte**, igual ao de Leads, reusando
    [`src/lib/period.ts`](../../src/lib/period.ts) (`CYCLE_ANCHOR_DAY = 11`,
    `currentCycle`/`recentCycles`/`customPeriod`) e o
-   [`PeriodPicker`](../../src/components/blueline/PeriodPicker.tsx) — ambos já
+   [`PeriodPicker`](../../src/components/bluedesk/PeriodPicker.tsx) — ambos já
    domain-agnostic. **Filtro de período é obrigatório em todas as páginas** (decisão do
    dono: "de extrema importância").
 

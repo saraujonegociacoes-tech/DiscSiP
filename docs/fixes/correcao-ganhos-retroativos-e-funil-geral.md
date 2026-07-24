@@ -117,7 +117,7 @@ tom já usado em `StuckCard`/`LeadsTable` pro mesmo conceito. Feedback do dono: 
 já está "muito feito" nesses outros cards, perdendo identidade visual neste gráfico novo.
 
 Trocado pra `ct.categorical[5]` (rosa, paleta categórica já validada do painel —
-[`useChartTheme.ts`](../../src/components/blueline/useChartTheme.ts)). Validado com o
+[`useChartTheme.ts`](../../src/components/bluedesk/useChartTheme.ts)). Validado com o
 script da skill dataviz contra o azul do "ciclo" (`ct.series.primary`), luz e escuro:
 
 ```

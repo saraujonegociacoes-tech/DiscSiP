@@ -1,7 +1,7 @@
 # Intelbras / WidevoiceX — o que precisamos saber e pedir (base para e-mail ao suporte)
 
 > Criado em 2026-06-24. Lista estruturada do que seria **ideal** obter da Intelbras
-> (PABX em nuvem **WidevoiceX**) para o Blue Line/Blue Line — não só para o problema atual
+> (PABX em nuvem **WidevoiceX**) para o Blue Desk/Blue Desk — não só para o problema atual
 > de caixa postal, mas para capacidade, compliance, integração e funcionalidades futuras.
 >
 > **Contexto que eles precisam ter:** discadora ativa (power + preditiva) com até **26

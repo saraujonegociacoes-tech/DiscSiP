@@ -9,7 +9,7 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from 'recharts'
-import { useChartTheme } from '@/components/blueline/useChartTheme'
+import { useChartTheme } from '@/components/bluedesk/useChartTheme'
 import type { CallsByHour } from '@/app/actions/supervisor'
 
 interface CallsChartProps {

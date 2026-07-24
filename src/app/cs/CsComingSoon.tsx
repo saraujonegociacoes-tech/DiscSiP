@@ -1,6 +1,6 @@
 'use client'
 
-import { ComingSoon } from '@/components/blueline/ComingSoon'
+import { ComingSoon } from '@/components/bluedesk/ComingSoon'
 
 // Placeholder do painel de Sucesso do Cliente (CS) — domínio separado do Leads/comercial.
 // Sprint 0: só a rota e o gate de navegação existem; dado e dashboard chegam nas próximas

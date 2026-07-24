@@ -1,8 +1,8 @@
-# Stack blueprint — criar um novo projeto na stack da Blue Line (Araújo)
+# Stack blueprint — criar um novo projeto na stack da Blue Desk (Araújo)
 
 Documento de referência para **começar um projeto novo** (no caso, um **"Monday" —
 controle visual de tarefas e sprints**) usando **exatamente a mesma stack** do sistema da
-Araújo (Blue Line). O objetivo é que o novo app seja um **irmão técnico**: mesma base de
+Araújo (Blue Desk). O objetivo é que o novo app seja um **irmão técnico**: mesma base de
 código, mesmo jeito de autenticar, mesmo design system, mesmo deploy — só muda o domínio.
 
 > Este doc é **portátil**: pode ser copiado para dentro do repositório do "Monday" e usado
@@ -24,7 +24,7 @@ código, mesmo jeito de autenticar, mesmo design system, mesmo deploy — só mu
 - [9. Padrões de código](#9-padrões-de-código)
 - [10. Deploy (Cloudflare Pages)](#10-deploy-cloudflare-pages)
 - [11. Cron / agendamento](#11-cron--agendamento)
-- [12. O que NÃO trazer da Blue Line](#12-o-que-não-trazer-da-blue-line)
+- [12. O que NÃO trazer da Blue Desk](#12-o-que-não-trazer-da-blue-desk)
 - [13. Checklist do zero ao 1º deploy](#13-checklist-do-zero-ao-1º-deploy)
 - [Apêndice — modelo de dados sugerido pro "Monday"](#apêndice--modelo-de-dados-sugerido-pro-monday)
 
@@ -32,7 +32,7 @@ código, mesmo jeito de autenticar, mesmo design system, mesmo deploy — só mu
 
 ## 1. Stack em uma tabela
 
-| Camada | Tecnologia | Versão na Blue Line |
+| Camada | Tecnologia | Versão na Blue Desk |
 |--------|-----------|---------------------|
 | Framework (front + back) | **Next.js** App Router + Server Actions | `15.5.19` |
 | Runtime UI | **React** + React DOM | `19.1.0` |
@@ -78,7 +78,7 @@ O que faz esse stack ser coeso — copie estes princípios, não só as libs:
 7. **Migrations idempotentes, aplicadas à mão.** SQL em `supabase/migrations/`
    (`YYYYMMDD_nome.sql`, sempre `create ... if not exists` / `create or replace`), rodado
    **manualmente no SQL Editor do Supabase** pelo dono. O `supabase/` não é obrigatório no
-   git (na Blue Line arquivos novos são gitignored; o schema de verdade vive no Supabase).
+   git (na Blue Desk arquivos novos são gitignored; o schema de verdade vive no Supabase).
 
 ---
 
@@ -92,7 +92,7 @@ npx create-next-app@15.5.19 monday \
 
 cd monday
 
-# 2) Dependências de runtime (mesma lista da Blue Line, menos o que é do discador)
+# 2) Dependências de runtime (mesma lista da Blue Desk, menos o que é do discador)
 npm i @supabase/ssr @supabase/supabase-js zustand recharts sonner \
   class-variance-authority clsx tailwind-merge lucide-react \
   tw-animate-css xlsx \
@@ -106,11 +106,11 @@ npm i @supabase/ssr @supabase/supabase-js zustand recharts sonner \
 npm i -D @opennextjs/cloudflare wrangler
 ```
 
-> **Por que pinar `15.5.19` / React 19:** garante paridade com a Blue Line (App Router +
+> **Por que pinar `15.5.19` / React 19:** garante paridade com a Blue Desk (App Router +
 > Server Actions + `cookies()` async do Next 15). Se `create-next-app@latest` trouxer versão
 > maior, force `next@15.5.19`, `react@19.1.0`, `react-dom@19.1.0` no `package.json`.
 
-Scripts sugeridos no `package.json` (espelham a Blue Line):
+Scripts sugeridos no `package.json` (espelham a Blue Desk):
 
 ```jsonc
 {
@@ -206,7 +206,7 @@ compatibility_date = "2024-09-23"
 
 ## 5. Estrutura de pastas
 
-Mesma organização da Blue Line (colando só o esqueleto reaproveitável):
+Mesma organização da Blue Desk (colando só o esqueleto reaproveitável):
 
 ```
 src/
@@ -297,7 +297,7 @@ ignora RLS — use com parcimônia.
 - Toda Server Action começa com `const supabase = await createServerClient()`.
 - Lógica pesada vira **RPC**: `await supabase.rpc('get_board', { p_id })`.
 - Degrada: `if (error || !data) return { items: [] }`.
-- `types/database.ts` é mantido **à mão** (não usam codegen na Blue Line).
+- `types/database.ts` é mantido **à mão** (não usam codegen na Blue Desk).
 
 ---
 
@@ -333,12 +333,12 @@ chama `supabase.auth.getUser()`, e aplica redirects:
 - sessão aprovada em tela de auth → home do app;
 - áreas restritas por papel → checa `profiles.role` antes de deixar entrar.
 
-O modelo de papéis da Blue Line (`pending` → `agent` → `supervisor` → `manager` → `admin`)
+O modelo de papéis da Blue Desk (`pending` → `agent` → `supervisor` → `manager` → `admin`)
 pode ser simplificado no Monday (ex.: `pending` → `member` → `admin`), mas **mantenha o
 padrão**: `profiles` espelha `auth.users.id`, trigger cria perfil `pending` no cadastro, e o
 escopo de dados é RLS + reforço no middleware.
 
-> Copie de referência o `middleware.ts` completo da Blue Line em
+> Copie de referência o `middleware.ts` completo da Blue Desk em
 > [`src/lib/supabase/middleware.ts`](../../src/lib/supabase/middleware.ts) e recorte os
 > papéis que o Monday não usa.
 
@@ -367,7 +367,7 @@ marca** (o bloco de comentário lista os HEX: `#000020 #001F5B #0066CC #00C2A8 #
 - `layout.tsx` injeta um **boot script inline** no `<head>` que aplica `.dark` **antes** da
   hidratação (evita flash branco). Padrão institucional = escuro.
 - `ThemeProvider` (Context + `localStorage`) com `useTheme()` e um `ThemeToggle`.
-- Copie [`src/components/blueline/theme.tsx`](../../src/components/blueline/theme.tsx) e o
+- Copie [`src/components/bluedesk/theme.tsx`](../../src/components/bluedesk/theme.tsx) e o
   `layout.tsx` (fonte **Inter** via `next/font/google`, `<html lang="pt-BR"
   suppressHydrationWarning>`).
 
@@ -375,17 +375,17 @@ marca** (o bloco de comentário lista os HEX: `#000020 #001F5B #0066CC #00C2A8 #
 - **`src/components/ui/`** — primitivos estilo **shadcn/ui**: Radix + `cva` (variantes) +
   `cn()`. Padrão do `Button` (copie o jeito): `cva(base, { variants, defaultVariants })` +
   `Slot` p/ `asChild`. Gere via `npx shadcn@latest add button card dialog select tabs
-  tooltip table badge switch dropdown-menu ...` **ou** copie os arquivos da Blue Line.
-  (A Blue Line não usa `components.json` — os primitivos foram colados/gerados uma vez.)
+  tooltip table badge switch dropdown-menu ...` **ou** copie os arquivos da Blue Desk.
+  (A Blue Desk não usa `components.json` — os primitivos foram colados/gerados uma vez.)
 - **`src/components/<marca>/`** — camada de marca por cima dos primitivos: `AppShell`,
   `PageHeader`, `KpiCard`, `StatusBadge`, `Logo`, `ThemeToggle`. Use tokens + utilitários de
   marca (`bg-gradient-card`, `shadow-card`, `lift`). Ver
-  [`KpiCard.tsx`](../../src/components/blueline/KpiCard.tsx) como referência de estilo.
+  [`KpiCard.tsx`](../../src/components/bluedesk/KpiCard.tsx) como referência de estilo.
 
 ### 8.4 Gráficos
 Recharts + um hook `useChartTheme()` que lê os tokens CSS (`--chart-1..5`) pra os gráficos
 respeitarem o tema claro/escuro. Ver
-[`src/components/blueline/useChartTheme.ts`](../../src/components/blueline/useChartTheme.ts).
+[`src/components/bluedesk/useChartTheme.ts`](../../src/components/bluedesk/useChartTheme.ts).
 
 > **Dica pro Monday:** antes de desenhar qualquer board/gráfico, rode a skill **`dataviz`**
 > (guia de cores/heatmap/KPIs consistentes claro+escuro) — casa perfeitamente com os tokens
@@ -440,7 +440,7 @@ pro domínio do Pages (+ `localhost` no dev).
 ## 11. Cron / agendamento
 
 **Cloudflare Pages não tem Cron Triggers.** Se o Monday precisar de tarefa agendada (ex.:
-mover cards de sprint vencida, disparar lembrete), o padrão da Blue Line é **GitHub Actions**
+mover cards de sprint vencida, disparar lembrete), o padrão da Blue Desk é **GitHub Actions**
 batendo num Route Handler autenticado por segredo:
 
 - `.github/workflows/<tarefa>.yml` roda no schedule e faz `POST /api/<tarefa>/tick` com um
@@ -453,7 +453,7 @@ ping a cada 3 dias. Copie de `.github/workflows/`.
 
 ---
 
-## 12. O que NÃO trazer da Blue Line
+## 12. O que NÃO trazer da Blue Desk
 
 Deixe de fora — é específico do discador e não serve pro Monday:
 

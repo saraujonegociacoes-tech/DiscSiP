@@ -1,4 +1,4 @@
-# Blue Line — Discadora: status calculado, arquivamento e histórico (sprints)
+# Blue Desk — Discadora: status calculado, arquivamento e histórico (sprints)
 
 > Criado em 2026-07-15. Três pedidos do usuário sobre o painel da Discadora (supervisor
 > e agente) — domínio **separado** do dashboard de leads (Pipefy). Entregues juntos, numa
@@ -91,7 +91,7 @@ supervisor só via métricas de **hoje** (views todas escopadas ao dia atual). A
 **Reuso generalizado do seletor de período do `/leads`** (ciclo de meta dia 11 → dia 10
 + opção "Personalizado"):
 - `src/lib/leads/period.ts` → **`src/lib/period.ts`** (conteúdo igual, só mudou de casa).
-- `src/features/leads/components/PeriodPicker.tsx` → **`src/components/blueline/PeriodPicker.tsx`**
+- `src/features/leads/components/PeriodPicker.tsx` → **`src/components/bluedesk/PeriodPicker.tsx`**
   (ao lado de `AppShell`/`PageHeader`/`StatusBadge`, componentes já compartilhados).
 
 **Lado agente** (`/softphone`, aba Histórico):

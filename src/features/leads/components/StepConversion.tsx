@@ -11,7 +11,7 @@ import {
   LabelList,
   ResponsiveContainer,
 } from 'recharts'
-import { useChartTheme } from '@/components/blueline/useChartTheme'
+import { useChartTheme } from '@/components/bluedesk/useChartTheme'
 import { ResponsibleBreakdown } from './ResponsibleBreakdown'
 import type { FunnelStage, AgentCount } from '@/app/actions/leads'
 

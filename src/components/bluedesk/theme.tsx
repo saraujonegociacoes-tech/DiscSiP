@@ -6,7 +6,7 @@ type Theme = "light" | "dark";
 type Ctx = { theme: Theme; setTheme: (t: Theme) => void; toggle: () => void };
 
 const ThemeCtx = createContext<Ctx | null>(null);
-const STORAGE_KEY = "blueline-theme";
+const STORAGE_KEY = "bluedesk-theme";
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const [theme, setThemeState] = useState<Theme>("dark");

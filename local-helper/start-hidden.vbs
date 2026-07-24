@@ -1,4 +1,4 @@
-' Inicia o Blue Line Helper SEM janela (console oculto), porem ATRAVES do start.bat.
+' Inicia o Blue Desk Helper SEM janela (console oculto), porem ATRAVES do start.bat.
 ' Isto e essencial: o start.bat tem o loop que reinicia o node quando ele sai com
 ' codigo 42 (auto-atualizacao). Chamar "node index.js" direto aqui mataria o
 ' auto-update — o helper baixaria a versao nova, sairia com 42 e nunca voltaria.

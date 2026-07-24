@@ -1,4 +1,4 @@
-import { ComingSoon } from '@/components/blueline/ComingSoon'
+import { ComingSoon } from '@/components/bluedesk/ComingSoon'
 
 // Painel de Negociação — terceira vertical (ao lado de Comercial/Leads e CS). Ainda não
 // existe nenhuma aplicação para Negociação; esta rota só reserva o espaço no menu lateral

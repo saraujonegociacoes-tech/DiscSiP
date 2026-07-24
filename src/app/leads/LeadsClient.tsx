@@ -11,9 +11,9 @@ import {
   XCircle,
   Search,
 } from 'lucide-react'
-import { AppShell } from '@/components/blueline/AppShell'
-import { PageHeader } from '@/components/blueline/PageHeader'
-import { PeriodPicker } from '@/components/blueline/PeriodPicker'
+import { AppShell } from '@/components/bluedesk/AppShell'
+import { PageHeader } from '@/components/bluedesk/PageHeader'
+import { PeriodPicker } from '@/components/bluedesk/PeriodPicker'
 import { Tabs, TabsContent } from '@/components/ui/tabs'
 import {
   LeadKpiRow,

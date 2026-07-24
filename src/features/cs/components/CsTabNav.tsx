@@ -7,7 +7,7 @@ import { TabsList, TabsTrigger } from '@/components/ui/tabs'
 // Réplica local do padrão de src/features/leads/components/LeadsTabNav.tsx (domínio SEPARADO:
 // réplica, não componente compartilhado). Construída sobre o Radix ui/tabs: o <Tabs> Root
 // (valor + onChange) vive no CsClient e envolve esta barra + os <TabsContent>. Rola na
-// horizontal no mobile; theme-aware via tokens da Blue Line.
+// horizontal no mobile; theme-aware via tokens da Blue Desk.
 
 export interface CsTab {
   slug: string

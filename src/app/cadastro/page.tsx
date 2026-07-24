@@ -4,7 +4,7 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { BlueLineLogo } from '@/components/brand/BlueLineLogo'
+import { BlueDeskLogo } from '@/components/brand/BlueDeskLogo'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -59,7 +59,7 @@ export default function CadastroPage() {
       <div className="relative hidden overflow-hidden lg:block bg-gradient-premium">
         <div className="absolute inset-0 opacity-30 [background-image:radial-gradient(circle_at_30%_20%,white,transparent_40%)]" />
         <div className="relative flex h-full flex-col justify-between p-10 text-white">
-          <BlueLineLogo />
+          <BlueDeskLogo />
           <div className="max-w-md">
             <h2 className="text-4xl font-semibold leading-tight tracking-tight">
               Comece a discar com inteligência.
@@ -78,7 +78,7 @@ export default function CadastroPage() {
       <div className="flex items-center justify-center px-6 py-12">
         <div className="w-full max-w-sm">
           <div className="mb-8 flex justify-center lg:hidden">
-            <BlueLineLogo />
+            <BlueDeskLogo />
           </div>
           <h1 className="text-2xl font-semibold tracking-tight text-foreground">Criar conta</h1>
           <p className="mt-2 text-sm text-muted-foreground">Leva menos de um minuto.</p>

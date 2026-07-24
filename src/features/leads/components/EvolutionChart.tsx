@@ -10,7 +10,7 @@ import {
   Legend,
   ResponsiveContainer,
 } from 'recharts'
-import { useChartTheme } from '@/components/blueline/useChartTheme'
+import { useChartTheme } from '@/components/bluedesk/useChartTheme'
 import type { DailyPoint } from '@/app/actions/leads'
 
 // Evolução no período (Sprint 2) — linha diária: recebidos, ganhos e mortos. Responde "como

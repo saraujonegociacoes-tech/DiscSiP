@@ -3,6 +3,7 @@ import { getCurrentProfile } from '@/app/actions/auth'
 import { getProject } from '@/app/actions/monday-projects'
 import { MondayShell } from '@/components/monday/monday-shell'
 import { ProjectTabs } from '@/components/monday/project-tabs'
+import { DeleteProjectButton } from '@/components/monday/projects/delete-project-button'
 
 export default async function ProjectLayout({
   children,
@@ -33,6 +34,9 @@ export default async function ProjectLayout({
           <div>
             <h1 className="font-semibold leading-tight">{project.name}</h1>
             <p className="text-xs text-muted-foreground">{project.key}</p>
+          </div>
+          <div className="ml-auto">
+            <DeleteProjectButton projectId={projectId} projectName={project.name} />
           </div>
         </div>
 

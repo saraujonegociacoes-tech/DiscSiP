@@ -1,6 +1,6 @@
 'use client'
 
-import { ComingSoon } from '@/components/blueline/ComingSoon'
+import { ComingSoon } from '@/components/bluedesk/ComingSoon'
 
 // Placeholder do módulo de aquecimento de números WhatsApp. Enquanto
 // NEXT_PUBLIC_WARMUP_ENABLED não estiver ligado, mostra "Em breve" (mesmo gate

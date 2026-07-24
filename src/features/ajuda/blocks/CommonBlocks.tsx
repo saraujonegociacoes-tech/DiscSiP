@@ -8,13 +8,13 @@ export function CommonBlocks() {
       <Section
         id="o-que-e"
         eyebrow="O que é"
-        title="Blue Line em uma frase"
+        title="Blue Desk em uma frase"
         description="Power dialer semi-automático que pega o próximo contato da fila e disca pelo softphone utilizado — você só atende e fala."
       >
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 16 }}>
           {[
             { k: "Fila", v: "Próximo contato carrega sozinho." },
-            { k: "Softphone utilizado", v: "O Blue Line aciona o que você já usa." },
+            { k: "Softphone utilizado", v: "O Blue Desk aciona o que você já usa." },
             { k: "Intelbras", v: "Discagem real via PABX WidevoiceX." },
             { k: "Helper local", v: "Ponte segura HTTPS → SIP no seu PC." },
           ].map((c) => (

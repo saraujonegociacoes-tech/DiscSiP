@@ -1,4 +1,4 @@
-# Blue Line — Documentação Técnica
+# Blue Desk — Documentação Técnica
 
 > Atualizado em: 2026-06-11 (Sprint 7 concluído — Autenticação e Permissões RBAC, 7a→7e)
 
@@ -6,12 +6,12 @@
 
 ## 1. Visão Geral
 
-**Blue Line** é um Power Dialer semi-automático para a equipe de vendas da Araujo Negociações. O sistema gerencia filas de contatos, seleciona o próximo automaticamente e aciona o softphone utilizado instalado na máquina do agente via protocolo `tel:`.
+**Blue Desk** é um Power Dialer semi-automático para a equipe de vendas da Araujo Negociações. O sistema gerencia filas de contatos, seleciona o próximo automaticamente e aciona o softphone utilizado instalado na máquina do agente via protocolo `tel:`.
 
 - **26 agentes** usando ramais 5125–5150
 - **PABX:** Intelbras WidevoiceX (`widevoice8.intelbras.com.br`)
 - **App:** `https://discsip.pages.dev`
-- **Repositório:** https://github.com/saraujonegociacoes-tech/DiscSiP
+- **Repositório:** https://github.com/saraujonegociacoes-tech/bluedesk
 
 ---
 
@@ -44,14 +44,14 @@ A solução é acionar o softphone utilizado programaticamente via protocolo `te
 ### Fluxo completo
 
 ```
-1. Agente entra no Blue Line com seu ramal
+1. Agente entra no Blue Desk com seu ramal
 2. Seleciona campanha → clica "Iniciar discagem"
 3. App busca próximo contato pendente (Supabase)
 4. App chama http://localhost:3001/call (helper local)
 5. Helper executa: start "" "tel:NUMERO"
 6. Windows abre softphone utilizado → softphone utilizado disca
 7. Agente fala com o contato
-8. Agente clica "Encerrar" no banner do Blue Line
+8. Agente clica "Encerrar" no banner do Blue Desk
 9. App exibe form de disposição
 10. Agente registra resultado → próximo contato carrega
 ```
@@ -81,7 +81,7 @@ Arquivo: `local-helper/`
 App Express mínimo (~40 linhas) rodando em `http://localhost:3001`.
 
 **Endpoints:**
-- `GET /ping` — health check (usado pelo Blue Line para mostrar status "Helper online/offline")
+- `GET /ping` — health check (usado pelo Blue Desk para mostrar status "Helper online/offline")
 - `POST /call` — recebe `{ number }`, executa `start "" "tel:NUMBER"`, aciona softphone utilizado
 
 **Instalação nos PCs dos agentes:**
@@ -195,7 +195,7 @@ Estabilizar a experiência do agente e conectar automações externas via Make.
 ### 🔜 6.3 — Listas e Campanhas configuráveis  ← PRÓXIMO
 
 Substitui o conceito antigo (webhook Make + Google Sheets). O supervisor sobe um
-**mailing** (`.csv` ou `.xlsx`) direto na interface, e o Blue Line importa os contatos.
+**mailing** (`.csv` ou `.xlsx`) direto na interface, e o Blue Desk importa os contatos.
 Sem dependência externa, sem `x-webhook-key`.
 
 #### Conceito: Listas vs Campanhas
@@ -284,7 +284,7 @@ sai da fila permanentemente.
 ### ✅ 6.4 — Notificação pós-chamada (Make)
 
 Quando o agente registra um resultado, se a disposição estiver entre as configuradas na
-campanha, o Blue Line faz um `POST` para o webhook do Make, que dispara email/WhatsApp.
+campanha, o Blue Desk faz um `POST` para o webhook do Make, que dispara email/WhatsApp.
 
 - **Canal**: webhook único do Make. URL em `MAKE_WEBHOOK_URL` (secret no Cloudflare). Sem a
   var, a notificação é no-op. POST é **server-side** (`src/app/actions/notifications.ts`,

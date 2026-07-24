@@ -9,7 +9,7 @@ export const GLOSSARY = [
 ];
 
 export const FAQ = [
-  { q: "Por que o softphone utilizado disca sozinho?", a: "O Blue Line envia o número para o helper local, que aciona o softphone utilizado. Você só atende." },
+  { q: "Por que o softphone utilizado disca sozinho?", a: "O Blue Desk envia o número para o helper local, que aciona o softphone utilizado. Você só atende." },
   { q: "O que é discagem paralela?",         a: "O sistema disca para vários números ao mesmo tempo (alvo N=3) para acelerar a fila." },
   { q: "Sumiu o banner verde do helper.",    a: "O helper local parou. Abra o start.bat e o banner volta a online." },
   { q: "Não consigo iniciar — fora do horário.", a: "A campanha tem janela definida pelo supervisor. Aguarde ou peça ajuste." },

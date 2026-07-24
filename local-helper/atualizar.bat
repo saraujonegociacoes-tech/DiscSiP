@@ -1,11 +1,11 @@
 @echo off
-title Reiniciar Blue Line Helper
+title Reiniciar Blue Desk Helper
 cd /d "%~dp0"
 
-echo Blue Line Helper - Reiniciar / atualizar dependencias
+echo Blue Desk Helper - Reiniciar / atualizar dependencias
 echo =====================================================
 echo.
-echo O CODIGO do helper se atualiza sozinho contra o Blue Line (auto-update no
+echo O CODIGO do helper se atualiza sozinho contra o Blue Desk (auto-update no
 echo start e botao "Atualizar" no site). Use este .bat so para REINICIAR o helper
 echo ou atualizar as dependencias Node. Nao mexe nos hooks do MicroSIP, entao
 echo pode rodar com o MicroSIP aberto (ao contrario do instalar.bat).

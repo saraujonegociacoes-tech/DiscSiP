@@ -11,7 +11,7 @@ import { CallHistory } from './CallHistory'
 import { DialerTab } from './DialerTab'
 import { AgentPerformance } from './AgentPerformance'
 import { CallControls } from './CallControls'
-import { AppShell } from '@/components/blueline/AppShell'
+import { AppShell } from '@/components/bluedesk/AppShell'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { helperFetch } from '@/lib/constants'
@@ -53,7 +53,7 @@ export default function SoftphoneClient() {
   const [loadingProfile, setLoadingProfile] = useState(true)
   const [activeTab, setActiveTab] = useState<Tab>('dialer')
   const [callDuration, setCallDuration] = useState(0)
-  // Versão mais nova do helper publicada pelo Blue Line (public/helper/version.json)
+  // Versão mais nova do helper publicada pelo Blue Desk (public/helper/version.json)
   const [latestVersion, setLatestVersion] = useState<string | null>(null)
   const [updating, setUpdating] = useState(false)
   // Falha na atualização do helper (some sozinha em alguns segundos — ver efeito abaixo)
@@ -78,7 +78,7 @@ export default function SoftphoneClient() {
     }
   }, [router, setProfile])
 
-  // Versão mais nova do helper publicada pelo Blue Line — para detectar helper desatualizado
+  // Versão mais nova do helper publicada pelo Blue Desk — para detectar helper desatualizado
   useEffect(() => {
     fetch('/helper/version.json', { cache: 'no-store' })
       .then((r) => (r.ok ? r.json() : null))
