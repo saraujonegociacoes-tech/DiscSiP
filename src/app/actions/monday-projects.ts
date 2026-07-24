@@ -81,18 +81,25 @@ export async function createProject(
     return { error: 'Chave inválida (ex: BL, DEV, APP).' }
   }
 
-  const { data, error } = await supabase
+  // Gera o id no app em vez de usar .select()/RETURNING. A policy de SELECT de
+  // monday_projects exige is_monday_project_member(id), mas a associação do dono só
+  // é criada pelo trigger AFTER INSERT (handle_new_monday_project) — que ainda NÃO é
+  // visível na cláusula RETURNING, fazendo o insert().select() estourar RLS. Sem
+  // RETURNING, vale só o WITH CHECK (owner_id = auth.uid()), que passa.
+  const id = crypto.randomUUID()
+  const { error } = await supabase
     .from('monday_projects')
-    .insert({ name, key, description, color, owner_id: user.id })
-    .select('id')
-    .single()
-  if (error || !data) return { error: error?.message ?? 'Falha ao criar projeto.' }
+    .insert({ id, name, key, description, color, owner_id: user.id })
+  if (error) return { error: error.message }
 
-  // Board padrao do projeto
-  await supabase.from('monday_boards').insert({ project_id: data.id, name: 'Board principal' })
+  // Board padrão (a associação de membro do dono já existe via trigger)
+  const { error: boardError } = await supabase
+    .from('monday_boards')
+    .insert({ project_id: id, name: 'Board principal' })
+  if (boardError) return { error: boardError.message }
 
   revalidatePath('/projects')
-  return { id: data.id as string }
+  return { id }
 }
 
 export async function seedDemo(): Promise<{ id?: string; error?: string }> {
