@@ -316,6 +316,50 @@ export interface CsTeamData {
   negotiationTotals: CsTeamNegotiationTotals
 }
 
+// PÁGINA 3 (Minutas): a RPC get_cs_minutas() (migration 20260727_cs_minutas.sql) devolve os
+// cards escopados pelo RLS que TÊM minuta (data de quitação preenchida = vencimento), lidos do
+// snapshot atual (metadata do Pipefy). SNAPSHOT de estado ATUAL — sem filtro de período (como a
+// P1). Os buckets por vencimento (Vencidas/Mensal/Trimestral/Semestral/180+), as somas de valor
+// e o drill/CSV acontecem no cliente (src/features/cs/components/CsMinutas.tsx). Mapeamento (dono
+// 2026-07-27): valor da minuta = valor_resguardados_dos_clientes (Q.D); dívida original fixa =
+// d_vida_atual_do_cliente; vencimento = data_da_quita_o; etiqueta = sele_o_de_etiqueta. Sem URL
+// própria: a UI aponta pra URL do card (a minuta fica anexada nele).
+export interface CsMinutaCard {
+  pipefyCardId: string
+  title: string | null // nome do cliente (dado sensível — só chega a quem o RLS libera)
+  agentId: string | null
+  agentName: string // "Sem responsável" quando agentId é null
+  active: boolean // false = card em fase terminal (inativo)
+  phaseId: string | null
+  phase: string // nome da fase (denormalizado)
+  valor: number | null // "Valor da Minuta Final" (valor_resguardados_dos_clientes) — null se vazio
+  divida: number | null // "Dívida do Cliente" (d_vida_atual_do_cliente, fixa) — base do % de desconto
+  ultimaNegociacao: number | null // "Última Negociação" = Q.D real da fase de negociação (q_d_valor_da_quita_o_com_desconto)
+  descontoPct: number | null // (1 − Minuta Final/Dívida)·100, derivado; null se não dá pra calcular
+  etiqueta: string | null // rótulo de desconto marcado (sele_o_de_etiqueta), se houver
+  resguardo: number | null // valor de resguardo do mês mais avançado preenchido (>0); null se nenhum
+  resguardoMonth: number | null // qual mês (N) da série valor_de_resguardo_N alimentou o resguardo
+  dueDate: string // data de quitação = vencimento da minuta (ISO date; sempre presente aqui)
+  daysToDue: number // vencimento − hoje, em dias (negativo = vencida)
+}
+
+// Resguardo da carteira quebrado por situação, pra o KPI acompanhar o filtro Ativos/Inativos/
+// Todos (o cliente soma active+inactive pra "Todos"). Cada card entra com UM valor (o maior mês).
+export interface CsResguardoBucket {
+  total: number // Σ do resguardo dos cards dessa situação
+  count: number // quantos cards (dessa situação) têm resguardo > 0
+}
+
+export interface CsMinutasData {
+  referenceAt: string // "agora" (ISO) — a data da foto
+  withoutMinuta: number // nº de cards escopados SEM data de quitação (negociações sem minuta ainda)
+  resguardo: {
+    active: CsResguardoBucket // cards não-terminais
+    inactive: CsResguardoBucket // cards em fase terminal
+  }
+  cards: CsMinutaCard[]
+}
+
 // ── Aquecimento de números WhatsApp — domínio SEPARADO ──────────────────────
 // Espelham as tabelas de supabase/migrations/20260719_warmup_schema.sql. Módulo
 // sensível: só manager/admin leem/configuram (RLS). As tabelas de execução

@@ -1,9 +1,8 @@
 # Painel CS — Estado atual e próximos passos (handoff)
 
-> Atualizado em 2026-07-27 (**Páginas 1 e 2 fechadas** — dono confirmou todas as migrations de
-> CS aplicadas, incl. `20260723_cs_team_v2`, + Make rodando). Restam **P3 Minutas** (bloqueada
-> por field-ids) e **P4 Pagamento** (projeção já construível). Ponto de retomada do painel de
-> Sucesso do Cliente (CS).
+> Atualizado em 2026-07-27 (**Páginas 1, 2 e 3 no ar** — todas as migrations de CS aplicadas,
+> incl. `20260723_cs_team_v2` e `20260727_cs_minutas`, + Make rodando). Falta só a **P4
+> Pagamento**. Ponto de retomada do painel de Sucesso do Cliente (CS).
 > Fontes de verdade: [`painel-sucesso-cliente-cs.md`](painel-sucesso-cliente-cs.md) (design
 > das 4 páginas + pendências), [`make-integracao-cs.md`](make-integracao-cs.md) (ingestão).
 
@@ -26,19 +25,43 @@ Arquivos: `src/app/cs/{page,CsClient}.tsx`, `src/app/actions/cs.ts` (`getCsMatri
 `src/features/cs/components/CsMatrix|CsTabNav|CsTabPlaceholder.tsx`, utility CSS
 `scrollbar-slim` em `globals.css`. Dashboard antigo removido.
 
-## 🔜 O que falta — Páginas 2, 3, 4 (todas travadas em pendências do dono)
+## Estado das páginas — P1, P2 e P3 no ar · falta a P4
 
-### Página 3 — Controle de Minutas  ·  *snapshot, mais rápida de render*  ·  🔨 **PRÓXIMA**
-- **Pendência #4 resolvida (2026-07-27):** sem URL de minuta → usa a **URL do card**; **valor
-  da minuta** = `valor_resguardados_dos_clientes` (Q.D, com desconto); **vencimento** =
-  `data_da_quita_o`; **dívida original fixa** = `d_vida_atual_do_cliente` (base do % desconto).
-- Candidatos auxiliares: % desconto/etiqueta (`sele_o_de_etiqueta`,
-  `do_desconto_do_cliente_atualmente`), resguardo (`valor_resguardado_at_o_momento`).
-- Buckets por vencimento (de `data_da_quita_o`): Vencidas · Mensal · Trimestral · Semestral.
-- **A confirmar antes do build:** cortes dos buckets + % desconto derivado (`1 − Q.D/dívida`)
-  vs campo de etiqueta. É snapshot (espelha a P1) → sem filtro de período, provavelmente.
+### Página 3 — Controle de Minutas  ·  ✅ NO AR (todas as migrations aplicadas 2026-07-27)
 
-### Página 4 — Pagamento + Insights  ·  *snapshot + série temporal*
+Snapshot (foto de estado atual, **sem filtro de período**, como a P1). Só cards **com minuta**
+(têm `data_da_quita_o`); os sem data viram o contador "sem minuta". Não depende do Make.
+
+**Migrations — todas aplicadas (dono confirmou 2026-07-27: "rodei todas"):**
+- `20260727_cs_minutas` — base: parsers `cs_parse_money`/`cs_parse_date` + RPC `get_cs_minutas()`.
+- `20260727b_cs_minutas_resguardo` — métrica de Valor Resguardado.
+- `20260727c_cs_minutas_resguardo_split` — resguardo por situação (KPI acompanha o filtro).
+- `20260727d_cs_minutas_negociacao` — renames + coluna "Última Negociação" (superset de b+c).
+
+**Tabela** — todas as colunas **ordenáveis** asc/desc (texto A→Z, data velho→novo, número
+menor→maior): `Cliente | Responsável | Dívida do Cliente | Valor da Minuta Final | Última
+Negociação | Resguardado | Vencimento | Prazo | % desc. | Etiqueta`.
+- **Dívida do Cliente** = `d_vida_atual_do_cliente` (dívida atual, sem desconto).
+- **Valor da Minuta Final** = `valor_resguardados_dos_clientes` (minuta emitida, com desconto).
+- **Última Negociação** = `q_d_valor_da_quita_o_com_desconto` (o Q.D real da fase de negociação).
+- **Resguardado** = série mensal `valor_de_resguardo_N`, o **maior N com valor > 0** (um por card,
+  nunca a soma; mostra o mês em superscrito).
+- **% desc.** = 1 − (Minuta Final ÷ Dívida) · **Vencimento** = `data_da_quita_o` · **Etiqueta** =
+  `sele_o_de_etiqueta`.
+
+**Buckets por vencimento** (tiles clicáveis, contagem + Σ): Vencidas (`<hoje`) · Mensal (`≤30d`) ·
+Trimestral (`31–90d`) · Semestral (`91–180d`) · 180+ (`>180d`). Toggle **Ativos/Inativos/Todos**.
+
+**Trilho:** "Minutas · Σ valor" (do recorte); **"Resguardado na carteira"** (Σ do resguardo, um por
+card, **acompanha o filtro Ativos/Inativos/Todos** via `resguardo.active`/`.inactive`); e
+**Insights clicáveis** — cada um abre o drill dos cards citados (link Pipefy + valor relevante):
+vencidas, vence ≤30d, **última negociação abaixo da minuta final** (com a diferença acumulada),
+maior minuta. **Export CSV.**
+
+Arquivos: RPC nas migrations acima; tipos `CsMinutaCard`/`CsMinutasData`/`CsResguardoBucket`;
+action `getCsMinutas`; componente `CsMinutas.tsx`; aba "minutas" do `CsClient`.
+
+### Página 4 — Pagamento + Insights  ·  ⏳ *não iniciada (única que falta)*  ·  *snapshot + série temporal*
 - **Projeção** (quando/quanto vão pagar): construível do snapshot já — `valor_da_parcela`,
   `data_de_vencimento_da_parcela_do_cliente`, `data_da_quita_o`, contagens P.P/P.A/P.V.
 - **Histórico de pagamento:** definir a fonte (pendência 6) — snapshot de P.P ao longo do
@@ -69,7 +92,7 @@ Arquivos: `src/app/cs/{page,CsClient}.tsx`, `src/app/actions/cs.ts` (`getCsMatri
 | 1 | Fase **"Aguardando pagamento"** — existe no pipe? qual id? (não está nas 35 seedadas) | P2 | ✅ id **343781769** "Aguardando Pagamento" (vazia); seedada + `exclude_from_movement=true` na migration `20260722b_cs_aguardando_pagamento.sql` |
 | 2 | Fase **"Negociação"** = `Negociação do Cliente` (order 2) ou outra? | P2 | ✅ `Negociação do Cliente` (id 336929552), pré-marcada `is_negotiation` |
 | 3 | Gatilho de **"negociação feita"** | P2 | ✅ **só mudança nos 5 campos** (entrada na fase não conta) |
-| 4 | **Minuta** — field-ids de URL / valor da minuta | P3 | ⏳ pendente |
+| 4 | **Minuta** — field-ids de URL / valor da minuta | P3 | ✅ resolvido (2026-07-27): sem URL própria (URL do card); **Q.A** = `d_vida_atual_do_cliente`, **Q.D** = `valor_resguardados_dos_clientes`, vencimento = `data_da_quita_o`, etiqueta = `sele_o_de_etiqueta` |
 | 5 | **Corte de completude** | P2 | ✅ Completa=5 · Parcial=3–4 **com Q.D** · Incompleta=1–2 ou 3–4 sem Q.D · Sem=0 |
 | 6 | **Histórico de pagamento** — snapshot de P.P ao longo do tempo ou fonte externa? | P4 | ⏳ pendente (o snapshot dos 5 campos já cobre P.P ao longo do tempo, se for essa a fonte) |
 | 7 | **Atribuição** | P2 | ✅ **qualquer comentário** conta (autor guardado p/ trocar depois) |
@@ -84,15 +107,18 @@ Arquivos: `src/app/cs/{page,CsClient}.tsx`, `src/app/actions/cs.ts` (`getCsMatri
   `ingest_cs_card` estendida (comentários + os 5 campos).
 - Confirmar "responsável = último assignee" com um card real de 2+ assignees.
 
-## 🧭 Ordem recomendada
+## 🧭 O que falta
 
-1. **Aplicar `20260722_cs_team.sql` + re-rodar o backfill + montar o Make** — destrava o dado
-   real da P2 (série temporal) e já semeia a completude. Prioridade, porque cada dia sem o
-   Make é série temporal perdida pra sempre.
-2. **Página 3 (Minutas)** — melhor esforço×valor: é snapshot (rende rápido, espelha a P1) e
-   só depende de você mandar os field-ids da minuta (pendência 4).
-3. **Página 4 (Pagamento)** — snapshot pra projeção; o histórico pode sair do snapshot dos 5
-   campos (P.P ao longo do tempo) que a P2 já passou a gravar (confirmar pendência 6).
+**Só a Página 4 (Pagamento + Insights).** P1, P2 e P3 estão no ar com as migrations aplicadas.
+
+- **Projeção** ("quando/quanto vão pagar") é **construível já** do snapshot: `valor_da_parcela`,
+  `data_de_vencimento_da_parcela_do_cliente`, `data_da_quita_o`, contagens P.P/P.A/P.V.
+- **Histórico de pagamento** depende da **pendência #6**: sai do snapshot de P.P ao longo do
+  tempo (a P2 já grava `cs_negotiation_snapshots`) **ou** de fonte externa? — responder antes.
+- **Não precisa de nada novo no Make** (os campos já são ingeridos pelo `ingest_cs_card`).
+
+> Pra começar: responda a pendência #6 e peça "vamos pra Página 4". O fluxo é o mesmo —
+> conceito/plano → aprovação → build com `tsc`/`lint` verdes; a migration você aplica à mão.
 
 > Para começar a próxima: responda as pendências da página escolhida (tabela acima) e peça
 > "vamos pra Página X". O fluxo é o mesmo da P1 — conceito/plano → aprovação → build com

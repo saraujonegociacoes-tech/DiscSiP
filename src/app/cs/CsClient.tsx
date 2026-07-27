@@ -6,7 +6,7 @@ import { LayoutDashboard, Users, FileText, Wallet } from 'lucide-react'
 import { AppShell } from '@/components/bluedesk/AppShell'
 import { PageHeader } from '@/components/bluedesk/PageHeader'
 import { Tabs, TabsContent } from '@/components/ui/tabs'
-import { CsTabNav, CsTabPlaceholder, CsMatrix, CsTeam, type CsTab } from '@/features/cs'
+import { CsTabNav, CsTabPlaceholder, CsMatrix, CsTeam, CsMinutas, type CsTab } from '@/features/cs'
 import type { CsMatrixData } from '@/lib/types/database'
 
 // Painel de Sucesso do Cliente (CS) reformulado — domínio SEPARADO do dashboard de
@@ -73,13 +73,11 @@ export function CsClient({ initialData }: { initialData: CsMatrixData }) {
             <CsTeam />
           </TabsContent>
 
-          {/* 3 · Minutas — snapshot; pendente mapear os field-ids de minuta/valor/URL. */}
+          {/* 3 · Minutas — snapshot (foto de estado atual, sem período). Buckets por
+              vencimento (data_da_quita_o) + valor da minuta (Q.D) + % desconto + etiqueta,
+              com link do card. Componente busca o próprio dado (getCsMinutas). */}
           <TabsContent value="minutas" className="mt-6">
-            <CsTabPlaceholder
-              icon={FileText}
-              title="Controle de Minutas em preparação"
-              description="URL, valor, resguardo, % de desconto e buckets por vencimento. Pendente o dono apontar quais campos do Pipefy são a minuta."
-            />
+            <CsMinutas />
           </TabsContent>
 
           {/* 4 · Pagamento + Insights — projeção (snapshot) + histórico (série temporal). */}

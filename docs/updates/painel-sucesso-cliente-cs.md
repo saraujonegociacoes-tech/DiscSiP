@@ -8,6 +8,59 @@
 > dashboard. Réplica do padrão do dashboard de Leads (Pipefy → Make → Supabase) para o
 > pipe de **Sucesso do Cliente**, como domínio **separado**.
 
+## Estado atual (2026-07-27)
+
+**3 das 4 páginas no ar, com as migrations aplicadas e o Make rodando.**
+
+| Página | Estado | Migration | Base |
+|---|---|---|---|
+| 1 · Visão Geral + Janelas | ✅ construída e validada | `20260721_cs_age_windows` (aplicada) | snapshot |
+| 2 · Equipe | ✅ construída, série temporal acumulando | `20260722` + `20260722b` + `20260723_cs_team_v2` (aplicadas) | Make |
+| 3 · Controle de Minutas | ✅ no ar | `20260727` + `…b` + `…c` + `…d` (todas aplicadas 2026-07-27) | snapshot |
+| 4 · Pagamento + Insights | ⏳ não iniciada | — | snapshot + série |
+
+**Atualização dos dados:** o painel lê o **snapshot no Supabase** (`cs_cards.metadata` etc.),
+que é mantido fresco pelo **mesmo cenário do Make** que já roda (o `ingest_cs_card` grava
+TODOS os campos do card → nenhuma página precisa de query nova no Make; a P3, por exemplo, sai
+de campos que já vêm no `fields`). Cada página busca o dado ao ser aberta (server action) — é
+"fresco a cada visita", não um socket ao vivo. Ver [`make-integracao-cs.md`](make-integracao-cs.md).
+
+## O que cada página entrega (visão)
+
+Leitura rápida, **sem tecnês**, do porquê de cada página existir — que controle ela dá pro time de
+Sucesso do Cliente. Cada página é uma entrega ("sprint") do painel.
+
+### Página 1 — Visão Geral + Janelas
+
+Dá o **raio-x do funil inteiro num olhar**: onde cada cliente está parado e **há quanto tempo**.
+Serve pra enxergar de imediato os cards empacados numa fase, priorizar quem precisa de atenção e
+**flagrar clientes abandonados** (parados demais numa fase inicial, antes do acompanhamento real).
+É a visão de **saúde operacional da esteira** — dá pro gestor sentir a temperatura do funil sem
+abrir card por card.
+
+### Página 2 — Equipe
+
+Mostra **o que cada responsável fez no período**: quem moveu cards, quem atualizou (comentou),
+quantas negociações fechou e **quem deixou card parado**. Serve pro supervisor acompanhar
+**produtividade e engajamento** de cada pessoa e a **qualidade das negociações** (o quão completas
+elas estão). É a visão de **desempenho e cobrança do time** — transforma esforço diário em número.
+
+### Página 3 — Controle de Minutas
+
+Concentra o **controle dos acordos**: a dívida do cliente, o valor da minuta final, a última
+negociação, o desconto, o valor resguardado e — o mais importante — **os vencimentos** (quais
+minutas estão vencidas ou vencendo). Serve pra **não perder prazo**, enxergar **oportunidades**
+(quitações e antecipações), pegar **negociações que caíram abaixo da minuta** e saber **quanto está
+resguardado na carteira**. É a visão de **controle de acordos e prazos** — o dinheiro e as datas
+que não podem escapar.
+
+### Página 4 — Pagamento + Insights *(a construir)*
+
+Vai entregar a **projeção de recebimento**: **quando e quanto** os clientes vão pagar, mais o
+**histórico do quanto já pagaram**. Serve pra a gestão **antecipar o caixa** e acompanhar a
+evolução de pagamento por cliente. É a visão de **previsibilidade financeira** — sair do "quanto
+entrou" pro "quanto vai entrar".
+
 ## Por que separado
 
 - O painel de Leads é sobre o **comercial**. O painel de CS é sobre outro departamento,
@@ -61,6 +114,10 @@ antigo (distribuição por fase + tempo em fase + contato periódico — antigas
 
 ### A pedra grande: a Equipe é série temporal e o dado não existe ainda
 
+> ✅ **Resolvida (2026-07-23):** a fundação foi ligada — ingestão nova (`cs_card_comments` +
+> `cs_negotiation_snapshots` + troca de responsável), backfill re-rodado e **Make rodando**. A
+> série temporal já acumula. O texto abaixo é o registro do problema no dia do planejamento.
+
 Introspecção do estado atual (2026-07-21, 1484 cards):
 
 - **Histórico de movimento não existe.** Os únicos eventos em `cs_card_events` são os do
@@ -77,29 +134,31 @@ começar a acumular a partir de agora**. As páginas 1, 3 e 4 rendem valor visí
 
 ---
 
-## Página 1 — Visão Geral + Janelas
+## Página 1 — Visão Geral + Janelas  ·  ✅ construída e validada
 
-Gráfico de **pizza** classificando os cards por **idade desde a criação**
-(`now - pipefy_created_at`) em 4 janelas:
+> A pizza inicial foi **rejeitada pelo dono** e substituída por uma **MATRIZ Fase × Tempo na
+> fase** (heatmap). As "janelas" medem o **tempo na fase atual** (`dwell`), não a idade do card.
+> Sem filtro de período (é foto de estado atual). Migration `20260721_cs_age_windows` aplicada +
+> backfill re-rodado. Detalhe de implementação em [`cs-proximos-passos.md`](cs-proximos-passos.md).
 
-| Janela | Idade |
-|---|---|
-| 1 | 1 – 30 dias |
-| 2 | 31 – 90 dias |
-| 3 | 91 – 180 dias |
-| 4 | 181+ dias |
+Matriz: **linhas = fases** (ordem do funil), **colunas = 4 janelas de tempo na fase**
+(1-30 / 31-90 / 91-180 / 181+) **+ Total + Tempo médio na fase**. Cor da célula = heat (matiz
+pela janela recente→parado, intensidade pelo nº de cards). **❗** em fase pré-acompanhamento
+(ordem ≤ 2) com cards há 181+ dias parados. **Drill-down por célula** (painel lateral): ID ·
+Cliente · Responsável · tempo na fase · link do Pipefy, "Ver todos". **Export CSV.** Toggle
+**Ativos · Inativos · Todos** (inativo = fase terminal, `cs_phases.is_terminal`).
 
-**Drill-down em 2 níveis:**
-1. Clica no total de uma janela → total de cards da janela **por responsável**.
-2. Clica no total de uma pessoa → **lista dos cards** dela naquela janela, ordenada do
-   **mais antigo pro mais novo**, com a **URL do card** no Pipefy.
+- URL do card: `https://app.pipefy.com/open-cards/{pipefy_card_id}`.
+- `dwell = now − cs_cards.current_phase_entered_at` (entrada real na fase via `phases_history`
+  do Pipefy) — corrigido o bug de dwell = tempo desde `updated_at`.
 
-- URL do card: `https://app.pipefy.com/open-cards/{pipefy_card_id}` (temos `pipefy_card_id`).
-- Respeita o filtro de período (idade calculada relativa ao fim do período selecionado,
-  ou "agora" no ciclo corrente — **a confirmar** na implementação).
-- Totalmente construível com o dado atual.
+## Página 2 — Equipe (série temporal)  ·  ✅ construída (série acumulando)
 
-## Página 2 — Equipe (série temporal)
+> Migrations `20260722` + `20260722b` + `20260723_cs_team_v2` aplicadas; Make rodando e
+> capturando transições/comentários/trocas de responsável. A **completude** rende do snapshot
+> atual; **movimento/negociação** enchem conforme o Make acumula. Reformulação visual v2
+> (2026-07-23): KPIs Movimentados/Negociações feitas/Recebidos; tabela "Movimento no período";
+> "Negociações feitas no período" com drill (cards + campos faltando + link Pipefy).
 
 Controle das movimentações dentro do pipe **por responsável, no ciclo** (11→10, filtrável
 por período). `atualização = comentário no card` (decisão do dono).
@@ -157,11 +216,41 @@ escuro: guardar **histórico dos valores** dos 5 campos (`cs_negotiation_snapsho
 um limiar (ex.: valores > R$X ou variação > Y%). Fica registrado o que mudou, quando e por
 quanto — dá pra auditar. **Requer ingestão nova** (não temos histórico de campo hoje).
 
-## Página 3 — Controle de Minutas
+## Página 3 — Controle de Minutas  ·  ✅ construída (migration `20260727` aplicada 2026-07-27)
 
-Controle das minutas com: **valor da minuta, vencimento, dívida original, % de desconto e
-valor resguardado**. Buckets por vencimento: **Vencidas · Mensal · Trimestral · Semestral**.
-Mais um espaço de **notificações com insights** de oportunidade (quitações, antecipações).
+> **Snapshot** (foto de estado atual, **sem filtro de período**, como a P1). Só cards **com
+> minuta** (têm `data_da_quita_o` = vencimento); cards sem essa data viram o contador "sem
+> minuta". Não depende do Make. Arquivos: RPC `get_cs_minutas()` + parsers `cs_parse_money`/
+> `cs_parse_date` (migration `20260727_cs_minutas.sql`), tipos `CsMinutaCard`/`CsMinutasData`,
+> action `getCsMinutas`, componente `CsMinutas.tsx`, aba "minutas" do `CsClient`.
+>
+> **Tabela (2026-07-27, migration `20260727d`):** `Cliente | Responsável | Dívida do Cliente |
+> Valor da Minuta Final | Última Negociação | Resguardado | Vencimento | Prazo | % desc. |
+> Etiqueta`. **Toda coluna é ordenável** (crescente/decrescente). Nomenclatura (dono):
+> - **Dívida do Cliente** = `d_vida_atual_do_cliente` (dívida atual, sem desconto; era "Valor Q.A").
+> - **Valor da Minuta Final** = `valor_resguardados_dos_clientes` (minuta emitida; era "Valor Q.D").
+> - **Última Negociação** = `q_d_valor_da_quita_o_com_desconto` (o **Q.D real da fase de negociação**,
+>   a negociação atualizada no card — distinto da minuta emitida; os dois podem divergir).
+> - **% desc.** = 1 − (Minuta Final ÷ Dívida).
+>
+> **Valor Resguardado (métrica, 2026-07-27, migration `20260727b_cs_minutas_resguardo`):** o pipe
+> tem 7 famílias de campo de resguardo; o dono escolheu **só a série mensal `valor_de_resguardo_N`**.
+> Por card, pega o valor do **mês mais avançado (maior N) com valor > 0** (pula os `0,00`; NÃO é a
+> fase atual — é o maior N preenchido no metadata; a coluna mostra o mês de origem em superscrito).
+> O KPI **"Resguardado na carteira"** = Σ do resguardo (um por card) e **acompanha o filtro
+> Ativos/Inativos/Todos** (migration `20260727c`): a RPC devolve o resguardo quebrado em
+> `active`/`inactive` (por `is_terminal`) e o cliente casa com o toggle (Todos = soma dos dois).
+> Independe do bucket de vencimento. Cada card entra com **um** valor (o do maior mês), nunca a
+> soma dos campos de resguardo do card.
+
+Controle das minutas com: **Dívida do Cliente / Valor da Minuta Final / Última Negociação /
+Resguardado, vencimento, % de desconto e etiqueta**. Buckets por vencimento (faixas até
+`data_da_quita_o`): **Vencidas (`<hoje`) · Mensal
+(`≤30d`) · Trimestral (`31–90d`) · Semestral (`91–180d`) · 180+ (`>180d`)**. Tiles clicáveis
+(contagem + Σ valor), painel de **insights** (vencidas, vence ≤30d, **última negociação abaixo da
+minuta final** — com a diferença acumulada, maior minuta) e **export CSV**. Cada **insight é
+clicável** → abre embaixo o drill dos **cards citados** (título + link do Pipefy + o valor
+relevante àquele insight).
 
 **Mapeamento confirmado pelo dono (2026-07-27) — pendência #4 resolvida:**
 
@@ -177,11 +266,15 @@ Mais um espaço de **notificações com insights** de oportunidade (quitações,
 > **Não se puxa o documento da minuta** — ela está anexada ao card, então o link da P3 é a
 > URL do próprio card no Pipefy (mesmo padrão da P1).
 
-⏳ *A confirmar antes do build:* (a) os cortes dos buckets Vencidas/Mensal/Trimestral/Semestral
-a partir de `data_da_quita_o`; (b) usar % de desconto **derivado** (`1 − Q.D/dívida`) ou o
-campo `sele_o_de_etiqueta`.
+✅ *Decisões (2026-07-27):* buckets = faixas até `data_da_quita_o` (cortes acima). O **% de
+desconto mostra os dois**: derivado (`1 − Q.D/Q.A`) na coluna "% desc." **e** a etiqueta
+(`sele_o_de_etiqueta`) na coluna "Etiqueta".
 
-## Página 4 — Controle de Pagamento + Insights
+## Página 4 — Controle de Pagamento + Insights  ·  ⏳ não iniciada (única página que falta)
+
+> Próximo passo do painel. A **projeção** já é construível do snapshot atual; o **histórico**
+> depende de definir a fonte (pendência #6). Não precisa de nada novo no Make (os campos já são
+> ingeridos). Pra começar: responder a pendência #6 e pedir "vamos pra Página 4".
 
 - **Projeções** e **quando vão pagar**: `valor_da_parcela` ("Valor da Parcela"),
   `data_de_vencimento_da_parcela_do_cliente` ("Dia de Vencimento da Parcela do Cliente"),
@@ -226,18 +319,25 @@ reformulação).
 
 ## Pendências / perguntas abertas
 
-1. **Fase "Aguardando pagamento"** — não está nas 35 fases seedadas. Existe hoje no pipe?
-   Qual o id? (Mudança de pipe? O dono citou "Mudanças no pipe (Ignorar): Pós-fase".)
-2. **Fase "Negociação"** — é `Negociação do Cliente` (order 2) ou outra fase?
-3. **Gatilho de "negociação feita"** — entrada na fase? mudança nos 5 campos? ambos?
-4. ✅ **Minuta** (resolvido 2026-07-27) — sem URL própria (usa a do card); valor da minuta =
-   `valor_resguardados_dos_clientes` (Q.D); vencimento = `data_da_quita_o`; dívida fixa de
-   entrada = `d_vida_atual_do_cliente`. Resta confirmar cortes dos buckets + fonte do % desconto.
-5. **Corte de completude** — Parcial 3-4 / Incompleta 1-2 (assumido) vs "1-3" (falado).
-6. **Histórico de pagamento** — deriva do snapshot de `P.P` ao longo do tempo ou fonte externa?
-7. **Atribuição por responsável** — o autor do comentário pode diferir do responsável do
-   card; contamos pelo responsável (assignee) ou pelo autor da ação?
-8. **Limiar de "update relevante"** — que delta em Q.D/Q.A/parcelas conta como significativo?
+> **Estado (2026-07-27): só a #6 continua aberta** (destrava o histórico da Página 4). As #1,
+> #2, #3, #5, #7, #8 foram resolvidas ao construir a P2; a #4 foi resolvida ao construir a P3.
+> Ver a tabela com os desfechos em [`cs-proximos-passos.md`](cs-proximos-passos.md).
+
+1. ✅ **Fase "Aguardando pagamento"** — id `343781769`, seedada + `exclude_from_movement=true`
+   (migration `20260722b`).
+2. ✅ **Fase "Negociação"** = `Negociação do Cliente` (id 336929552, order 2), `is_negotiation`.
+3. ✅ **Gatilho de "negociação feita"** = mudança nos 5 campos (entrada na fase não conta).
+4. ✅ **Minuta** (resolvido 2026-07-27) — sem URL própria (usa a do card); **Dívida do Cliente** =
+   `d_vida_atual_do_cliente`, **Valor da Minuta Final** = `valor_resguardados_dos_clientes`,
+   **Última Negociação** = `q_d_valor_da_quita_o_com_desconto`; vencimento = `data_da_quita_o`;
+   etiqueta = `sele_o_de_etiqueta`. Buckets = faixas até o vencimento; % desc. = 1 − (Minuta Final ÷
+   Dívida). Resguardado = maior mês de `valor_de_resguardo_N` com valor > 0.
+5. ✅ **Corte de completude** = Completa=5 · Parcial=3–4 **com Q.D** · Incompleta=1–2 ou 3–4 sem
+   Q.D · Sem=0.
+6. ⏳ **Histórico de pagamento** (ABERTA — trava a P4) — deriva do snapshot de `P.P` ao longo do
+   tempo (a P2 já grava `cs_negotiation_snapshots`) ou de fonte externa? Definir com o dono.
+7. ✅ **Atribuição por responsável** = qualquer comentário conta (autor guardado p/ trocar depois).
+8. ✅ **Limiar de "update relevante"** = sem epsilon — pela ordem de prioridade Q.D›Q.A›P.A›P.P›P.V.
 
 ---
 

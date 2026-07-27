@@ -10,6 +10,8 @@ import type {
   CsTeamMovementTotals,
   CsTeamNegotiationAgent,
   CsTeamNegotiationTotals,
+  CsMinutasData,
+  CsMinutaCard,
 } from '@/lib/types/database'
 
 // Painel de Sucesso do Cliente (CS, Pipefy) — domínio SEPARADO do leads/comercial.
@@ -95,5 +97,49 @@ export async function getCsTeam(period: LeadPeriod): Promise<CsTeamData> {
     movementTotals: d.movementTotals ?? EMPTY_MOVE_TOTALS,
     negotiations: d.negotiations ?? [],
     negotiationTotals: d.negotiationTotals ?? EMPTY_NEG_TOTALS,
+  }
+}
+
+// PÁGINA 3 (Minutas): lê get_cs_minutas() — SNAPSHOT de estado atual, sem período (como a P1).
+// Devolve os cards que têm minuta (data de quitação = vencimento), com valor/dívida/desconto/
+// etiqueta/vencimento; buckets, somas e drill moram no cliente. O RLS escopa igual às outras.
+
+interface MinutasRpc {
+  referenceAt?: string
+  withoutMinuta?: number
+  resguardo?: {
+    active?: { total?: number; count?: number }
+    inactive?: { total?: number; count?: number }
+  }
+  cards?: CsMinutaCard[]
+}
+
+const EMPTY_RESGUARDO = {
+  active: { total: 0, count: 0 },
+  inactive: { total: 0, count: 0 },
+}
+
+export async function getCsMinutas(): Promise<CsMinutasData> {
+  const supabase = await createServerClient()
+  const { data, error } = await supabase.rpc('get_cs_minutas')
+  if (error || !data) {
+    // Degrada (não quebra) se a migration ainda não foi aplicada ou não houver acesso.
+    return { referenceAt: new Date().toISOString(), withoutMinuta: 0, resguardo: EMPTY_RESGUARDO, cards: [] }
+  }
+  const d = data as unknown as MinutasRpc
+  return {
+    referenceAt: d.referenceAt ?? new Date().toISOString(),
+    withoutMinuta: d.withoutMinuta ?? 0,
+    resguardo: {
+      active: {
+        total: d.resguardo?.active?.total ?? 0,
+        count: d.resguardo?.active?.count ?? 0,
+      },
+      inactive: {
+        total: d.resguardo?.inactive?.total ?? 0,
+        count: d.resguardo?.inactive?.count ?? 0,
+      },
+    },
+    cards: d.cards ?? [],
   }
 }

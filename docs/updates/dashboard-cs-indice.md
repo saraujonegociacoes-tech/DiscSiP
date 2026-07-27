@@ -9,26 +9,26 @@ painel e o de Leads são os primeiros passos). Ver também
 [`dashboard-leads-indice.md`](dashboard-leads-indice.md) (painel irmão) e
 [`../links.md`](../links.md) (índice geral por domínio).
 
-> **Estado (21/jul/2026): dashboard reformulado — começar do zero.** Sprint 0
-> (navegação/permissões) e Sprint 1 (schema/ingestão, 1484 cards) entregues e válidas. O
-> dashboard antigo (cards por fase / tempo em fase / contato periódico) foi **substituído**
-> por um painel em **4 páginas** (Visão Geral+Janelas, Equipe, Minutas, Pagamentos+Insights),
-> com ciclo 11→10 e filtros de período. Ver
-> [`painel-sucesso-cliente-cs.md`](painel-sucesso-cliente-cs.md) pra a reformulação completa,
-> o mapeamento de campos real e as pendências.
+> **Estado (27/jul/2026): 3 das 4 páginas no ar.** Sprint 0 (navegação/permissões) e Sprint 1
+> (schema/ingestão, 1484 cards) entregues. O dashboard antigo (cards por fase / tempo em fase /
+> contato periódico) foi **substituído** por um painel em **4 páginas** (Visão Geral+Janelas,
+> Equipe, Minutas, Pagamentos+Insights), com ciclo 11→10. **Páginas 1, 2 e 3 construídas e com
+> as migrations aplicadas; Make (Pipefy→Make→Supabase) rodando. Falta só a Página 4 (Pagamento).**
+> Ver [`painel-sucesso-cliente-cs.md`](painel-sucesso-cliente-cs.md) pra o design completo e o
+> mapeamento de campos, e [`cs-proximos-passos.md`](cs-proximos-passos.md) pro estado/handoff.
 
-## Painel em 4 páginas (reformulação 2026-07-21)
+## Painel em 4 páginas — estado atual
 
-| Aba | Página | Base de dado |
-|---|---|---|
-| 1 | **Visão Geral + Janelas** — pizza por idade do card (1-30/31-90/91-180/181+ dias), drill-down janela → responsável → lista com URL | Snapshot (pronto) |
-| 2 | **Equipe** — movimentação por responsável no ciclo (movido c/ ou s/ comentário, só comentário, parado) + completude de negociação | **Série temporal — dado não existe ainda** |
-| 3 | **Controle de Minutas** — URL/valor/resguardo/% desconto, buckets Vencidas/Mensal/Trimestral/Semestral + insights | Snapshot (pendente mapear "minuta") |
-| 4 | **Pagamento + Insights** — projeções, quando/quanto vão pagar, histórico | Snapshot + série temporal |
+| Aba | Página | Base de dado | Estado |
+|---|---|---|---|
+| 1 | **Visão Geral + Janelas** — matriz Fase × Tempo na fase (heatmap), drill-down por célula, export CSV | Snapshot | ✅ no ar (migration `20260721`) |
+| 2 | **Equipe** — movimento por responsável no ciclo (movido c/ ou s/ atualização, só atualização, parado) + negociações feitas com drill | Série temporal (Make) | ✅ no ar (`20260722`/`20260722b`/`20260723_v2`) |
+| 3 | **Controle de Minutas** — buckets por vencimento; Dívida do Cliente / Valor da Minuta Final / Última Negociação / Resguardado / % desc. / etiqueta; colunas ordenáveis; KPI "Resguardado na carteira"; insights clicáveis; export CSV | Snapshot | ✅ no ar (migrations `20260727` + `b`/`c`/`d`) |
+| 4 | **Pagamento + Insights** — projeções (quando/quanto vão pagar) + histórico | Snapshot + série temporal | ⏳ não iniciada |
 
-> A **Equipe** depende de ingestão nova (comentários + histórico de campo) e do cenário do
-> Make rodando — só acumula a partir de quando for ligada. As páginas 1, 3 e 4 rendem do
-> snapshot atual. `atualização = comentário no card` (decisão do dono).
+> A **Equipe** é série temporal: enche conforme o Make acumula (a completude já rende do
+> snapshot). As páginas 1 e 3 são **foto de estado atual** (snapshot), sem filtro de período. A
+> 4 é a única pendente. `atualização = comentário no card` (decisão do dono).
 
 ## Pipe Pipefy
 - **Nome:** "3.3 - Customer Success" · **id:** `305801110`
