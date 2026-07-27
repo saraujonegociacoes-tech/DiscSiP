@@ -1,3 +1,5 @@
+import { redirect } from 'next/navigation'
+import { getCurrentProfile } from '@/app/actions/auth'
 import { getPrimaryBoardData } from '@/app/actions/monday-board'
 import { getProjectMembers } from '@/app/actions/monday-projects'
 import { BoardView } from '@/components/monday/board/board-view'
@@ -10,10 +12,12 @@ export default async function BoardPage({
 }) {
   const { projectId } = await params
 
-  const [boardData, members] = await Promise.all([
+  const [profile, boardData, members] = await Promise.all([
+    getCurrentProfile(),
     getPrimaryBoardData(projectId),
     getProjectMembers(projectId),
   ])
+  if (!profile) redirect('/login')
 
   const memberOptions: MemberOption[] = members.map((m) => ({
     id: m.user_id,
@@ -34,6 +38,7 @@ export default async function BoardPage({
       boardId={boardData.board.id}
       members={memberOptions}
       initialTasks={boardData.tasks}
+      currentUserId={profile.id}
     />
   )
 }

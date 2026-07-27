@@ -1,7 +1,7 @@
 'use client'
 
-import { CalendarClock } from 'lucide-react'
-import { format, isPast, isToday, parseISO } from 'date-fns'
+import { CalendarClock, MessageSquare } from 'lucide-react'
+import { format, formatDistanceToNow, isPast, isToday, parseISO } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import { PRIORITY_META, initials } from '@/lib/monday/domain'
 import type { MondayTaskWithTags } from '@/lib/monday/types'
@@ -22,6 +22,7 @@ export function TaskCard({
 
   const due = task.due_date ? parseISO(task.due_date) : null
   const overdue = due ? isPast(due) && !isToday(due) && task.status !== 'done' : false
+  const lastComment = task.lastComment
 
   return (
     <div
@@ -73,6 +74,22 @@ export function TaskCard({
           </Avatar>
         )}
       </div>
+
+      {lastComment && (
+        <div className="mt-2 border-t pt-2">
+          <p className="line-clamp-2 flex gap-1 text-xs text-muted-foreground">
+            <MessageSquare className="mt-0.5 size-3 shrink-0" />
+            <span className="min-w-0">{lastComment.body}</span>
+          </p>
+          <p className="mt-0.5 pl-4 text-[10px] text-muted-foreground">
+            {lastComment.author_name ?? 'Alguém'} ·{' '}
+            {formatDistanceToNow(parseISO(lastComment.created_at), {
+              locale: ptBR,
+              addSuffix: true,
+            })}
+          </p>
+        </div>
+      )}
     </div>
   )
 }

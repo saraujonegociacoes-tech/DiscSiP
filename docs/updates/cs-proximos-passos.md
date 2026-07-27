@@ -28,12 +28,15 @@ Arquivos: `src/app/cs/{page,CsClient}.tsx`, `src/app/actions/cs.ts` (`getCsMatri
 
 ## 🔜 O que falta — Páginas 2, 3, 4 (todas travadas em pendências do dono)
 
-### Página 3 — Controle de Minutas  ·  *snapshot, mais rápida de render*
-- **Destrava com:** field-ids de **minuta**, **valor da minuta** e **URL da minuta** (não
-  achados no catálogo — pendência 4).
-- Já há candidatos: % desconto/etiqueta (`sele_o_de_etiqueta`,
-  `do_desconto_do_cliente_atualmente`), resguardo (`valor_resguardado_at_o_momento`, …).
-- Buckets por vencimento: Vencidas · Mensal · Trimestral · Semestral.
+### Página 3 — Controle de Minutas  ·  *snapshot, mais rápida de render*  ·  🔨 **PRÓXIMA**
+- **Pendência #4 resolvida (2026-07-27):** sem URL de minuta → usa a **URL do card**; **valor
+  da minuta** = `valor_resguardados_dos_clientes` (Q.D, com desconto); **vencimento** =
+  `data_da_quita_o`; **dívida original fixa** = `d_vida_atual_do_cliente` (base do % desconto).
+- Candidatos auxiliares: % desconto/etiqueta (`sele_o_de_etiqueta`,
+  `do_desconto_do_cliente_atualmente`), resguardo (`valor_resguardado_at_o_momento`).
+- Buckets por vencimento (de `data_da_quita_o`): Vencidas · Mensal · Trimestral · Semestral.
+- **A confirmar antes do build:** cortes dos buckets + % desconto derivado (`1 − Q.D/dívida`)
+  vs campo de etiqueta. É snapshot (espelha a P1) → sem filtro de período, provavelmente.
 
 ### Página 4 — Pagamento + Insights  ·  *snapshot + série temporal*
 - **Projeção** (quando/quanto vão pagar): construível do snapshot já — `valor_da_parcela`,

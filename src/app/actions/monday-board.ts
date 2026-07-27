@@ -5,8 +5,10 @@ import type {
   MondayBoard,
   MondayBoardData,
   MondayGroup,
+  MondayMemberProfile,
   MondayTag,
   MondayTask,
+  MondayTaskLastComment,
 } from '@/lib/monday/types'
 
 /** Board primario de um projeto + grupos + tasks (com tags). */
@@ -39,16 +41,58 @@ export async function getPrimaryBoardData(projectId: string): Promise<MondayBoar
   ])
 
   const taskList = (tasks ?? []) as MondayTask[]
-  const tagsByTask = await getTagsForTasks(
-    projectId,
-    taskList.map((t) => t.id),
-  )
+  const taskIds = taskList.map((t) => t.id)
+  const [tagsByTask, lastCommentByTask] = await Promise.all([
+    getTagsForTasks(projectId, taskIds),
+    getLastCommentsForTasks(taskIds),
+  ])
 
   return {
     board: b,
     groups: (groups ?? []) as MondayGroup[],
-    tasks: taskList.map((t) => ({ ...t, tags: tagsByTask.get(t.id) ?? [] })),
+    tasks: taskList.map((t) => ({
+      ...t,
+      tags: tagsByTask.get(t.id) ?? [],
+      lastComment: lastCommentByTask.get(t.id) ?? null,
+    })),
   }
+}
+
+/** Ultimo comentario de cada tarefa (via view) com o nome do autor resolvido. */
+async function getLastCommentsForTasks(
+  taskIds: string[],
+): Promise<Map<string, MondayTaskLastComment>> {
+  const map = new Map<string, MondayTaskLastComment>()
+  if (!taskIds.length) return map
+  const supabase = await createServerClient()
+
+  const { data } = await supabase
+    .from('monday_task_last_comment')
+    .select('*')
+    .in('task_id', taskIds)
+
+  type LastRow = Omit<MondayTaskLastComment, 'author_name'>
+  const rows = (data ?? []) as LastRow[]
+  if (!rows.length) return map
+
+  const authorIds = [...new Set(rows.map((r) => r.author_id).filter(Boolean))] as string[]
+  let profiles: MondayMemberProfile[] = []
+  if (authorIds.length) {
+    const { data: p } = await supabase
+      .from('profiles')
+      .select('id, name, email')
+      .in('id', authorIds)
+    profiles = (p ?? []) as MondayMemberProfile[]
+  }
+  const nameById = new Map(profiles.map((p) => [p.id, p.name || p.email]))
+
+  for (const r of rows) {
+    map.set(r.task_id, {
+      ...r,
+      author_name: r.author_id ? nameById.get(r.author_id) ?? null : null,
+    })
+  }
+  return map
 }
 
 async function getTagsForTasks(

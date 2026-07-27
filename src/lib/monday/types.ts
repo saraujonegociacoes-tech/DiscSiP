@@ -89,6 +89,25 @@ export interface MondayTag {
   created_at: string
 }
 
+export interface MondayTaskComment {
+  id: string
+  task_id: string
+  author_id: string | null
+  body: string
+  created_at: string
+}
+
+/** Ultimo comentario de uma tarefa (vem da view monday_task_last_comment) +
+ *  nome do autor resolvido no server. Usado no preview do card. */
+export interface MondayTaskLastComment {
+  task_id: string
+  comment_id: string
+  body: string
+  author_id: string | null
+  author_name: string | null
+  created_at: string
+}
+
 export interface MondayProjectOverview {
   project_id: string
   total_tasks: number
@@ -130,8 +149,14 @@ export interface MondayAssignableUser {
   role: string
 }
 
+export type MondayTaskCommentWithAuthor = MondayTaskComment & { author: MondayMemberProfile | null }
+
 // ─── Tipos derivados (usados nas telas) ─────────────────────────────────────
-export type MondayTaskWithTags = MondayTask & { tags: MondayTag[] }
+export type MondayTaskWithTags = MondayTask & {
+  tags: MondayTag[]
+  /** Ultimo comentario (para o preview do card). undefined = nao carregado. */
+  lastComment?: MondayTaskLastComment | null
+}
 
 export type MondayBoardData = {
   board: MondayBoard | null

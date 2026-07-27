@@ -21,20 +21,24 @@ import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { TaskCard } from './task-card'
 import { TaskDialog, type MemberOption } from './task-dialog'
+import { TaskDetailDialog } from './task-detail-dialog'
 
 type Props = {
   projectId: string
   boardId: string
   members: MemberOption[]
   initialTasks: MondayTaskWithTags[]
+  currentUserId: string
 }
 
-export function BoardView({ projectId, boardId, members, initialTasks }: Props) {
+export function BoardView({ projectId, boardId, members, initialTasks, currentUserId }: Props) {
   const [tasks, setTasks] = useState<MondayTaskWithTags[]>(initialTasks)
   const [activeId, setActiveId] = useState<string | null>(null)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editingTask, setEditingTask] = useState<MondayTaskWithTags | null>(null)
   const [createStatus, setCreateStatus] = useState<MondayTaskStatus>('todo')
+  const [detailOpen, setDetailOpen] = useState(false)
+  const [detailTask, setDetailTask] = useState<MondayTaskWithTags | null>(null)
 
   // Reflete atualizacoes vindas do servidor (revalidate).
   useEffect(() => setTasks(initialTasks), [initialTasks])
@@ -94,10 +98,27 @@ export function BoardView({ projectId, boardId, members, initialTasks }: Props) 
     setDialogOpen(true)
   }
 
-  function openEdit(task: MondayTaskWithTags) {
-    setEditingTask(task)
-    setDialogOpen(true)
+  // Clique no card abre a VISUALIZACAO (com comentarios); a edicao sai de dentro dela.
+  function openDetail(task: MondayTaskWithTags) {
+    setDetailTask(task)
+    setDetailOpen(true)
   }
+
+  function openEditFromDetail() {
+    setDetailOpen(false)
+    if (detailTask) {
+      setEditingTask(detailTask)
+      setDialogOpen(true)
+    }
+  }
+
+  // Mantem o detalhe em sincronia com o servidor (ex.: apos comentar/editar).
+  const detailTaskCurrent = detailTask
+    ? tasks.find((t) => t.id === detailTask.id) ?? detailTask
+    : null
+  const detailAssigneeName = detailTaskCurrent?.assignee_id
+    ? memberLabel.get(detailTaskCurrent.assignee_id) ?? null
+    : null
 
   return (
     <>
@@ -110,7 +131,7 @@ export function BoardView({ projectId, boardId, members, initialTasks }: Props) 
               tasks={byStatus.get(status) ?? []}
               memberLabel={memberLabel}
               onAdd={() => openCreate(status)}
-              onCardClick={openEdit}
+              onCardClick={openDetail}
             />
           ))}
         </div>
@@ -123,6 +144,16 @@ export function BoardView({ projectId, boardId, members, initialTasks }: Props) 
           ) : null}
         </DragOverlay>
       </DndContext>
+
+      <TaskDetailDialog
+        open={detailOpen}
+        onOpenChange={setDetailOpen}
+        task={detailTaskCurrent}
+        assigneeName={detailAssigneeName}
+        currentUserId={currentUserId}
+        projectId={projectId}
+        onEdit={openEditFromDetail}
+      />
 
       <TaskDialog
         open={dialogOpen}
