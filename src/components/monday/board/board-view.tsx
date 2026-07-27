@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
+import { createPortal } from 'react-dom'
 import {
   DndContext,
   DragOverlay,
@@ -39,6 +40,12 @@ export function BoardView({ projectId, boardId, members, initialTasks, currentUs
   const [createStatus, setCreateStatus] = useState<MondayTaskStatus>('todo')
   const [detailOpen, setDetailOpen] = useState(false)
   const [detailTask, setDetailTask] = useState<MondayTaskWithTags | null>(null)
+  const [mounted, setMounted] = useState(false)
+
+  // O DragOverlay e portado para o body: o <main class="fade-up"> mantem um
+  // transform (translateY(0), fill-mode both), o que o tornaria o bloco de contencao
+  // do position:fixed do overlay e deslocaria o card do cursor. Portar p/ body evita.
+  useEffect(() => setMounted(true), [])
 
   // Reflete atualizacoes vindas do servidor (revalidate).
   useEffect(() => setTasks(initialTasks), [initialTasks])
@@ -136,13 +143,17 @@ export function BoardView({ projectId, boardId, members, initialTasks, currentUs
           ))}
         </div>
 
-        <DragOverlay dropAnimation={null}>
-          {activeTask ? (
-            <div className="w-72 rotate-2">
-              <TaskCard task={activeTask} memberLabel={memberLabel} />
-            </div>
-          ) : null}
-        </DragOverlay>
+        {mounted &&
+          createPortal(
+            <DragOverlay dropAnimation={null}>
+              {activeTask ? (
+                <div className="w-72 rotate-2">
+                  <TaskCard task={activeTask} memberLabel={memberLabel} />
+                </div>
+              ) : null}
+            </DragOverlay>,
+            document.body,
+          )}
       </DndContext>
 
       <TaskDetailDialog

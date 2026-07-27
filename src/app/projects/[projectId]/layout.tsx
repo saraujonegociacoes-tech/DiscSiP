@@ -1,3 +1,5 @@
+import Link from 'next/link'
+import { ArrowLeft } from 'lucide-react'
 import { notFound, redirect } from 'next/navigation'
 import { getCurrentProfile } from '@/app/actions/auth'
 import {
@@ -33,6 +35,14 @@ export default async function ProjectLayout({
   return (
     <MondayShell>
       <div className="mx-auto max-w-7xl space-y-6">
+        <Link
+          href="/projects"
+          className="inline-flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
+        >
+          <ArrowLeft className="size-4" />
+          Todos os projetos
+        </Link>
+
         <div className="flex items-center gap-3">
           <span
             className="grid size-9 shrink-0 place-items-center rounded-lg text-sm font-bold text-white"
