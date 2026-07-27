@@ -1,9 +1,14 @@
 import { notFound, redirect } from 'next/navigation'
 import { getCurrentProfile } from '@/app/actions/auth'
-import { getProject } from '@/app/actions/monday-projects'
+import {
+  getProject,
+  getProjectMembers,
+  getAssignableUsers,
+} from '@/app/actions/monday-projects'
 import { MondayShell } from '@/components/monday/monday-shell'
 import { ProjectTabs } from '@/components/monday/project-tabs'
 import { DeleteProjectButton } from '@/components/monday/projects/delete-project-button'
+import { ManageMembersButton } from '@/components/monday/projects/manage-members-dialog'
 
 export default async function ProjectLayout({
   children,
@@ -18,7 +23,11 @@ export default async function ProjectLayout({
   if (!profile) redirect('/login')
   if (profile.role !== 'manager' && profile.role !== 'admin') redirect('/')
 
-  const project = await getProject(projectId)
+  const [project, members, assignableUsers] = await Promise.all([
+    getProject(projectId),
+    getProjectMembers(projectId),
+    getAssignableUsers(),
+  ])
   if (!project) notFound()
 
   return (
@@ -35,8 +44,17 @@ export default async function ProjectLayout({
             <h1 className="font-semibold leading-tight">{project.name}</h1>
             <p className="text-xs text-muted-foreground">{project.key}</p>
           </div>
-          <div className="ml-auto">
-            <DeleteProjectButton projectId={projectId} projectName={project.name} />
+          <div className="ml-auto flex items-center gap-2">
+            <ManageMembersButton
+              projectId={projectId}
+              ownerId={project.owner_id}
+              currentUserId={profile.id}
+              initialMembers={members}
+              assignableUsers={assignableUsers}
+            />
+            {profile.id === project.owner_id && (
+              <DeleteProjectButton projectId={projectId} projectName={project.name} />
+            )}
           </div>
         </div>
 

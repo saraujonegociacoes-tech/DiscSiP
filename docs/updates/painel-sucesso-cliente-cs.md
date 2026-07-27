@@ -159,20 +159,27 @@ quanto — dá pra auditar. **Requer ingestão nova** (não temos histórico de 
 
 ## Página 3 — Controle de Minutas
 
-Controle das minutas com: **URL, valor da minuta, última negociação, valor resguardado,
-% de desconto (etiqueta)**. Buckets por vencimento: **Vencidas · Mensal · Trimestral ·
-Semestral**. Mais um espaço de **notificações com insights** de oportunidade (quitações,
-antecipações em geral).
+Controle das minutas com: **valor da minuta, vencimento, dívida original, % de desconto e
+valor resguardado**. Buckets por vencimento: **Vencidas · Mensal · Trimestral · Semestral**.
+Mais um espaço de **notificações com insights** de oportunidade (quitações, antecipações).
 
-Campos candidatos já no `metadata` (introspecção 2026-07-21):
-- % desconto / etiqueta: `sele_o_de_etiqueta` ("Etiqueta"), `do_desconto_do_cliente_atualmente`.
-- Valor resguardado: `valor_resguardado_at_o_momento`, `valor_resguardados_dos_clientes`
-  ("Valor da Quitação final do cliente"), e a série mensal `valor_de_resguardo_N`.
+**Mapeamento confirmado pelo dono (2026-07-27) — pendência #4 resolvida:**
 
-⚠ *Pendência forte:* **não achei um campo claro de "Minuta" nem "Valor da Minuta" nem uma
-URL de minuta** no catálogo. Precisa o dono apontar quais field-ids são a minuta (ou se
-"minuta" se deriva de outra coisa — cálculo/contrato anexado?). Sem isso, a página 3 não
-sai do papel.
+| Papel na P3 | Campo (rótulo Pipefy) | field-id | Nota do dono |
+|---|---|---|---|
+| **Link da minuta** | — (fica anexada no card) | usa a **URL do card**: `https://app.pipefy.com/open-cards/{pipefy_card_id}` | "a URL da minuta não existe; mostrar a do card" |
+| **Valor da minuta** (Q.D) | "Valor da Quitação final do cliente" | `valor_resguardados_dos_clientes` | valor da minuta **com desconto** (Q.D); atualiza a cada negociação |
+| **Vencimento da minuta** | "Data da quitação" | `data_da_quita_o` | **data final** da minuta de quitação → base dos buckets |
+| **Dívida original** | "Dívida atual do Cliente" | `d_vida_atual_do_cliente` | dívida de **entrada**, valor **fixo** (não muda) → base do % de desconto |
+| % desconto / etiqueta | "Etiqueta" | `sele_o_de_etiqueta`, `do_desconto_do_cliente_atualmente` | candidatos; desconto tb derivável = `1 − Q.D/dívida` |
+| Valor resguardado | — | `valor_resguardado_at_o_momento` | candidato (o `valor_resguardados_dos_clientes` passou a ser "valor da minuta") |
+
+> **Não se puxa o documento da minuta** — ela está anexada ao card, então o link da P3 é a
+> URL do próprio card no Pipefy (mesmo padrão da P1).
+
+⏳ *A confirmar antes do build:* (a) os cortes dos buckets Vencidas/Mensal/Trimestral/Semestral
+a partir de `data_da_quita_o`; (b) usar % de desconto **derivado** (`1 − Q.D/dívida`) ou o
+campo `sele_o_de_etiqueta`.
 
 ## Página 4 — Controle de Pagamento + Insights
 
@@ -223,7 +230,9 @@ reformulação).
    Qual o id? (Mudança de pipe? O dono citou "Mudanças no pipe (Ignorar): Pós-fase".)
 2. **Fase "Negociação"** — é `Negociação do Cliente` (order 2) ou outra fase?
 3. **Gatilho de "negociação feita"** — entrada na fase? mudança nos 5 campos? ambos?
-4. **Minuta** — quais field-ids são URL / valor da minuta? (não encontrados no catálogo).
+4. ✅ **Minuta** (resolvido 2026-07-27) — sem URL própria (usa a do card); valor da minuta =
+   `valor_resguardados_dos_clientes` (Q.D); vencimento = `data_da_quita_o`; dívida fixa de
+   entrada = `d_vida_atual_do_cliente`. Resta confirmar cortes dos buckets + fonte do % desconto.
 5. **Corte de completude** — Parcial 3-4 / Incompleta 1-2 (assumido) vs "1-3" (falado).
 6. **Histórico de pagamento** — deriva do snapshot de `P.P` ao longo do tempo ou fonte externa?
 7. **Atribuição por responsável** — o autor do comentário pode diferir do responsável do

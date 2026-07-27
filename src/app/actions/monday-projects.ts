@@ -9,6 +9,8 @@ import type {
   MondayProjectMember,
   MondayMemberProfile,
   MondayMemberWithProfile,
+  MondayMemberRole,
+  MondayAssignableUser,
 } from '@/lib/monday/types'
 
 // ─── Leitura ────────────────────────────────────────────────────────────────
@@ -58,6 +60,14 @@ export async function getProjectMembers(projectId: string): Promise<MondayMember
 
   const byId = new Map(((profiles ?? []) as MondayMemberProfile[]).map((p) => [p.id, p]))
   return list.map((m) => ({ ...m, profile: byId.get(m.user_id) ?? null }))
+}
+
+/** Usuarios (aprovados) que podem ser adicionados a um projeto — via RPC SECURITY
+ *  DEFINER (so responde para a gerencia; a filtragem de quem ja e membro e no app). */
+export async function getAssignableUsers(): Promise<MondayAssignableUser[]> {
+  const supabase = await createServerClient()
+  const { data } = await supabase.rpc('monday_assignable_users')
+  return (data ?? []) as MondayAssignableUser[]
 }
 
 // ─── Mutacao ────────────────────────────────────────────────────────────────
@@ -153,4 +163,71 @@ export async function deleteProject(projectId: string): Promise<{ error?: string
 
   revalidatePath('/projects')
   return {}
+}
+
+// ─── Membros do projeto ───────────────────────────────────────────────────────
+// A RLS (can_manage_monday_project) ja garante que so o dono/admin do projeto — ou
+// a gerencia — consegue inserir/alterar/remover. O papel 'owner' e exclusivo do
+// criador (trigger handle_new_monday_project) e nunca e atribuido/alterado pela UI.
+
+type MemberMutation = { members?: MondayMemberWithProfile[]; error?: string }
+
+const ASSIGNABLE_MEMBER_ROLES: MondayMemberRole[] = ['admin', 'member', 'viewer']
+
+/** Adiciona (ou reajusta o papel de) uma pessoa no projeto. */
+export async function addProjectMember(
+  projectId: string,
+  userId: string,
+  role: MondayMemberRole = 'member',
+): Promise<MemberMutation> {
+  if (!ASSIGNABLE_MEMBER_ROLES.includes(role)) return { error: 'Papel inválido.' }
+
+  const supabase = await createServerClient()
+  const { error } = await supabase
+    .from('monday_project_members')
+    .upsert({ project_id: projectId, user_id: userId, role }, { onConflict: 'project_id,user_id' })
+  if (error) return { error: error.message }
+
+  revalidatePath(`/projects/${projectId}`)
+  return { members: await getProjectMembers(projectId) }
+}
+
+/** Altera o papel de um membro (nunca para/do dono). */
+export async function updateProjectMemberRole(
+  projectId: string,
+  userId: string,
+  role: MondayMemberRole,
+): Promise<MemberMutation> {
+  if (!ASSIGNABLE_MEMBER_ROLES.includes(role)) return { error: 'Papel inválido.' }
+
+  const supabase = await createServerClient()
+  // .neq('role','owner') impede rebaixar o dono; role='owner' nunca e alvo (guard acima).
+  const { error } = await supabase
+    .from('monday_project_members')
+    .update({ role })
+    .eq('project_id', projectId)
+    .eq('user_id', userId)
+    .neq('role', 'owner')
+  if (error) return { error: error.message }
+
+  revalidatePath(`/projects/${projectId}`)
+  return { members: await getProjectMembers(projectId) }
+}
+
+/** Remove uma pessoa do projeto — o dono e protegido pelo .neq('role','owner'). */
+export async function removeProjectMember(
+  projectId: string,
+  userId: string,
+): Promise<MemberMutation> {
+  const supabase = await createServerClient()
+  const { error } = await supabase
+    .from('monday_project_members')
+    .delete()
+    .eq('project_id', projectId)
+    .eq('user_id', userId)
+    .neq('role', 'owner')
+  if (error) return { error: error.message }
+
+  revalidatePath(`/projects/${projectId}`)
+  return { members: await getProjectMembers(projectId) }
 }

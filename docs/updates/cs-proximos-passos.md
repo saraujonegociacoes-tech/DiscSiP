@@ -1,7 +1,9 @@
 # Painel CS — Estado atual e próximos passos (handoff)
 
-> Atualizado em 2026-07-22 (Página 2 Equipe construída — falta o dono aplicar a migration +
-> Make). Ponto de retomada do painel de Sucesso do Cliente (CS).
+> Atualizado em 2026-07-27 (**Páginas 1 e 2 fechadas** — dono confirmou todas as migrations de
+> CS aplicadas, incl. `20260723_cs_team_v2`, + Make rodando). Restam **P3 Minutas** (bloqueada
+> por field-ids) e **P4 Pagamento** (projeção já construível). Ponto de retomada do painel de
+> Sucesso do Cliente (CS).
 > Fontes de verdade: [`painel-sucesso-cliente-cs.md`](painel-sucesso-cliente-cs.md) (design
 > das 4 páginas + pendências), [`make-integracao-cs.md`](make-integracao-cs.md) (ingestão).
 

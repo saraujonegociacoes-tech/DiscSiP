@@ -122,6 +122,14 @@ export interface MondayMemberProfile {
   email: string | null
 }
 
+/** Usuario que pode ser adicionado a um projeto (vem da RPC monday_assignable_users). */
+export interface MondayAssignableUser {
+  id: string
+  name: string | null
+  email: string | null
+  role: string
+}
+
 // ─── Tipos derivados (usados nas telas) ─────────────────────────────────────
 export type MondayTaskWithTags = MondayTask & { tags: MondayTag[] }
 
