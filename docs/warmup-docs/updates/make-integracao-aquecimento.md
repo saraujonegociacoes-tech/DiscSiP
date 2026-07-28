@@ -10,7 +10,7 @@ toda decisão (quem fala com quem, template ou sessão) já vem pronta no payloa
 > atribuídos (ver seção abaixo, é o próximo passo). O Cenário 2 (Status Meta) segue como
 > fase 2.
 >
-> Pré-requisitos: migrations [`20260719_warmup_schema.sql`](../../supabase/migrations/20260719_warmup_schema.sql)
+> Pré-requisitos: migrations [`20260719_warmup_schema.sql`](../../../supabase/migrations/20260719_warmup_schema.sql)
 > e `20260719b_warmup_supervisor_access.sql` **aplicadas** (feito); secrets definidos no
 > Cloudflare e no GitHub (ver [`aquecimento-whatsapp.md`](aquecimento-whatsapp.md), checklist).
 

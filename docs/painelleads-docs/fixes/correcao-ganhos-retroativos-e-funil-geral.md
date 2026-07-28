@@ -12,7 +12,7 @@
 ## Causa raiz
 
 `get_leads_dashboard` (RPC preferencial) e seu fallback em memória `dashboardFromScan`
-([`leads.ts`](../../src/app/actions/leads.ts)) filtram **tudo** — recebidos, ganhos,
+([`leads.ts`](../../../src/app/actions/leads.ts)) filtram **tudo** — recebidos, ganhos,
 mortos, funil, distribuição por fase — por `created_at` dentro do período selecionado.
 Correto para "quantos leads entraram", errado para "quantos foram vendidos/mexidos": um
 lead pode ter sido criado num ciclo e fechado (ou trabalhado) só num ciclo posterior.
@@ -45,7 +45,7 @@ inteira. Também fora: `get_leads_trend` (aba Performance, tendência entre cicl
 
 ## 1. Ganhos por data de venda (KPI "Ganhos")
 
-**Migration:** [`20260717_leads_won_by_sale_date.sql`](../../supabase/migrations/20260717_leads_won_by_sale_date.sql)
+**Migration:** [`20260717_leads_won_by_sale_date.sql`](../../../supabase/migrations/20260717_leads_won_by_sale_date.sql)
 
 | Objeto | O quê | Retorno |
 |---|---|---|
@@ -55,14 +55,14 @@ inteira. Também fora: `get_leads_trend` (aba Performance, tendência entre cicl
 selecionado = ciclo; antes = retroativo (lead arrastado de um ciclo anterior, vendido
 agora).
 
-**Server action** ([`leads.ts`](../../src/app/actions/leads.ts)): `getLeadsData` busca
+**Server action** ([`leads.ts`](../../../src/app/actions/leads.ts)): `getLeadsData` busca
 essa RPC em paralelo com o dashboard base e sobrescreve `kpis.wonLeads`/`deadLeads`/
 `conversionRate`/`deadRate` + os novos `wonCycle`/`wonRetro`. Fallback em memória
 (`dashboardFromScan`) replica a mesma lógica com uma segunda leitura paginada (por
 `finalized_at`, separada da leitura por `created_at` que já existia). RPC ausente →
 degrada pro comportamento antigo (`wonCycle = wonLeads`, `wonRetro = 0`), sem quebrar.
 
-**UI** ([`LeadKpiRow.tsx`](../../src/features/leads/components/LeadKpiRow.tsx)): novo
+**UI** ([`LeadKpiRow.tsx`](../../../src/features/leads/components/LeadKpiRow.tsx)): novo
 card "Ganhos" (`WonCard`, mesmo padrão visual do `StuckCard` já existente) — total grande
 + subtexto "X do ciclo · Y retroativos". O card "Conversão %" existente passa a refletir
 o `wonLeads` corrigido (muda de "conversão do mesmo lote" pra "throughput do período" —
@@ -81,7 +81,7 @@ Extensão do mesmo princípio pros dois gráficos da aba **Funil**: `Funnel.tsx`
 cumulativo — quantos leads ALCANÇARAM cada etapa) e `PhaseDistribution.tsx` (onde os
 leads estão agora), que só enxergavam o cohort "recebidos no período".
 
-**Migration:** [`20260718_leads_activity_by_update.sql`](../../supabase/migrations/20260718_leads_activity_by_update.sql)
+**Migration:** [`20260718_leads_activity_by_update.sql`](../../../supabase/migrations/20260718_leads_activity_by_update.sql)
 
 | Objeto | O quê | Retorno |
 |---|---|---|
@@ -97,7 +97,7 @@ ausente → `{ funnel: [], phaseDistribution: [] }` (mesma degradação graciosa
 métricas novas).
 
 **UI — dois componentes novos** em
-[`src/features/leads/components/`](../../src/features/leads/components/):
+[`src/features/leads/components/`](../../../src/features/leads/components/):
 `FunnelActivity.tsx` e `PhaseDistributionActivity.tsx`. Mesmo layout/eixos/tooltip dos
 originais, mas em **barras empilhadas de 2 séries** (ciclo × retroativo) com o **total no
 fim da barra** (`LabelList` no segmento do topo da pilha, `dataKey="total"`). Fases mortas
@@ -105,7 +105,7 @@ continuam sinalizadas — agora pelo rótulo do eixo Y em vermelho (o preenchime
 já está ocupado pela identidade ciclo/retroativo).
 
 Renderizados na aba **Funil**
-([`LeadsClient.tsx`](../../src/app/leads/LeadsClient.tsx)), logo abaixo do par existente,
+([`LeadsClient.tsx`](../../../src/app/leads/LeadsClient.tsx)), logo abaixo do par existente,
 sob o subtítulo "Acionado no período (por atualização, não por criação)". Sem
 drill-down por responsável (o RPC não devolve `byResponsible` pra este cohort — fora do
 escopo pedido).
@@ -117,7 +117,7 @@ tom já usado em `StuckCard`/`LeadsTable` pro mesmo conceito. Feedback do dono: 
 já está "muito feito" nesses outros cards, perdendo identidade visual neste gráfico novo.
 
 Trocado pra `ct.categorical[5]` (rosa, paleta categórica já validada do painel —
-[`useChartTheme.ts`](../../src/components/bluedesk/useChartTheme.ts)). Validado com o
+[`useChartTheme.ts`](../../../src/components/bluedesk/useChartTheme.ts)). Validado com o
 script da skill dataviz contra o azul do "ciclo" (`ct.series.primary`), luz e escuro:
 
 ```
@@ -138,10 +138,10 @@ Nenhuma migration foi aplicada ainda — os dois arquivos existem só localmente
 `supabase/` é ignorada pra arquivos novos no `.gitignore` deste repo, por escolha já
 feita antes; nada foi commitado).
 
-1. Rodar **[`20260717_leads_won_by_sale_date.sql`](../../supabase/migrations/20260717_leads_won_by_sale_date.sql)**
+1. Rodar **[`20260717_leads_won_by_sale_date.sql`](../../../supabase/migrations/20260717_leads_won_by_sale_date.sql)**
    no SQL Editor do Supabase, depois as 3 queries de verificação no fim do arquivo
    (sanidade ampla, gap de dado sem `finalized_at`, um dia recente com venda conhecida).
-2. Rodar **[`20260718_leads_activity_by_update.sql`](../../supabase/migrations/20260718_leads_activity_by_update.sql)**,
+2. Rodar **[`20260718_leads_activity_by_update.sql`](../../../supabase/migrations/20260718_leads_activity_by_update.sql)**,
    depois as 3 queries de verificação no fim (total da ordem 0 bate com `updated_at` no
    período; `cycle + retro == total`; um lead antigo mexido hoje aparece só do lado
    retroativo).

@@ -20,7 +20,7 @@ truncado**, silenciosamente.
 
 Quem **agrega no banco** (view/RPC que devolve poucas linhas) passa ileso. Quem **puxa linhas
 cruas e conta no Worker** trava no teto. O dashboard de leads fazia o segundo:
-[`getLeadsData`](../../src/app/actions/leads.ts) lia `v_lead_progress` do período e agregava
+[`getLeadsData`](../../../src/app/actions/leads.ts) lia `v_lead_progress` do período e agregava
 KPIs / funil / ranking / canal / motivos **em JavaScript** — acima de 1000 leads no período,
 todas as contagens saíam truncadas (era o "1000" nos painéis e o "~100" nos totais por agente,
 que é o ranking).
@@ -31,8 +31,8 @@ Mesmo padrão do 1102 e das views de leads: contar **uma vez no banco** e devolv
 Como o teto limita a *quantidade de linhas da resposta* (não o que uma função conta
 internamente), a agregação fica **imune ao corte**.
 
-**Migration:** [`20260707_leads_dashboard_rpc.sql`](../../supabase/migrations/20260707_leads_dashboard_rpc.sql)
-(espelhada no consolidado [`leads_dashboard_setup.sql`](../../supabase/manual/leads_dashboard_setup.sql)).
+**Migration:** [`20260707_leads_dashboard_rpc.sql`](../../../supabase/migrations/20260707_leads_dashboard_rpc.sql)
+(espelhada no consolidado [`leads_dashboard_setup.sql`](../../../supabase/manual/leads_dashboard_setup.sql)).
 
 | Objeto | O quê | Retorno |
 |---|---|---|
@@ -46,7 +46,7 @@ internamente), a agregação fica **imune ao corte**.
   avaliada **uma vez**, não uma por seção.
 - `GRANT EXECUTE ... TO authenticated`.
 
-**Server Action** ([`leads.ts`](../../src/app/actions/leads.ts)): `getLeadsData` virou
+**Server Action** ([`leads.ts`](../../../src/app/actions/leads.ts)): `getLeadsData` virou
 `dashboardFromRpc(...) ?? dashboardFromScan(...)`. O front só pós-processa **arrays já
 pequenos** (rótulos limpos de `PRODUCTIVE_PHASES`, cap "top-12 + Outros" do canal, escada de
 mortalidade, ordenação do ranking) via **shapers puros** compartilhados
@@ -57,23 +57,23 @@ Nada disso pode truncar (fases ~10, agentes ~8, canais ~dezenas). **Interfaces T
 ### Fallback paginado (as leituras que precisam ser lista)
 
 Nem tudo dá pra reduzir a 1 linha: a fila do agente e os alertas são **listas**. Para essas,
-novo helper [`fetchAllRows`](../../src/lib/supabase/paginate.ts) pagina via `.range()`
+novo helper [`fetchAllRows`](../../../src/lib/supabase/paginate.ts) pagina via `.range()`
 avançando pelo nº de linhas **realmente** devolvido (robusto mesmo se o teto do projeto for <
 1000). Exige ordenação determinística (por PK/`lead_id`). Usado em:
 
 - `getLeadsData` → fallback `dashboardFromScan` (enquanto a migration do RPC não roda).
 - `getAgentLeads` (fila do agente) e os órfãos / o fallback de "parados" do supervisor.
-- [`createList`](../../src/app/actions/lists.ts) do **discador** (ver achado 1 abaixo).
+- [`createList`](../../../src/app/actions/lists.ts) do **discador** (ver achado 1 abaixo).
 
 ## Achados relacionados corrigidos junto
 
-1. **Dedup de campanha truncava (discador).** [`createList`](../../src/app/actions/lists.ts)
+1. **Dedup de campanha truncava (discador).** [`createList`](../../../src/app/actions/lists.ts)
    lia os telefones já existentes com `.select('phone_number')` **capado em 1000** → numa
    campanha com >1000 contatos, uma nova lista deixava **passar duplicados**. Agora pagina com
    `fetchAllRows` (ordena por `id`).
 2. **Período do cliente ia cru pra um filtro por string (segurança).** `getAgentLeads` monta um
    `.or(finalized_at...gte.${period.start}...)` — `period` vem do browser. Novo
-   [`sanitizePeriod`](../../src/lib/leads/period.ts) normaliza `start`/`end` para **ISO
+   [`sanitizePeriod`](../../../src/lib/leads/period.ts) normaliza `start`/`end` para **ISO
    canônico** (lança se inválido) na entrada das 3 actions (`getLeadsData` / `getAgentLeads` /
    `getSupervisorMetrics`), então nada forjado entra no filtro. O RLS já era a barreira real; é
    defesa em profundidade.
@@ -87,7 +87,7 @@ deixa **barato** (conta no banco em vez de puxar tudo pro Worker), evitando reac
 
 ## Migration a rodar (dono) + verificação
 
-1. Aplicar **só** [`20260707_leads_dashboard_rpc.sql`](../../supabase/migrations/20260707_leads_dashboard_rpc.sql)
+1. Aplicar **só** [`20260707_leads_dashboard_rpc.sql`](../../../supabase/migrations/20260707_leads_dashboard_rpc.sql)
    (é `CREATE FUNCTION`, não toca em dado). **NÃO reaplicar o consolidado** — ver aviso abaixo.
 2. **SQL:** a `total` de uma faixa larga deve passar de 1000 sem travar:
    ```sql
@@ -99,7 +99,7 @@ deixa **barato** (conta no banco em vez de puxar tudo pro Worker), evitando reac
 
 ## ⚠️ Aviso operacional — o consolidado é DESTRUTIVO
 
-[`supabase/manual/leads_dashboard_setup.sql`](../../supabase/manual/leads_dashboard_setup.sql)
+[`supabase/manual/leads_dashboard_setup.sql`](../../../supabase/manual/leads_dashboard_setup.sql)
 é um **drop + create** (começa com `DROP TABLE ... CASCADE` de `leads` / `lead_events` /
 `lead_agents` / `lead_phases`) feito para montar a base **do zero**; re-seeda **só o
 `lead_phases`**. **Reaplicá-lo num banco com dado APAGA os leads.**

@@ -17,7 +17,7 @@ discador, a ligação não dispara**. Reproduzido.
 O **estado** do discador (campanha, `dialerStatus`, contato) vive nos stores Zustand
 (`dialerStore` / `softphoneStore`) e **sobrevive** à navegação. Mas o **motor** —
 o `setTimeout` da próxima discagem e os `setInterval` de polling — vive no hook
-[`src/hooks/usePowerDialer.ts`](../../src/hooks/usePowerDialer.ts), que é montado
+[`src/hooks/usePowerDialer.ts`](../../../src/hooks/usePowerDialer.ts), que é montado
 **dentro da tela do discador** (`DialerTab`, em `/softphone`).
 
 Sequência do bug:

@@ -9,7 +9,7 @@
 ## O que é o 1102 (e por que NÃO é chamada externa lenta)
 
 A app roda **inteira dentro do Worker** da Cloudflare (Next via OpenNext: SSR, RSC, Server
-Actions e middleware — ver [`wrangler.toml`](../../wrangler.toml), [`open-next.config.ts`](../../open-next.config.ts)).
+Actions e middleware — ver [`wrangler.toml`](../../../wrangler.toml), [`open-next.config.ts`](../../../open-next.config.ts)).
 
 O 1102 mede **tempo de CPU (compute)**, não tempo total. **Aguardar a resposta do Supabase é
 "wall time" e não conta** para o limite. Logo o gargalo não são chamadas externas demoradas —
@@ -31,7 +31,7 @@ loops/`filter` sobre milhares de linhas. Cresce com o volume de dados (contatos,
 
 Todos eram Server Actions rodando no Worker:
 
-1. **`/dashboard` — a request mais cara.** [`dashboard/page.tsx`](../../src/app/dashboard/page.tsx)
+1. **`/dashboard` — a request mais cara.** [`dashboard/page.tsx`](../../../src/app/dashboard/page.tsx)
    dispara 4 agregações em paralelo numa request:
    - `getDashboardStats` — `campaign_contacts.select('status')` na tabela **inteira**, sem
      filtro/limit, + 2 passadas de `.filter()`.
@@ -39,15 +39,15 @@ Todos eram Server Actions rodando no Worker:
      contatos)**: 3 varreduras do array por campanha.
    - `getCallsByHour` + `getAgentActivity` completam a mesma request.
 2. **`getAgentActivity`** — `agents.map(a => logs.filter(...))` = **O(agentes × call_logs do
-   dia)**. Em **polling de 15s** ([`DashboardClient.tsx`](../../src/app/dashboard/DashboardClient.tsx)).
-3. **`getCampaignStats`** ([`campaigns.ts`](../../src/app/actions/campaigns.ts)) — puxava
+   dia)**. Em **polling de 15s** ([`DashboardClient.tsx`](../../../src/app/dashboard/DashboardClient.tsx)).
+3. **`getCampaignStats`** ([`campaigns.ts`](../../../src/app/actions/campaigns.ts)) — puxava
    **todos** os `campaign_contacts` da campanha e contava em JS. Chamada na montagem, a cada
-   mudança de status e em `setInterval` de 30s ([`DialerTab.tsx`](../../src/app/softphone/DialerTab.tsx)),
+   mudança de status e em `setInterval` de 30s ([`DialerTab.tsx`](../../../src/app/softphone/DialerTab.tsx)),
    **× cada agente online**.
 
 ## O que NÃO era
 
-- **Não era o middleware** ([`src/middleware.ts`](../../src/middleware.ts) → `updateSession`):
+- **Não era o middleware** ([`src/middleware.ts`](../../../src/middleware.ts) → `updateSession`):
   são chamadas de rede (I/O = wall time), não CPU.
 - **Não era um commit "quebrado".** As agregações pesadas existem desde o "Dashboard do
   supervisor". O que empurrou o Worker pro limite foi **volume de dados acumulado** +
@@ -56,7 +56,7 @@ Todos eram Server Actions rodando no Worker:
 
 ## Correção — agregar no Postgres, front só lê o pronto ✅
 
-Mesmo padrão já usado no domínio de leads ([`20260702_leads_pipefy_views.sql`](../../supabase/migrations/20260702_leads_pipefy_views.sql)):
+Mesmo padrão já usado no domínio de leads ([`20260702_leads_pipefy_views.sql`](../../../supabase/migrations/20260702_leads_pipefy_views.sql)):
 **views `WITH (security_invoker = true)`** que calculam a métrica UMA vez no banco (indexado).
 O Worker passa a receber poucas linhas → CPU por request cai de "milhares de linhas
 processadas" pra quase zero.
@@ -65,9 +65,9 @@ processadas" pra quase zero.
 segurança). Sem GRANT explícito — o Supabase concede SELECT a `authenticated` por default em
 objetos novos de `public` (idêntico às views de leads).
 
-**Migration:** [`20260706_dashboard_aggregations.sql`](../../supabase/migrations/20260706_dashboard_aggregations.sql)
+**Migration:** [`20260706_dashboard_aggregations.sql`](../../../supabase/migrations/20260706_dashboard_aggregations.sql)
 — helper `brt_today_start()` (equivale a `brtTodayStartUtcISO()` de
-[`src/lib/timezone.ts`](../../src/lib/timezone.ts)) + 5 views:
+[`src/lib/timezone.ts`](../../../src/lib/timezone.ts)) + 5 views:
 
 | View | Substitui | Retorno |
 |------|-----------|---------|
@@ -77,11 +77,11 @@ objetos novos de `public` (idêntico às views de leads).
 | `v_calls_by_hour_today` | `getCallsByHour` | ≤24 linhas: chamadas por hora (fuso BRT) |
 | `v_agent_activity` | `getAgentActivity` | 1 linha/agente com ramal: último horário/status + contagem de hoje (`LATERAL`) + presença |
 
-**Server Actions** ([`supervisor.ts`](../../src/app/actions/supervisor.ts),
-[`campaigns.ts`](../../src/app/actions/campaigns.ts)): passaram a `.from('v_...').select()` e só
+**Server Actions** ([`supervisor.ts`](../../../src/app/actions/supervisor.ts),
+[`campaigns.ts`](../../../src/app/actions/campaigns.ts)): passaram a `.from('v_...').select()` e só
 montam o objeto de retorno. **Interfaces TS inalteradas** → os client components
 (`DashboardClient`, `DialerTab`) não mudaram. `getMyPerformance`
-([`performance.ts`](../../src/app/actions/performance.ts)) ficou como estava (escopado a 1
+([`performance.ts`](../../../src/app/actions/performance.ts)) ficou como estava (escopado a 1
 agente/dia — barato, não era ofensor).
 
 ## Bônus — corrige subcontagem silenciosa
@@ -97,7 +97,7 @@ o 1102 reaparecer, **monitorar e reduzir a frequência** é o próximo passo bar
 
 ## Migration a rodar (dono)
 
-Aplicar [`20260706_dashboard_aggregations.sql`](../../supabase/migrations/20260706_dashboard_aggregations.sql)
+Aplicar [`20260706_dashboard_aggregations.sql`](../../../supabase/migrations/20260706_dashboard_aggregations.sql)
 no Supabase (SQL Editor ou CLI) **antes** de subir o deploy — as actions já esperam as views.
 
 ## Verificação

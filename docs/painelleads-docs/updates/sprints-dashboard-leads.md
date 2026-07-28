@@ -17,7 +17,7 @@ Este documento é o roadmap; os três documentos-irmãos deste silo são a fonte
 
 **S0 FEITO e no ar.** Schema aplicado, base carregada e sincronização Make rodando 24/7.
 
-- **Schema** aplicado via [`../../supabase/manual/leads_dashboard_setup.sql`](../../supabase/manual/leads_dashboard_setup.sql) (consolidado, drop+create). Tabelas `lead_phases` / `lead_agents` / `leads` / `lead_events` + 6 views + RPCs `ingest_lead_event` / `ingest_lead_card`. Tudo chaveado por **id do Pipefy** (nomes e fases têm lixo: `"Fechamento "`, `"Esther Vitoria "`).
+- **Schema** aplicado via [`../../supabase/manual/leads_dashboard_setup.sql`](../../../supabase/manual/leads_dashboard_setup.sql) (consolidado, drop+create). Tabelas `lead_phases` / `lead_agents` / `leads` / `lead_events` + 6 views + RPCs `ingest_lead_event` / `ingest_lead_card`. Tudo chaveado por **id do Pipefy** (nomes e fases têm lixo: `"Fechamento "`, `"Esther Vitoria "`).
 - **Carga histórica** via `scripts/import-leads.mjs` (`npm run import:leads`): 4.247 cards, 0 falhas.
 - **Sync viva**: Make a cada 30 min, **24/7**, GraphQL `allCards` com **filtro delta** (`updated_at >= now-35min`) → Iterator → JSON "Transform to JSON" → POST `rpc/ingest_lead_card(node)`. Ver [`make-integracao-pipefy.md`](make-integracao-pipefy.md).
 - **Números reais** (o catálogo de 02/jul está *stale*): **~4.247 leads, 8 agentes, 15 duplicados, ~700 finalizados**. Canal (`capta_o_do_lead`) já vem preenchido em leads novos ("Meta ADS - …").
@@ -32,7 +32,7 @@ Este documento é o roadmap; os três documentos-irmãos deste silo são a fonte
 
 **S5 ENTREGUE (07/jul):** **S5.1 canal** — painel por canal + guarda de "dado incompleto" (o campo virou obrigatório no Pipefy; o histórico enche sozinho). **S5.2 backup lógico** — `npm run backup:leads` (export JSON) com o **Pipefy como fonte de verdade**: a recuperação por `npm run import:leads` foi **provada em 07/jul** (4.374 cards restaurados em ~78s). **S5.3 ponte discador×funil** — desenhada e com dados 100% prontos (8/8 `profile_id`+email), pronta para executar **sob demanda** (cruza domínios → decisão de produto, não déficit técnico). Detalhes na seção **S5**.
 
-**Correção de truncamento (07/jul):** as contagens travavam em 1000 (teto "Max Rows" do PostgREST). Corrigido com o RPC `get_leads_dashboard` (agrega no banco → imune ao teto) + leituras-lista paginadas. Ver [`../fixes/correcao-truncamento-1000-linhas.md`](../fixes/correcao-truncamento-1000-linhas.md). Provado live: `kpis.total = 4374`.
+**Correção de truncamento (07/jul):** as contagens travavam em 1000 (teto "Max Rows" do PostgREST). Corrigido com o RPC `get_leads_dashboard` (agrega no banco → imune ao teto) + leituras-lista paginadas. Ver [`../fixes/correcao-truncamento-1000-linhas.md`](../../discadora-docs/fixes/correcao-truncamento-1000-linhas.md). Provado live: `kpis.total = 4374`.
 
 **Furos conhecidos:** confirmar a assunção "mais recente = último de `respons_vel`".
 
@@ -109,7 +109,7 @@ S0→S5 entregues. A ponte (S5.3) fica pronta para executar sob demanda (decisã
 - Classificação de fase **produtiva × morta** centralizada em `lead_phases` (join por id), não no front nem no Make.
 - **RLS**: agente só vê o próprio dado (via `profile_id`, fail-closed); supervisor/gerente/admin veem tudo. 6 **views** com `security_invoker=true` (a mesma view serve às duas visões).
 - **RPCs**: `ingest_lead_event(payload)` (upsert idempotente) e `ingest_lead_card(node)` (adapter que traduz o node cru do Pipefy). `EXECUTE` só para `service_role`.
-- **Make vivo** (24/7, delta) + **carga histórica** via `scripts/import-leads.mjs` (4.247 cards). Tudo aplicado por [`../../supabase/manual/leads_dashboard_setup.sql`](../../supabase/manual/leads_dashboard_setup.sql).
+- **Make vivo** (24/7, delta) + **carga histórica** via `scripts/import-leads.mjs` (4.247 cards). Tudo aplicado por [`../../supabase/manual/leads_dashboard_setup.sql`](../../../supabase/manual/leads_dashboard_setup.sql).
 
 **Critério de aceite** — atendido, exceto:
 - ⚠ RLS do agente ainda **não provado** na prática (precisa mapear um `lead_agents.profile_id`). Supervisor+ já funciona.
@@ -124,10 +124,10 @@ S0→S5 entregues. A ponte (S5.3) fica pronta para executar sob demanda (decisã
 **Critério de aceite** — atendido: a aba aparece só para os papéis certos e navega para `/leads`; a página renderiza dados reais das views (layout cru). **Fora de escopo (S1):** gráficos definitivos, realtime.
 
 **Entregue (06/jul/2026)** — `tsc` + `eslint` verdes; `next build` não rodado (deploy é do dono).
-- Rota [`../../src/app/leads/page.tsx`](../../src/app/leads/page.tsx) (server: descobre o papel, calcula o ciclo corrente 11→10, `Promise.all`) + `LeadsClient.tsx` (client dentro do `AppShell`; troca de período re-busca; loading/vazio/erro). Espelha `app/dashboard`.
-- [`../../src/app/actions/leads.ts`](../../src/app/actions/leads.ts): `getLeadsData(period)` lê **`v_lead_progress` filtrada por `created_at`** do período (puxa só o ciclo, não os 4.247 leads) e agrega KPIs / funil / motivos / ranking em memória; `getDuplicateAlerts()` é o now-alert. O RLS das views escopa por papel (agente vê o próprio, supervisor+ tudo); o ranking exclui responsabilidade duplicada.
-- [`../../src/features/leads/`](../../src/features/leads/): `content/phases.ts` (catálogo de fases, espelha o seed) + componentes crus (`PeriodPicker` funcional, `LeadKpiRow`, `Funnel`, `DeadReasonsList`, `AgentRanking`, `DuplicateAlert`) + `index.ts`.
-- Helper do ciclo em [`../../src/lib/leads/period.ts`](../../src/lib/leads/period.ts) (11→10 em BRT, bordas de fuso e virada de ano testadas); tipos das views em `lib/types/database.ts`; item **Leads** (ícone `Target`, todos os papéis) em `NAV_ITEMS` da `Sidebar.tsx`.
+- Rota [`../../src/app/leads/page.tsx`](../../../src/app/leads/page.tsx) (server: descobre o papel, calcula o ciclo corrente 11→10, `Promise.all`) + `LeadsClient.tsx` (client dentro do `AppShell`; troca de período re-busca; loading/vazio/erro). Espelha `app/dashboard`.
+- [`../../src/app/actions/leads.ts`](../../../src/app/actions/leads.ts): `getLeadsData(period)` lê **`v_lead_progress` filtrada por `created_at`** do período (puxa só o ciclo, não os 4.247 leads) e agrega KPIs / funil / motivos / ranking em memória; `getDuplicateAlerts()` é o now-alert. O RLS das views escopa por papel (agente vê o próprio, supervisor+ tudo); o ranking exclui responsabilidade duplicada.
+- [`../../src/features/leads/`](../../../src/features/leads/): `content/phases.ts` (catálogo de fases, espelha o seed) + componentes crus (`PeriodPicker` funcional, `LeadKpiRow`, `Funnel`, `DeadReasonsList`, `AgentRanking`, `DuplicateAlert`) + `index.ts`.
+- Helper do ciclo em [`../../src/lib/leads/period.ts`](../../../src/lib/leads/period.ts) (11→10 em BRT, bordas de fuso e virada de ano testadas); tipos das views em `lib/types/database.ts`; item **Leads** (ícone `Target`, todos os papéis) em `NAV_ITEMS` da `Sidebar.tsx`.
 - Middleware **não** mudou (`/leads` não está na `managerArea` → agente entra; pendente cai em `/aguardando`).
 
 ---
@@ -139,7 +139,7 @@ S0→S5 entregues. A ponte (S5.3) fica pronta para executar sob demanda (decisã
 **Critério de aceite** — atendido (estático): KPIs/funil/donut pessoais via RLS; "lead parado" por SLA de fase (não global); tabela filtrável com parados destacados. **Pendências operacionais do dono:** rodar a migration `20260706_leads_sla.sql` e mapear ≥1 `lead_agents.profile_id` (senão o agente vê tela vazia). Supervisor+ já enxerga.
 
 **Entregue (06/jul/2026)** — `tsc` + `eslint` (arquivos do S2) verdes; `next build` não rodado (deploy é do dono).
-- **"Lead parado" = SLA por fase, ancorado no RECEBIMENTO.** Decisão do dono: a cadência de acionamento é fixa a partir de `created_at` (D+0…D+7), não dwell-in-phase (`updated_at` reseta em qualquer edição). `sla_hours` (numeric) por fase em `lead_phases`; `is_stuck` = aberto ∧ não morto ∧ não ganho ∧ `sla_hours` não nula ∧ `now − created_at > sla_hours`. Migration [`../../supabase/migrations/20260706_leads_sla.sql`](../../supabase/migrations/20260706_leads_sla.sql) (coluna + seed + `CREATE OR REPLACE VIEW v_lead_progress` anexando `title`/`sla_hours`/`is_stuck`; espelhado no consolidado). O `stuck_leads` (48h) da `v_agent_kpis` vira legado não usado.
+- **"Lead parado" = SLA por fase, ancorado no RECEBIMENTO.** Decisão do dono: a cadência de acionamento é fixa a partir de `created_at` (D+0…D+7), não dwell-in-phase (`updated_at` reseta em qualquer edição). `sla_hours` (numeric) por fase em `lead_phases`; `is_stuck` = aberto ∧ não morto ∧ não ganho ∧ `sla_hours` não nula ∧ `now − created_at > sla_hours`. Migration [`../../supabase/migrations/20260706_leads_sla.sql`](../../../supabase/migrations/20260706_leads_sla.sql) (coluna + seed + `CREATE OR REPLACE VIEW v_lead_progress` anexando `title`/`sla_hours`/`is_stuck`; espelhado no consolidado). O `stuck_leads` (48h) da `v_agent_kpis` vira legado não usado.
   - Cadência → `sla_hours`: Recebidos 0.05 (3 min ⚠), 1° Acion. 8 (D+0 ⚠), 2° 24 (D+1), 3° 48 (D+2), 4° 96 (D+4), 5° 168 (D+7), 6°+/Procedimento/Fechamento/Venda/mortas = NULL. Os dois ⚠ são aproximações ajustáveis por um `UPDATE lead_phases SET sla_hours = … WHERE pipefy_phase_id = …` — **efeito imediato** (o `is_stuck` é calculado na leitura da view, sem reingestão/recriação). Instruções no rodapé da migration.
 - **Duas análises no mesmo lugar (decisão do dono).** Métricas de desempenho (recebidos, conversão, lead morto, funil, donut) seguem o **período**; a fila de abertos/parados é **estado atual** (independe do período), com cada lead etiquetado `ciclo` (criado no período) vs `retroativo` (arrastado de antes). O card "Parados (agora)" mostra o total com split ciclo × retroativo.
 - **Gráficos definitivos** (Recharts + `useChartTheme`): `Funnel` (barras horizontais, série única) e `DeadReasonsDonut` (donut + legenda rotulada; paleta categórica validada pela skill *dataviz* e centralizada em `useChartTheme.categorical`). `DeadReasonsList` (S1) removido.
@@ -170,7 +170,7 @@ S0→S5 entregues. A ponte (S5.3) fica pronta para executar sob demanda (decisã
 
 **Entregue (06/jul/2026)** — `tsc` + `eslint` verdes. Sem tocar no banco (só leitura de views agregadas / `v_lead_progress` recortada, como travado). Reusa `is_stuck`, a etiqueta ciclo/retroativo, o `PeriodPicker` e o `useChartTheme` do S2.
 
-- **Action `getSupervisorMetrics(period)`** ([`../../src/app/actions/leads.ts`](../../src/app/actions/leads.ts)) — métricas de **estado atual** (NOW-scoped, não por período), lidas da MESMA `v_lead_progress` (o RLS deixa o supervisor ver tudo; a página nem chama isto para o papel `agent`), agregadas em memória com colunas enxutas:
+- **Action `getSupervisorMetrics(period)`** ([`../../src/app/actions/leads.ts`](../../../src/app/actions/leads.ts)) — métricas de **estado atual** (NOW-scoped, não por período), lidas da MESMA `v_lead_progress` (o RLS deixa o supervisor ver tudo; a página nem chama isto para o papel `agent`), agregadas em memória com colunas enxutas:
   - `stuckByAgent` (keyed por `agentId`): parados agora por agente, com split `now`/`cycle` (exclui responsabilidade duplicada, para casar com o ranking).
   - `teamStuck` `{ total, cycle, retro }`: parados da equipe (inclui duplicados) — alimenta o card "Parados (agora)" também na visão do supervisor.
   - `forgotten` + `forgottenTotal`: leads **abertos em Recebidos/1° Acionamento, sem 1º contato, há mais de `FORGOTTEN_THRESHOLD_HOURS` (24h)** — os 100 mais antigos + o total real (via `count: 'exact'`). O limite é **ajustável** (const na action, efeito imediato) e viaja no payload (`forgottenThresholdHours`).
@@ -183,7 +183,7 @@ S0→S5 entregues. A ponte (S5.3) fica pronta para executar sob demanda (decisã
 - **RLS do supervisor recortada por departamento (07/jul):** `leads_select`/`lead_events_select` reescritas — supervisor vê só o **próprio depto + órfãos** (era mesmo balde que manager). Ponte `lead_agents.profile_id → profiles.department_id`; helpers `lead_agent_dept`/`lead_in_supervisor_scope`. Migration `20260707_leads_supervisor_scope.sql`. Como as views são security_invoker, isso recorta TUDO (KPIs/funil/ranking/alertas) sem tocar no front.
 - **`page.tsx` / `LeadsClient`** — para supervisor+: card "Parados" agora vem de `teamStuck`; novos painéis (DeathByAttempt + ForgottenLeads lado a lado, ranking, duplicados); a troca de período re-busca `getLeadsData` + `getSupervisorMetrics` (o split ciclo × retroativo dos parados é reancorado ao período).
 
-**Nota de arquitetura (parados agora) — RESOLVIDO (S4/perf):** o "parados agora" é agregado **no Postgres** via RPC `get_agent_stuck(p_start, p_end)` (`SECURITY INVOKER` → o RLS do chamador vale, igual às views), que devolve **~1 linha por agente + 1 linha "equipe"** em vez de puxar a base aberta (~3.3k linhas) pro Worker — corta egress e CPU do Worker (mesma filosofia do fix do Error 1102). Migration: [`../../supabase/migrations/20260706_leads_agent_stuck.sql`](../../supabase/migrations/20260706_leads_agent_stuck.sql) (espelhada no consolidado). O app tem **fallback**: enquanto a função não existir no banco, `getSupervisorMetrics` volta a agregar em memória — funciona nos dois casos, então dá pra rodar a migration quando quiser. **Ranking mostra também agentes com só parados retroativos** (zero leads no período): entram com as métricas do período zeradas, para não sumirem da comparação (decisão do dono, 06/jul).
+**Nota de arquitetura (parados agora) — RESOLVIDO (S4/perf):** o "parados agora" é agregado **no Postgres** via RPC `get_agent_stuck(p_start, p_end)` (`SECURITY INVOKER` → o RLS do chamador vale, igual às views), que devolve **~1 linha por agente + 1 linha "equipe"** em vez de puxar a base aberta (~3.3k linhas) pro Worker — corta egress e CPU do Worker (mesma filosofia do fix do Error 1102). Migration: [`../../supabase/migrations/20260706_leads_agent_stuck.sql`](../../../supabase/migrations/20260706_leads_agent_stuck.sql) (espelhada no consolidado). O app tem **fallback**: enquanto a função não existir no banco, `getSupervisorMetrics` volta a agregar em memória — funciona nos dois casos, então dá pra rodar a migration quando quiser. **Ranking mostra também agentes com só parados retroativos** (zero leads no período): entram com as métricas do período zeradas, para não sumirem da comparação (decisão do dono, 06/jul).
 
 ---
 
@@ -202,8 +202,8 @@ S0→S5 entregues. A ponte (S5.3) fica pronta para executar sob demanda (decisã
 - Consumo de egress condizente com o plano Free no volume atual.
 
 **Entregue (06/jul/2026)** — `tsc` + `eslint` verdes.
-- **Realtime (opt-in) — hook `useLeadsRealtime`** ([`../../src/features/leads/useLeadsRealtime.ts`](../../src/features/leads/useLeadsRealtime.ts)): assina `postgres_changes` em `public.leads` e dispara um **refetch silencioso** (debounce 1,5 s) do período corrente. O `LeadsClient` já usa (função `refresh`); selo **"Ao vivo"** no header quando ligado. RLS vale para o Realtime (agente só o próprio; supervisor+ tudo); por ser client-side **não passa pelo worker**. **Desligado por padrão** (nem abre socket). Ligar = DOIS passos: (1) env `NEXT_PUBLIC_LEADS_REALTIME=1`; (2) SQL uma vez `ALTER PUBLICATION supabase_realtime ADD TABLE public.leads;`.
-- **Animação sóbria — `useCountUp`** ([`../../src/features/leads/useCountUp.ts`](../../src/features/leads/useCountUp.ts)): count-up só nas **contagens de volume** (Recebidos, Em aberto, Parados) — conversão/lead morto/tempo ficam estáticos ("sem excesso"). Respeita `prefers-reduced-motion` (pula pro valor final).
+- **Realtime (opt-in) — hook `useLeadsRealtime`** ([`../../src/features/leads/useLeadsRealtime.ts`](../../../src/features/leads/useLeadsRealtime.ts)): assina `postgres_changes` em `public.leads` e dispara um **refetch silencioso** (debounce 1,5 s) do período corrente. O `LeadsClient` já usa (função `refresh`); selo **"Ao vivo"** no header quando ligado. RLS vale para o Realtime (agente só o próprio; supervisor+ tudo); por ser client-side **não passa pelo worker**. **Desligado por padrão** (nem abre socket). Ligar = DOIS passos: (1) env `NEXT_PUBLIC_LEADS_REALTIME=1`; (2) SQL uma vez `ALTER PUBLICATION supabase_realtime ADD TABLE public.leads;`.
+- **Animação sóbria — `useCountUp`** ([`../../src/features/leads/useCountUp.ts`](../../../src/features/leads/useCountUp.ts)): count-up só nas **contagens de volume** (Recebidos, Em aberto, Parados) — conversão/lead morto/tempo ficam estáticos ("sem excesso"). Respeita `prefers-reduced-motion` (pula pro valor final).
 - **Egress/perf:** confirmado que o front só lê views agregadas / `v_lead_progress` recortada, nunca tabelas brutas; e o "parados agora" saiu do scan em memória para o RPC agregado (ver Nota no S3).
 - **A11y:** `aria-sort` nas colunas ordenáveis do ranking, `aria-busy` no container durante o carregamento.
 
@@ -262,12 +262,12 @@ vazio apresentado como verdade.
 ### S5.2 — Backup do banco
 
 > **Estado (07/jul): ENTREGUE (backup lógico + recuperação provada).** Script
-> [`../../scripts/backup-leads.mjs`](../../scripts/backup-leads.mjs) (`npm run backup:leads`) —
+> [`../../scripts/backup-leads.mjs`](../../../scripts/backup-leads.mjs) (`npm run backup:leads`) —
 > backup **lógico** (JSON timestampado por tabela + manifest) via PostgREST + service role,
 > paginado, read-only, sem dependências. **O critério de aceite (restore testado uma vez) está
 > atendido:** o **Pipefy é a fonte de verdade** e a recuperação por `npm run import:leads` foi
 > **provada em 07/jul** — 4.374 cards restaurados em ~78s após um reset acidental (ver
-> [`../fixes/correcao-truncamento-1000-linhas.md`](../fixes/correcao-truncamento-1000-linhas.md)).
+> [`../fixes/correcao-truncamento-1000-linhas.md`](../../discadora-docs/fixes/correcao-truncamento-1000-linhas.md)).
 > Agendar + destino externo (Make/cron → Cloudflare R2) ou migrar p/ Supabase Pro (PITR
 > gerenciado) são **melhorias opcionais de infra**, não pré-requisito.
 

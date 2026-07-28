@@ -1,6 +1,6 @@
 # Integração Pipefy → Make → Supabase (Sucesso do Cliente)
 
-Mesmo desenho do cenário do comercial ([`make-integracao-pipefy.md`](make-integracao-pipefy.md)),
+Mesmo desenho do cenário do comercial ([`make-integracao-pipefy.md`](../../painelleads-docs/updates/make-integracao-pipefy.md)),
 apontando pro pipe de CS. **Montado e testado no Make em 2026-07-23** — a RPC `ingest_cs_card`
 retornou `200 {"cs_card_id":…,"duplicate":false}` (6 cards na primeira rodada). Este doc segue
 como referência da config. Aprendizados do bootstrap: **(1)** mapear os campos do Make pelos
@@ -15,7 +15,7 @@ como referência da config. Aprendizados do bootstrap: **(1)** mapear os campos 
 > os 5 campos de negociação** pra detectar update relevante. Ver
 > [`painel-sucesso-cliente-cs.md`](painel-sucesso-cliente-cs.md).
 
-> Pré-requisito: migration [`20260715_cs_pipeline_schema.sql`](../../supabase/migrations/20260715_cs_pipeline_schema.sql)
+> Pré-requisito: migration [`20260715_cs_pipeline_schema.sql`](../../../supabase/migrations/20260715_cs_pipeline_schema.sql)
 > aplicada **+ a migration nova da reformulação** (tabela `cs_card_comments`, snapshot de
 > negociação, e a RPC `ingest_cs_card` estendida — a criar).
 

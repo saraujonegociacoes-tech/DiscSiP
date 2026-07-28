@@ -87,9 +87,9 @@ entrou" pro "quanto vai entrar".
    só quem é do departamento de CS (ou manager/admin) lê qualquer linha.
 5. **Ciclo 11→10 e filtros de período (reformulação 2026-07-21).** O painel de CS passa
    a ter **ciclo do dia 11 ao dia 10 do mês seguinte**, igual ao de Leads, reusando
-   [`src/lib/period.ts`](../../src/lib/period.ts) (`CYCLE_ANCHOR_DAY = 11`,
+   [`src/lib/period.ts`](../../../src/lib/period.ts) (`CYCLE_ANCHOR_DAY = 11`,
    `currentCycle`/`recentCycles`/`customPeriod`) e o
-   [`PeriodPicker`](../../src/components/bluedesk/PeriodPicker.tsx) — ambos já
+   [`PeriodPicker`](../../../src/components/bluedesk/PeriodPicker.tsx) — ambos já
    domain-agnostic. **Filtro de período é obrigatório em todas as páginas** (decisão do
    dono: "de extrema importância").
 
@@ -373,6 +373,6 @@ reformulação).
 ## Referências
 
 - [`dashboard-cs-indice.md`](dashboard-cs-indice.md) — índice do painel de CS.
-- [`dashboard-leads-indice.md`](dashboard-leads-indice.md) — painel irmão (modelo).
+- [`dashboard-leads-indice.md`](../../painelleads-docs/updates/dashboard-leads-indice.md) — painel irmão (modelo).
 - [`make-integracao-cs.md`](make-integracao-cs.md) — cenário Pipefy → Make → Supabase.
-- [`src/lib/period.ts`](../../src/lib/period.ts) — ciclo 11→10 e períodos (reusado).
+- [`src/lib/period.ts`](../../../src/lib/period.ts) — ciclo 11→10 e períodos (reusado).

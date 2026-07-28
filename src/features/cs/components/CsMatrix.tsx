@@ -18,7 +18,7 @@ import type { CsMatrixData, CsMatrixCard } from '@/lib/types/database'
 // ⚠ Hoje `dwellDays` (tempo na fase) ~ idade para a maioria, porque quase não há eventos de
 // transição reais (só backfill) e a RPC cai no created_at quando falta o evento de entrada na
 // fase. Fica preciso quando o cenário do Make rodar e capturar as transições.
-// Ver docs/updates/painel-sucesso-cliente-cs.md e cs-pagina1-alternativas-viz.txt.
+// Ver docs/painelcs-docs/updates/painel-sucesso-cliente-cs.md e cs-pagina1-alternativas-viz.txt.
 
 const WINDOWS = [
   { key: '1-30', short: '1-30 dias', min: 0, max: 30 },

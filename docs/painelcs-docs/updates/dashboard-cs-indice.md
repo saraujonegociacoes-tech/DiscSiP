@@ -6,10 +6,11 @@ decisões abaixo) — só a documentação foi consolidada numa pasta só (`docs
 junto com a do discador e a do Leads, porque os três já fazem parte do mesmo sistema em
 construção (a discadora deixa de ser só "discadora" e vira o **Sistema da Araújo**; este
 painel e o de Leads são os primeiros passos). Ver também
-[`dashboard-leads-indice.md`](dashboard-leads-indice.md) (painel irmão) e
-[`../links.md`](../links.md) (índice geral por domínio).
+[`dashboard-leads-indice.md`](../../painelleads-docs/updates/dashboard-leads-indice.md) (painel irmão) e
+[`../links.md`](../../links.md) (índice geral por domínio).
 
-> **Estado (27/jul/2026): 3 das 4 páginas no ar.** Sprint 0 (navegação/permissões) e Sprint 1
+> **Estado (28/jul/2026): completo até o sprint 3 — 3 das 4 páginas no ar** (confirmado pelo
+> dono: todas as migrations aplicadas e tudo que precisa; falta só a Página 4). Sprint 0 (navegação/permissões) e Sprint 1
 > (schema/ingestão, 1484 cards) entregues. O dashboard antigo (cards por fase / tempo em fase /
 > contato periódico) foi **substituído** por um painel em **4 páginas** (Visão Geral+Janelas,
 > Equipe, Minutas, Pagamentos+Insights), com ciclo 11→10. **Páginas 1, 2 e 3 construídas e com
@@ -50,7 +51,7 @@ painel e o de Leads são os primeiros passos). Ver também
   Concluído / Distribuição = Neutro.
 
 ## Schema + ingestão (Sprint 1)
-- [`../../supabase/migrations/20260715_cs_pipeline_schema.sql`](../../supabase/migrations/20260715_cs_pipeline_schema.sql) —
+- [`../../supabase/migrations/20260715_cs_pipeline_schema.sql`](../../../supabase/migrations/20260715_cs_pipeline_schema.sql) —
   tabelas `cs_phases`/`cs_agents`/`cs_cards`/`cs_card_events`, RLS (só CS + manager/admin
   enxergam qualquer linha; dentro do CS, agente vê o próprio, supervisor vê o
   departamento), RPCs `ingest_cs_card`/`ingest_cs_event`.

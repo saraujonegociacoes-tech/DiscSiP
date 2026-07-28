@@ -357,5 +357,5 @@ Só depois do cenário de Disparo validado em produção com números reais.
 
 - [`make-integracao-aquecimento.md`](make-integracao-aquecimento.md) — cenários do Make.
 - [`aquecimento-whatsapp-indice.md`](aquecimento-whatsapp-indice.md) — índice do módulo.
-- [`painel-sucesso-cliente-cs.md`](painel-sucesso-cliente-cs.md) — padrão de domínio isolado
+- [`painel-sucesso-cliente-cs.md`](../../painelcs-docs/updates/painel-sucesso-cliente-cs.md) — padrão de domínio isolado
   em sprints usado como modelo.

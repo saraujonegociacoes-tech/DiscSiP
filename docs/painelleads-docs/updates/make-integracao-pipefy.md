@@ -4,7 +4,7 @@ O cenário do Make que mantém o dashboard de leads sincronizado. **Está montad
 O trabalho pesado (traduzir o card, registrar agentes, upsert, classificar fase, marcar
 duplicado) roda **no banco** — o Make só busca os cards que mudaram e repassa o node cru.
 
-> Pré-requisito: [`../../supabase/manual/leads_dashboard_setup.sql`](../../supabase/manual/leads_dashboard_setup.sql)
+> Pré-requisito: [`../../supabase/manual/leads_dashboard_setup.sql`](../../../supabase/manual/leads_dashboard_setup.sql)
 > aplicado (tabelas + views + RPCs `ingest_lead_event` e `ingest_lead_card`).
 
 ---

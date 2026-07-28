@@ -3,7 +3,7 @@
 Índice da documentação do **módulo de aquecimento**. Código e dados em **domínio separado**
 do Discador, do Dashboard de Leads e do Painel de CS (RLS, tabelas e rotas próprios, prefixo
 `warmup_`) — a doc vive junto em `docs/updates/` só por organização. Ver também
-[`../links.md`](../links.md) (índice geral por domínio).
+[`../links.md`](../../links.md) (índice geral por domínio).
 
 > **Estado (20/jul/2026): código pronto e verde; falta só configuração.** Migrations
 > `20260719` **e** `20260719b` **aplicadas** no Supabase; painel com **modo Sessão (24h) ou
@@ -27,7 +27,7 @@ abre em quem recebeu; os dois lados são do Blue Desk) — **sem** webhook de st
 MVP. Detalhe em [`aquecimento-whatsapp.md`](aquecimento-whatsapp.md), decisão 3.
 
 ## Schema + orquestração (Sprints 1–3)
-- [`../../supabase/migrations/20260719_warmup_schema.sql`](../../supabase/migrations/20260719_warmup_schema.sql)
+- [`../../supabase/migrations/20260719_warmup_schema.sql`](../../../supabase/migrations/20260719_warmup_schema.sql)
   — tabelas `warmup_numbers`/`warmup_settings`/`warmup_ramp_stages`/`warmup_templates`/
   `warmup_conversations`/`warmup_messages`, RLS (só manager/admin; execução escrita só por
   `service_role`), seeds.

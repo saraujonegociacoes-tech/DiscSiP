@@ -6,14 +6,17 @@ Discador, Leads e CS são **domínios de produto separados** (schema, RLS e RPCs
 
 Há ainda um módulo de **infra** (não uma vertical de departamento): o **Warmup Whatsapp** (`/aquecimento`, supervisor/manager/admin), que faz até 6 números da mesma BM conversarem entre si para construir reputação antes das campanhas de disparo. Mesmo padrão de isolamento (schema `warmup_*`, RLS e rotas próprios).
 
+E um módulo **interno** de **Desenvolvimento / TI**: **Projetos** (`/projects`, só manager/admin), um gerenciador de tarefas/sprints estilo Monday (schema `monday_*`, RLS por *membership*) — board kanban, comentários por tarefa, membros por projeto, pastas por pessoa e uma **Daily** por responsável. Doc do módulo: [`docs/projetos-docs/updates/projetos-blue-desk.md`](docs/projetos-docs/updates/projetos-blue-desk.md).
+
 - **App:** https://discsip.pages.dev
 - **Deploy:** Cloudflare Pages (deploy automático no push para `main`)
 - **Repositório:** https://github.com/saraujonegociacoes-tech/bluedesk
 - **PABX (Discador):** Intelbras WidevoiceX (`widevoice8.intelbras.com.br`) — ramais 5125–5150
 
-> Documentação técnica aprofundada em [`docs/links.md`](docs/links.md) (índice geral por
-> domínio), organizada em `reference/` (arquitetura do discador), `updates/` (features e
-> mudanças de arquitetura — discador, Leads e CS) e `fixes/` (correções por lote).
+> Documentação técnica aprofundada em [`docs/links.md`](docs/links.md) (índice geral).
+> A doc é organizada **por projeto**: `docs/<projeto>-docs/` (`discadora-docs`,
+> `painelleads-docs`, `painelcs-docs`, `warmup-docs`, `projetos-docs`), e dentro de cada uma
+> o espelho `reference/` (base/fonte de verdade), `updates/` (features e mudanças) e `fixes/` (correções).
 
 ---
 
@@ -25,6 +28,7 @@ Há ainda um módulo de **infra** (não uma vertical de departamento): o **Warmu
 - [Painel de Sucesso do Cliente (CS)](#painel-de-sucesso-do-cliente-cs)
 - [Negociação](#negociação)
 - [Aquecimento WhatsApp](#aquecimento-whatsapp)
+- [Projetos (Desenvolvimento e TI)](#projetos-desenvolvimento-e-ti)
 - [Papéis e permissões (RBAC)](#papéis-e-permissões-rbac)
 - [Arquitetura de discagem](#arquitetura-de-discagem)
 - [Helper local (máquinas dos agentes)](#helper-local-máquinas-dos-agentes)
@@ -87,7 +91,7 @@ preditivo** — o helper disca N números ao mesmo tempo, conecta o **primeiro q
 derruba os demais (`microsip.exe /hangupcalling`, que poupa a chamada já atendida). Durante o
 "discando N" o agente pode fazer outra coisa; é avisado (visual + som) quando alguém atende.
 Os contatos discados-mas-derrubados viram `abandoned` (recicláveis). Detalhes e testes em
-[`docs/updates/discagem-paralela-preditiva.md`](docs/updates/discagem-paralela-preditiva.md).
+[`docs/discadora-docs/updates/discagem-paralela-preditiva.md`](docs/discadora-docs/updates/discagem-paralela-preditiva.md).
 
 ### Painel de áudio do agente
 
@@ -109,17 +113,17 @@ A aba **Meu desempenho** (em `/softphone`) mostra os números do próprio agente
 Painel do funil comercial (Pipefy) em `/leads`, domínio separado do Discador — schema, RLS
 e RPCs próprios no Supabase. Atrás da flag `NEXT_PUBLIC_LEADS_ENABLED` (sem ela, a rota
 mostra "Em breve"). Detalhes completos em
-[`docs/updates/dashboard-leads-indice.md`](docs/updates/dashboard-leads-indice.md).
+[`docs/painelleads-docs/updates/dashboard-leads-indice.md`](docs/painelleads-docs/updates/dashboard-leads-indice.md).
 
 - **Ingestão:** Pipefy → cenário Make (schedule 24/7, GraphQL delta) → RPC
   `ingest_lead_card` no Supabase. Ver
-  [`docs/updates/make-integracao-pipefy.md`](docs/updates/make-integracao-pipefy.md).
+  [`docs/painelleads-docs/updates/make-integracao-pipefy.md`](docs/painelleads-docs/updates/make-integracao-pipefy.md).
 - **Abas:** Visão Geral (KPIs, funil, distribuição por fase), Meus leads / ranking do
   agente, Performance, canal, órfãos/duplicados, alertas de leads parados por SLA.
 - **Ganhos por data de venda:** o KPI "Ganhos" e o funil "geral" contam por
   `finalized_at`/`updated_at` (data real do evento), não por `created_at`, com split
   **ciclo × retroativo** (lead antigo mexido no período atual) — ver
-  [`docs/fixes/correcao-ganhos-retroativos-e-funil-geral.md`](docs/fixes/correcao-ganhos-retroativos-e-funil-geral.md).
+  [`docs/painelleads-docs/fixes/correcao-ganhos-retroativos-e-funil-geral.md`](docs/painelleads-docs/fixes/correcao-ganhos-retroativos-e-funil-geral.md).
 - **RBAC:** segue o mesmo padrão do Discador — agente vê o próprio; supervisor, o
   departamento Comercial + órfãos; manager/admin, tudo.
 - **Backup lógico:** `npm run backup:leads` / `npm run import:leads` (Pipefy como fonte de
@@ -130,7 +134,7 @@ mostra "Em breve"). Detalhes completos em
 Painel do funil de CS (Pipefy, pipe **"3.3 - Customer Success"**, id `305801110`) em `/cs`,
 domínio separado do Discador e do Dashboard de Leads. Atrás da flag
 `NEXT_PUBLIC_CS_ENABLED`. Detalhes completos em
-[`docs/updates/dashboard-cs-indice.md`](docs/updates/dashboard-cs-indice.md).
+[`docs/painelcs-docs/updates/dashboard-cs-indice.md`](docs/painelcs-docs/updates/dashboard-cs-indice.md).
 
 - **Funil:** Triagem → Apresentação → Negociação do Cliente → 24 fases mensais de
   acompanhamento (1° a 24° Mês) → saídas (Quitados, Distratos, Acordos Vencidos,
@@ -158,12 +162,12 @@ Módulo de **infra** (não uma vertical de departamento) em `/aquecimento`, só
 construir reputação/quality rating antes de entrarem em campanha. Atrás da flag
 `NEXT_PUBLIC_WARMUP_ENABLED`. Domínio separado (schema `warmup_*`, RLS e rotas próprios),
 desenhado para ser extraível. Detalhes completos em
-[`docs/updates/aquecimento-whatsapp-indice.md`](docs/updates/aquecimento-whatsapp-indice.md).
+[`docs/warmup-docs/updates/aquecimento-whatsapp-indice.md`](docs/warmup-docs/updates/aquecimento-whatsapp-indice.md).
 
 - **Plano de controle vs. braço executor:** o Blue Desk decide quem fala com quem, quando e o
   quê, grava o histórico e dispara o **Make** por webhook; o envio real à **Graph API da
   Meta** acontece no Make (mesma filosofia do Pipefy→Make). Ver
-  [`docs/updates/make-integracao-aquecimento.md`](docs/updates/make-integracao-aquecimento.md).
+  [`docs/warmup-docs/updates/make-integracao-aquecimento.md`](docs/warmup-docs/updates/make-integracao-aquecimento.md).
 - **Dois modos de operação** (`warmup_mode`, selecionável no painel): **Sessão (24h)** —
   aquecimento intensivo num período fixo (dono clica "Iniciar aquecimento"; volume por número
   contado desde o início da sessão); e **Gradual (dias)** — rampa multi-dia (`warmup_ramp_stages`),
@@ -184,6 +188,26 @@ desenhado para ser extraível. Detalhes completos em
 
 ---
 
+## Projetos (Desenvolvimento e TI)
+
+Módulo **interno** de gestão de tarefas/sprints estilo Monday (área "Desenvolvimento / TI"),
+portado do app `blueline-monday`. Domínio isolado: todas as tabelas com prefixo `monday_`,
+RLS própria por *membership* (`monday_project_members`), reusando só `profiles`.
+
+- **Rotas:** `/projects` (lista, agrupada em **pastas por pessoa/dono**), `/projects/[id]`
+  (board kanban), `/sprints`, `/backlog` e `/projects/daily` (**Daily** por responsável:
+  feito hoje/ontem via `completed_at` + a entregar). Só `manager`/`admin` (gate + Sidebar).
+- **Acesso:** RLS por membership; a **gerência vê todos os projetos** (helper
+  `monday_is_gerencia()` somado aos helpers de acesso). O botão "Membros" adiciona pessoas
+  específicas a um projeto (necessário para atribuir tarefas). `DELETE` só do dono.
+- **Tarefa:** clicar abre a **visualização** (comentários, prazo, infos); botão "Editar"
+  abre o formulário. Cada card mostra o **último comentário** (quem/quando).
+
+Detalhes, arquivos e **migrations pendentes** em
+[`docs/projetos-docs/updates/projetos-blue-desk.md`](docs/projetos-docs/updates/projetos-blue-desk.md).
+
+---
+
 ## Papéis e permissões (RBAC)
 
 O escopo de dados é aplicado por **Row Level Security (RLS)** no Postgres, e o acesso às rotas é reforçado no `middleware.ts`.
@@ -201,7 +225,10 @@ Negociação), o menu lateral (`Sidebar.tsx`) também escopa por **departamento*
 (`departments.slug`): cada grupo só aparece pra quem é do respectivo departamento, ou é
 manager/admin (vê todas as verticais). O módulo de **Warmup Whatsapp** (`/aquecimento`)
 é restrito a **supervisor/manager/admin** (RLS + Sidebar + guard no `middleware.ts`) — módulo
-sensível, erro de configuração pode bloquear a conta/BM na Meta; agente não acessa.
+sensível, erro de configuração pode bloquear a conta/BM na Meta; agente não acessa. O módulo
+de **Projetos** (`/projects`, "Desenvolvimento / TI") é só **manager/admin** (gate nas páginas
++ Sidebar); dentro dele o escopo é por *membership* de projeto (RLS `monday_*`), com a gerência
+enxergando todos os projetos.
 
 - Cadastro → `pending` → admin aprova atribuindo papel/depto/ramal pela tela `/admin`.
 - **Bootstrap do 1º admin** (manual, uma vez, após se cadastrar):
@@ -408,7 +435,7 @@ Schema próprio (não versionado em `supabase/migrations/`, aplicado direto no S
 vivo) girando em torno de `v_lead_progress` (view — progresso/fase atual de cada lead),
 `lead_agents` e RPCs como `get_leads_dashboard`, `get_leads_timeseries`,
 `get_leads_won_by_sale_date`, `get_leads_activity`. Detalhes em
-[`docs/updates/dashboard-leads-indice.md`](docs/updates/dashboard-leads-indice.md).
+[`docs/painelleads-docs/updates/dashboard-leads-indice.md`](docs/painelleads-docs/updates/dashboard-leads-indice.md).
 
 ### Painel de Sucesso do Cliente (CS)
 
@@ -433,7 +460,7 @@ pelo tick/callback via `service_role`).
 | `warmup_conversations` | Thread por par normalizado; `last_sender_id` (turno), `status`; único parcial `WHERE status='active'` |
 | `warmup_messages` | Histórico e **fonte de verdade da janela de 24h**: `message_type`, `dispatch_mode` (live/dry_run), resultado do callback |
 
-As migrações ficam em `supabase/migrations/` (prefixo `YYYYMMDD_`, idempotentes, rodadas manualmente no SQL Editor do Supabase). Cobrem Discador, Leads e CS juntas (mesmo projeto Supabase):
+As migrações ficam em `supabase/migrations/` (prefixo `YYYYMMDD_`, idempotentes, rodadas manualmente no SQL Editor do Supabase). Cobrem Discador, Leads, CS e Projetos juntas (mesmo projeto Supabase):
 
 | Migração | Conteúdo |
 |----------|----------|
@@ -454,11 +481,20 @@ As migrações ficam em `supabase/migrations/` (prefixo `YYYYMMDD_`, idempotente
 | `20260718_leads_activity_by_update.sql` | `get_leads_activity` — funil "geral" por `updated_at`, split ciclo × retroativo |
 | `20260719_warmup_schema.sql` | Schema do Warmup Whatsapp: tabelas `warmup_*`, RLS (manager/admin; execução só por `service_role`), seeds (settings + rampa) |
 | `20260719b_warmup_supervisor_access.sql` | Libera o Warmup também para **supervisor** (recria as policies `warmup_*` incluindo o papel); agente segue sem acesso |
+| `20260723d_monday.sql` | **Projetos** (base): tabelas/views/RPCs `monday_*`, RLS por membership, seed demo — ⏳ *pendente* |
+| `20260727_monday_gerencia_access.sql` | Gerência vê/gerencia todos os projetos (`monday_is_gerencia()`); RPC `monday_assignable_users` — ⏳ *pendente* |
+| `20260727b_monday_task_comments.sql` | Comentários por tarefa (`monday_task_comments`) + view `monday_task_last_comment` — ⏳ *pendente* |
+
+> As migrações de **Projetos** (`monday_*`) ainda **não foram aplicadas** no Supabase — o
+> código está no ar mas o módulo só funciona depois de rodá-las à mão. Ver
+> [`docs/projetos-docs/updates/projetos-blue-desk.md`](docs/projetos-docs/updates/projetos-blue-desk.md). Outras migrações
+> mais recentes (CS `2026072x`, leads drill) foram aplicadas ao vivo e ainda não constam nesta
+> tabela.
 
 O schema principal do Dashboard de Leads (`v_lead_progress`, `lead_agents`,
 `get_leads_dashboard` e RPCs relacionadas) foi aplicado direto no Supabase ao vivo e não
 está versionado nesta pasta — ver
-[`docs/updates/dashboard-leads-indice.md`](docs/updates/dashboard-leads-indice.md).
+[`docs/painelleads-docs/updates/dashboard-leads-indice.md`](docs/painelleads-docs/updates/dashboard-leads-indice.md).
 
 ---
 

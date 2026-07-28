@@ -51,7 +51,7 @@ const OPERATION_ITEMS: NavItem[] = [
 // Painéis por vertical de negócio (departamento). Comercial, CS e Negociação são
 // departamentos SEPARADOS (não subdivisão de um maior) — cada grupo só aparece pra quem é
 // do respectivo departamento (department_slug) ou é manager/admin (vê tudo). Ver
-// docs/updates/painel-sucesso-cliente-cs.md.
+// docs/painelcs-docs/updates/painel-sucesso-cliente-cs.md.
 const VERTICAL_GROUPS: { slug: 'comercial' | 'cs' | 'negociacao' | 'ti'; label: string; items: NavItem[] }[] = [
   {
     slug: 'comercial',

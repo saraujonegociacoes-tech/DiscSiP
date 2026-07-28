@@ -12,7 +12,7 @@ import type { CsMinutasData, CsMinutaCard } from '@/lib/types/database'
 // agrupados em buckets por proximidade do vencimento. Cada card mostra o valor da minuta
 // (Q.D), o vencimento, o % de desconto (derivado 1 − Q.D/dívida) e a etiqueta marcada, com
 // link pro card no Pipefy (a minuta fica anexada nele — não há URL própria). Ver
-// docs/updates/painel-sucesso-cliente-cs.md (mapeamento confirmado pelo dono 2026-07-27).
+// docs/painelcs-docs/updates/painel-sucesso-cliente-cs.md (mapeamento confirmado pelo dono 2026-07-27).
 //
 // Nasce completo do snapshot (a P3 não depende do Make). Se a migration 20260727 ainda não
 // foi aplicada, a action degrada pra vazio e a tela mostra o estado "sem minutas".

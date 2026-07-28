@@ -72,7 +72,7 @@ interface LeadsClientProps {
 }
 
 // Catálogo das abas do novo visual (Sprint 1). Cada aba responde uma pergunta — ver
-// docs/updates/novo-visual-dashleads.md. `managerOnly` esconde a aba do agente (ele não vê
+// docs/painelleads-docs/updates/novo-visual-dashleads.md. `managerOnly` esconde a aba do agente (ele não vê
 // Equipe/Operação/Performance). A ordem aqui é a ordem na topbar; a primeira visível é o
 // default (`visao-geral`, sempre visível).
 type TabSlug =

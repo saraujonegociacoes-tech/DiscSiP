@@ -10,7 +10,7 @@ import { CsTabNav, CsTabPlaceholder, CsMatrix, CsTeam, CsMinutas, type CsTab } f
 import type { CsMatrixData } from '@/lib/types/database'
 
 // Painel de Sucesso do Cliente (CS) reformulado — domínio SEPARADO do dashboard de
-// Leads/comercial. Painel de 4 abas (ver docs/updates/painel-sucesso-cliente-cs.md):
+// Leads/comercial. Painel de 4 abas (ver docs/painelcs-docs/updates/painel-sucesso-cliente-cs.md):
 //   1. Visão Geral + Janelas — matriz fase × idade + drill-down (ESTA entrega, funcional).
 //   2. Equipe · 3. Minutas · 4. Pagamento — placeholders (dependem de ingestão nova e
 //      de pendências do dono).

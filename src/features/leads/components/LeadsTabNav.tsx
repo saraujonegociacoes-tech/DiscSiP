@@ -4,7 +4,7 @@ import type { LucideIcon } from 'lucide-react'
 import { TabsList, TabsTrigger } from '@/components/ui/tabs'
 
 // Topbar de abas do dashboard de leads (novo visual — Sprint 1). Cada aba responde uma
-// pergunta (ver docs/updates/novo-visual-dashleads.md). Construída sobre o Radix ui/tabs:
+// pergunta (ver docs/painelleads-docs/updates/novo-visual-dashleads.md). Construída sobre o Radix ui/tabs:
 // o <Tabs> Root (valor + onChange) vive no LeadsClient e envolve esta barra + os
 // <TabsContent>. Aqui só desenhamos os gatilhos — o estado ativo vem do contexto do Root.
 // Rola na horizontal no mobile; theme-aware via tokens da Blue Desk.

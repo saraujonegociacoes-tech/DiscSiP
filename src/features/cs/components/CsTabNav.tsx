@@ -3,7 +3,7 @@
 import type { LucideIcon } from 'lucide-react'
 import { TabsList, TabsTrigger } from '@/components/ui/tabs'
 
-// Topbar de abas do painel de CS (4 páginas — ver docs/updates/painel-sucesso-cliente-cs.md).
+// Topbar de abas do painel de CS (4 páginas — ver docs/painelcs-docs/updates/painel-sucesso-cliente-cs.md).
 // Réplica local do padrão de src/features/leads/components/LeadsTabNav.tsx (domínio SEPARADO:
 // réplica, não componente compartilhado). Construída sobre o Radix ui/tabs: o <Tabs> Root
 // (valor + onChange) vive no CsClient e envolve esta barra + os <TabsContent>. Rola na

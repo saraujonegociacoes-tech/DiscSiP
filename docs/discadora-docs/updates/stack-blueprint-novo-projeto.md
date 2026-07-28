@@ -339,7 +339,7 @@ padrão**: `profiles` espelha `auth.users.id`, trigger cria perfil `pending` no 
 escopo de dados é RLS + reforço no middleware.
 
 > Copie de referência o `middleware.ts` completo da Blue Desk em
-> [`src/lib/supabase/middleware.ts`](../../src/lib/supabase/middleware.ts) e recorte os
+> [`src/lib/supabase/middleware.ts`](../../../src/lib/supabase/middleware.ts) e recorte os
 > papéis que o Monday não usa.
 
 ---
@@ -358,7 +358,7 @@ Nada de `tailwind.config.js`. Tudo em `globals.css`:
 - `@utility` custom pros gradientes/sombras de marca: `bg-gradient-primary`, `shadow-card`,
   `shadow-glow`, `lift` (hover elevado), `sheen`, `fade-up`, `scrollbar-slim`...
 
-Copie o [`src/app/globals.css`](../../src/app/globals.css) inteiro e **troque a paleta de
+Copie o [`src/app/globals.css`](../../../src/app/globals.css) inteiro e **troque a paleta de
 marca** (o bloco de comentário lista os HEX: `#000020 #001F5B #0066CC #00C2A8 #FFB020
 #FF4D4F #D9E1F2`). Pro Monday, defina a sua própria paleta e reconverta pra OKLCH — a
 **estrutura de tokens** (`--primary`, `--success`, `--chart-1..5`, `--sidebar-*`) fica igual.
@@ -367,7 +367,7 @@ marca** (o bloco de comentário lista os HEX: `#000020 #001F5B #0066CC #00C2A8 #
 - `layout.tsx` injeta um **boot script inline** no `<head>` que aplica `.dark` **antes** da
   hidratação (evita flash branco). Padrão institucional = escuro.
 - `ThemeProvider` (Context + `localStorage`) com `useTheme()` e um `ThemeToggle`.
-- Copie [`src/components/bluedesk/theme.tsx`](../../src/components/bluedesk/theme.tsx) e o
+- Copie [`src/components/bluedesk/theme.tsx`](../../../src/components/bluedesk/theme.tsx) e o
   `layout.tsx` (fonte **Inter** via `next/font/google`, `<html lang="pt-BR"
   suppressHydrationWarning>`).
 
@@ -380,12 +380,12 @@ marca** (o bloco de comentário lista os HEX: `#000020 #001F5B #0066CC #00C2A8 #
 - **`src/components/<marca>/`** — camada de marca por cima dos primitivos: `AppShell`,
   `PageHeader`, `KpiCard`, `StatusBadge`, `Logo`, `ThemeToggle`. Use tokens + utilitários de
   marca (`bg-gradient-card`, `shadow-card`, `lift`). Ver
-  [`KpiCard.tsx`](../../src/components/bluedesk/KpiCard.tsx) como referência de estilo.
+  [`KpiCard.tsx`](../../../src/components/bluedesk/KpiCard.tsx) como referência de estilo.
 
 ### 8.4 Gráficos
 Recharts + um hook `useChartTheme()` que lê os tokens CSS (`--chart-1..5`) pra os gráficos
 respeitarem o tema claro/escuro. Ver
-[`src/components/bluedesk/useChartTheme.ts`](../../src/components/bluedesk/useChartTheme.ts).
+[`src/components/bluedesk/useChartTheme.ts`](../../../src/components/bluedesk/useChartTheme.ts).
 
 > **Dica pro Monday:** antes de desenhar qualquer board/gráfico, rode a skill **`dataviz`**
 > (guia de cores/heatmap/KPIs consistentes claro+escuro) — casa perfeitamente com os tokens
