@@ -146,6 +146,9 @@ function TaskRow({ task: t, variant }: { task: DailyTaskItem; variant: 'done' | 
         >
           {t.projectKey}
         </span>
+        <span className="max-w-[160px] truncate text-[10px] font-medium text-muted-foreground" title={t.projectName}>
+          {t.projectName}
+        </span>
 
         {variant === 'deliver' && <StatusBadge status={t.status} className="text-[10px]" />}
         {variant === 'deliver' && <PriorityBadge priority={t.priority} className="text-[10px]" />}
