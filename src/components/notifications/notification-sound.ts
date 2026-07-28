@@ -1,8 +1,11 @@
 'use client'
 
-// Som de notificacao gerado via WebAudio (sem asset externo — atende a CSP) e a
-// preferencia de mudo (localStorage). Ligado por padrao; a pessoa pode silenciar
-// no painel do sino.
+// Som de notificacao: primeiros ~4s de "ola-macaquito-messi", embutido como data URI
+// base64 (ver notification-sound-data.ts) para nao depender de asset externo — mesma
+// politica de CSP do restante do sino. A preferencia de mudo fica no localStorage
+// (ligado por padrao; a pessoa pode silenciar no painel do sino).
+
+import { NOTIFICATION_SOUND_DATA_URI } from './notification-sound-data'
 
 const MUTE_KEY = 'bluedesk:notif-muted'
 
@@ -16,41 +19,29 @@ export function setNotificationMuted(muted: boolean): void {
   window.localStorage.setItem(MUTE_KEY, muted ? '1' : '0')
 }
 
-type WebkitWindow = Window & { webkitAudioContext?: typeof AudioContext }
+// Um unico elemento reaproveitado — evita empilhar Audio a cada notificacao.
+let audio: HTMLAudioElement | null = null
 
-let ctx: AudioContext | null = null
-
-function audioContext(): AudioContext | null {
-  if (typeof window === 'undefined') return null
-  const AC = window.AudioContext ?? (window as WebkitWindow).webkitAudioContext
-  if (!AC) return null
-  if (!ctx) ctx = new AC()
-  return ctx
+function element(): HTMLAudioElement | null {
+  if (typeof Audio === 'undefined') return null
+  if (!audio) {
+    audio = new Audio(NOTIFICATION_SOUND_DATA_URI)
+    audio.preload = 'auto'
+  }
+  return audio
 }
 
-/** Chime curto e discreto (dois tons ascendentes). No-op se estiver mudo. */
+/** Toca o clipe de notificacao (~4s). No-op se estiver mudo. */
 export function playNotificationSound(): void {
   if (isNotificationMuted()) return
-  const ac = audioContext()
-  if (!ac) return
-  if (ac.state === 'suspended') ac.resume().catch(() => {})
-
-  const now = ac.currentTime
-  const notes: Array<[number, number]> = [
-    [880, 0], // A5
-    [1174.66, 0.12], // D6
-  ]
-  for (const [freq, offset] of notes) {
-    const osc = ac.createOscillator()
-    const gain = ac.createGain()
-    osc.type = 'sine'
-    osc.frequency.value = freq
-    const t = now + offset
-    gain.gain.setValueAtTime(0, t)
-    gain.gain.linearRampToValueAtTime(0.15, t + 0.02)
-    gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.22)
-    osc.connect(gain).connect(ac.destination)
-    osc.start(t)
-    osc.stop(t + 0.24)
+  const el = element()
+  if (!el) return
+  try {
+    el.currentTime = 0
+  } catch {
+    // alguns browsers reclamam se setado antes dos metadados — ignora
   }
+  el.play().catch(() => {
+    // politica de autoplay pode bloquear ate a 1a interacao do usuario — silencioso
+  })
 }
