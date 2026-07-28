@@ -5,7 +5,9 @@ import { getSprintsWithStats, getBurndown } from '@/app/actions/monday-sprints'
 import { SPRINT_STATUS_META } from '@/lib/monday/domain'
 import { cn } from '@/lib/utils'
 import { CreateSprintDialog } from '@/components/monday/sprints/create-sprint-dialog'
+import { SprintCardActions } from '@/components/monday/sprints/sprint-card-actions'
 import { BurndownChart } from '@/components/monday/sprints/burndown-chart'
+import { RichText } from '@/components/monday/rich-text'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { Progress } from '@/components/ui/progress'
 import type { MondayBurndownPoint } from '@/lib/monday/types'
@@ -51,17 +53,26 @@ export default async function SprintsPage({
               <Card key={s.id}>
                 <CardHeader className="gap-2">
                   <div className="flex items-start justify-between gap-2">
-                    <div>
+                    <div className="min-w-0">
                       <p className="font-semibold">{s.name}</p>
                       {s.goal && (
-                        <p className="mt-0.5 flex items-center gap-1.5 text-xs text-muted-foreground">
-                          <Target className="size-3.5" /> {s.goal}
-                        </p>
+                        <div className="mt-1 flex gap-1.5 text-xs text-muted-foreground">
+                          <Target className="mt-0.5 size-3.5 shrink-0" />
+                          <RichText content={s.goal} />
+                        </div>
                       )}
                     </div>
-                    <span className={cn('rounded-full px-2 py-0.5 text-xs font-medium', meta.className)}>
-                      {meta.label}
-                    </span>
+                    <div className="flex shrink-0 items-center gap-1.5">
+                      <span
+                        className={cn(
+                          'rounded-full px-2 py-0.5 text-xs font-medium',
+                          meta.className,
+                        )}
+                      >
+                        {meta.label}
+                      </span>
+                      <SprintCardActions sprint={s} projectId={projectId} />
+                    </div>
                   </div>
                   {(s.start_date || s.end_date) && (
                     <p className="text-xs text-muted-foreground">

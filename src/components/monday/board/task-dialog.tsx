@@ -136,8 +136,15 @@ export function TaskDialog({
               id="t-desc"
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              rows={3}
+              rows={4}
+              placeholder={'Detalhe a tarefa…\n- Passo um\n- Passo dois\n\nUse **negrito** e listas com - ou 1.'}
             />
+            <p className="text-xs text-muted-foreground">
+              Dica: <code className="rounded bg-muted px-1">-</code> para tópicos,{' '}
+              <code className="rounded bg-muted px-1">1.</code> para lista numerada e{' '}
+              <code className="rounded bg-muted px-1">**texto**</code> para negrito. As quebras de
+              linha são preservadas.
+            </p>
           </div>
 
           <div className="grid grid-cols-2 gap-3">

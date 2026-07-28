@@ -25,6 +25,7 @@ import {
 } from '@/components/ui/dialog'
 import { StatusBadge } from '@/components/monday/status-badge'
 import { PriorityBadge } from '@/components/monday/priority-badge'
+import { RichText } from '@/components/monday/rich-text'
 import { MentionTextarea } from '@/components/monday/board/mention-textarea'
 import { CommentBody } from '@/components/monday/board/comment-body'
 import type { MemberOption } from '@/components/monday/board/task-dialog'
@@ -173,7 +174,7 @@ export function TaskDetailDialog({
           {task.description && (
             <div className="space-y-1">
               <p className="text-xs font-medium text-muted-foreground">Descrição</p>
-              <p className="whitespace-pre-wrap text-sm">{task.description}</p>
+              <RichText content={task.description} className="text-sm" />
             </div>
           )}
 

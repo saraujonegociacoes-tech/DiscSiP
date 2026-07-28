@@ -89,3 +89,53 @@ export async function updateSprintStatus(
   revalidatePath(`/projects/${projectId}`)
   return {}
 }
+
+export type UpdateSprintPatch = Partial<
+  Pick<MondaySprint, 'name' | 'goal' | 'status' | 'start_date' | 'end_date'>
+>
+
+export async function updateSprint(
+  sprintId: string,
+  patch: UpdateSprintPatch,
+  projectId: string,
+): Promise<{ error?: string }> {
+  const supabase = await createServerClient()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (!user) return { error: 'Não autenticado.' }
+
+  if (patch.name !== undefined) {
+    const name = patch.name.trim()
+    if (!name) return { error: 'Nome obrigatório.' }
+    patch = { ...patch, name }
+  }
+
+  const { error } = await supabase.from('monday_sprints').update(patch).eq('id', sprintId)
+  if (error) return { error: error.message }
+
+  revalidatePath(`/projects/${projectId}`)
+  return {}
+}
+
+/**
+ * Apaga um sprint. As tarefas vinculadas voltam ao backlog automaticamente
+ * (FK `monday_tasks.sprint_id` é `on delete set null`), então nenhuma tarefa
+ * é perdida.
+ */
+export async function deleteSprint(
+  sprintId: string,
+  projectId: string,
+): Promise<{ error?: string }> {
+  const supabase = await createServerClient()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (!user) return { error: 'Não autenticado.' }
+
+  const { error } = await supabase.from('monday_sprints').delete().eq('id', sprintId)
+  if (error) return { error: error.message }
+
+  revalidatePath(`/projects/${projectId}`)
+  return {}
+}

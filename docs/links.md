@@ -12,9 +12,12 @@ manter o padrão. O README do projeto fica na raiz do repo (`../README.md`).
 | Painel de Sucesso do Cliente (CS) | `painelcs-docs/` | [`updates/dashboard-cs-indice.md`](painelcs-docs/updates/dashboard-cs-indice.md) |
 | Aquecimento WhatsApp | `warmup-docs/` | [`updates/aquecimento-whatsapp-indice.md`](warmup-docs/updates/aquecimento-whatsapp-indice.md) |
 | Projetos (Desenvolvimento / TI) | `projetos-docs/` | [`updates/projetos-blue-desk.md`](projetos-docs/updates/projetos-blue-desk.md) |
+| Painel do CEO (executivo) | `projetopainelceo-docs/` | [`updates/painel-ceo-indice.md`](projetopainelceo-docs/updates/painel-ceo-indice.md) |
 
-Os cinco são **domínios de produto separados** (código, dados e RLS isolados entre si); só a
-documentação vive junta aqui, por projeto.
+Os cinco primeiros são **domínios de produto separados** (código, dados e RLS isolados entre si);
+só a documentação vive junta aqui, por projeto. O **Painel do CEO** é diferente: uma **camada de
+leitura/agregação** por cima das verticais isoladas (não tem schema próprio — compõe os dados dos
+outros domínios), com trava por um papel novo `ceo`.
 
 ---
 
@@ -99,3 +102,20 @@ membership, só `manager`/`admin`).
 - [`notificacoes-mencoes.md`](projetos-docs/updates/notificacoes-mencoes.md) — sino global de
   notificações in-app + @menções nos comentários (card + som + notificação do SO em tempo real);
   migration pendente `20260728_notifications.sql`.
+- [`editar-apagar-sprint-e-formatacao.md`](projetos-docs/updates/editar-apagar-sprint-e-formatacao.md) —
+  botões de editar/apagar sprint no card (apagar devolve tarefas ao backlog) + render `RichText`
+  (tópicos/numeração/negrito/quebras) nas descrições de tarefa e objetivos de sprint. **Sem migration.**
+
+---
+
+# Painel do CEO (executivo) · `projetopainelceo-docs/`
+
+Visão executiva do Blue Desk — **camada de leitura/agregação** por cima das verticais isoladas
+(Financeiro, CS, Negociação, Leads, Monday/Projetos, Discador): compõe os dados dos outros
+domínios em RPCs/actions, **sem schema próprio nem fundir os schemas**. Trava por um papel novo
+`ceo`. Índice completo em
+[`updates/painel-ceo-indice.md`](projetopainelceo-docs/updates/painel-ceo-indice.md).
+
+## `updates/`
+- [`painel-ceo-indice.md`](projetopainelceo-docs/updates/painel-ceo-indice.md) — índice/estado do painel do CEO
+- [`painel-ceo-sprints.md`](projetopainelceo-docs/updates/painel-ceo-sprints.md) — roadmap em sprints (S0→S4: Fundação/trava · Financeiro · Projeções · Saúde da Empresa · Saúde da Equipe) + decisões travadas
