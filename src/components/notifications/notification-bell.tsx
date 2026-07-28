@@ -26,6 +26,7 @@ import {
 import {
   isNotificationMuted,
   playNotificationSound,
+  primeNotificationSound,
   setNotificationMuted,
 } from './notification-sound'
 
@@ -62,6 +63,7 @@ export function NotificationBell() {
   useEffect(() => {
     if (!agentId) return
     load()
+    primeNotificationSound() // destrava o audio no 1o gesto (autoplay)
     if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'default') {
       Notification.requestPermission().catch(() => {})
     }

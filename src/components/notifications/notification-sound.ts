@@ -2,8 +2,12 @@
 
 // Som de notificacao: primeiros ~4s de "ola-macaquito-messi", embutido como data URI
 // base64 (ver notification-sound-data.ts) para nao depender de asset externo — mesma
-// politica de CSP do restante do sino. A preferencia de mudo fica no localStorage
-// (ligado por padrao; a pessoa pode silenciar no painel do sino).
+// politica de CSP do sino. A preferencia de mudo fica no localStorage (ligado por padrao).
+//
+// Autoplay: navegadores bloqueiam audio.play() disparado fora de um gesto do usuario. Como
+// o som toca a partir de um evento de realtime (nao de um clique), "destravamos" o elemento
+// no primeiro gesto da pessoa na pagina (primeNotificationSound); dai os toques seguintes
+// vindos do realtime passam a ser permitidos.
 
 import { NOTIFICATION_SOUND_DATA_URI } from './notification-sound-data'
 
@@ -31,6 +35,37 @@ function element(): HTMLAudioElement | null {
   return audio
 }
 
+let primed = false
+
+/**
+ * Destrava o audio no primeiro gesto do usuario (clique/tecla), para que os toques
+ * seguintes disparados por eventos de realtime nao sejam bloqueados pelo autoplay.
+ * Idempotente; chamar uma vez ao montar o sino.
+ */
+export function primeNotificationSound(): void {
+  if (typeof window === 'undefined' || primed) return
+  primed = true
+  const unlock = () => {
+    window.removeEventListener('pointerdown', unlock)
+    window.removeEventListener('keydown', unlock)
+    const el = element()
+    if (!el) return
+    // Toca mudo dentro do gesto so para "liberar" o elemento; depois reseta.
+    el.muted = true
+    el.play()
+      .then(() => {
+        el.pause()
+        el.currentTime = 0
+        el.muted = false
+      })
+      .catch(() => {
+        el.muted = false
+      })
+  }
+  window.addEventListener('pointerdown', unlock, { once: true })
+  window.addEventListener('keydown', unlock, { once: true })
+}
+
 /** Toca o clipe de notificacao (~4s). No-op se estiver mudo. */
 export function playNotificationSound(): void {
   if (isNotificationMuted()) return
@@ -42,6 +77,6 @@ export function playNotificationSound(): void {
     // alguns browsers reclamam se setado antes dos metadados — ignora
   }
   el.play().catch(() => {
-    // politica de autoplay pode bloquear ate a 1a interacao do usuario — silencioso
+    // autoplay ainda bloqueado (sem gesto previo) — silencioso
   })
 }
