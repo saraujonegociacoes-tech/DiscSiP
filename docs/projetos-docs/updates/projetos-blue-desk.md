@@ -53,7 +53,8 @@ entra em `done` (habilita burndown e a Daily).
   **"Editar tarefa"** abre o formulário (`TaskDialog`) já preenchido. O "+" cria direto.
 - **Comentários por tarefa** (`monday_task_comments`): thread com autor/horário; apaga só o
   próprio (RLS). O **card** mostra um preview do **último comentário** (texto + quem/quando),
-  via view `monday_task_last_comment`.
+  via view `monday_task_last_comment`. Suporta **@menções** (autocomplete de membros) que geram
+  notificações — ver [`notificacoes-mencoes.md`](notificacoes-mencoes.md).
 - **Membros do projeto:** diálogo de gestão individual (adicionar/remover/mudar papel).
 - **Pastas por pessoa (lista):** `/projects` agrupa os projetos por **dono** em pastas
   colapsáveis (`<details>`), cada uma com avatar + nome + contador ("N projetos de tal pessoa").

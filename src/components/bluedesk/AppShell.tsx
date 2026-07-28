@@ -4,6 +4,8 @@ import type { ReactNode } from 'react'
 import { SidebarProvider, SidebarTrigger } from '@/components/ui/sidebar'
 import { Sidebar } from '@/components/Sidebar'
 import { ThemeToggle } from '@/components/bluedesk/ThemeToggle'
+import { NotificationBell } from '@/components/notifications/notification-bell'
+import { Toaster } from '@/components/ui/sonner'
 
 /**
  * Casca padrão das telas internas: sidebar colapsável (RBAC) + header fixo.
@@ -20,12 +22,15 @@ export function AppShell({ children, header }: { children: ReactNode; header?: R
             <SidebarTrigger className="text-muted-foreground hover:text-foreground" />
             {header}
             <div className="ml-auto flex items-center gap-3">
+              <NotificationBell />
               <ThemeToggle />
             </div>
           </header>
           <main className="fade-up flex-1 px-6 py-8">{children}</main>
         </div>
       </div>
+      {/* Toaster global do Blue Desk (card das notificacoes + feedbacks das actions). */}
+      <Toaster />
     </SidebarProvider>
   )
 }

@@ -96,3 +96,6 @@ membership, só `manager`/`admin`).
 - [`projetos-blue-desk.md`](projetos-docs/updates/projetos-blue-desk.md) — módulo, acesso/RLS
   (gerência vê tudo + membros), board/tarefas/comentários, pastas por pessoa, Daily e as
   migrations pendentes (`20260723d`, `20260727_gerencia_access`, `20260727b_task_comments`).
+- [`notificacoes-mencoes.md`](projetos-docs/updates/notificacoes-mencoes.md) — sino global de
+  notificações in-app + @menções nos comentários (card + som + notificação do SO em tempo real);
+  migration pendente `20260728_notifications.sql`.

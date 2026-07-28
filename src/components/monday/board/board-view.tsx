@@ -163,6 +163,7 @@ export function BoardView({ projectId, boardId, members, initialTasks, currentUs
         assigneeName={detailAssigneeName}
         currentUserId={currentUserId}
         projectId={projectId}
+        members={members}
         onEdit={openEditFromDetail}
       />
 

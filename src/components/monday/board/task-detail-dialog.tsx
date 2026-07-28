@@ -12,11 +12,11 @@ import {
   getTaskComments,
 } from '@/app/actions/monday-comments'
 import { initials } from '@/lib/monday/domain'
+import { extractMentionIds } from '@/lib/monday/mentions'
 import type { MondayTaskCommentWithAuthor, MondayTaskWithTags } from '@/lib/monday/types'
 import { cn } from '@/lib/utils'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
-import { Textarea } from '@/components/ui/textarea'
 import {
   Dialog,
   DialogContent,
@@ -25,6 +25,9 @@ import {
 } from '@/components/ui/dialog'
 import { StatusBadge } from '@/components/monday/status-badge'
 import { PriorityBadge } from '@/components/monday/priority-badge'
+import { MentionTextarea } from '@/components/monday/board/mention-textarea'
+import { CommentBody } from '@/components/monday/board/comment-body'
+import type { MemberOption } from '@/components/monday/board/task-dialog'
 
 type Props = {
   open: boolean
@@ -33,6 +36,7 @@ type Props = {
   assigneeName: string | null
   currentUserId: string
   projectId: string
+  members: MemberOption[]
   onEdit: () => void
 }
 
@@ -43,8 +47,11 @@ export function TaskDetailDialog({
   assigneeName,
   currentUserId,
   projectId,
+  members,
   onEdit,
 }: Props) {
+  // Autocomplete de @menção: todos os membros menos o proprio usuario.
+  const mentionMembers = members.filter((m) => m.id !== currentUserId)
   const [comments, setComments] = useState<MondayTaskCommentWithAuthor[]>([])
   const [loading, setLoading] = useState(false)
   const [body, setBody] = useState('')
@@ -78,8 +85,9 @@ export function TaskDetailDialog({
   function send() {
     const text = body.trim()
     if (!text || !task) return
+    const mentionedIds = extractMentionIds(text, mentionMembers)
     startTransition(async () => {
-      const res = await addTaskComment(task.id, text, projectId)
+      const res = await addTaskComment(task.id, text, projectId, mentionedIds)
       if (res.error) {
         toast.error(res.error)
         return
@@ -212,7 +220,7 @@ export function TaskDetailDialog({
                             </button>
                           )}
                         </div>
-                        <p className="whitespace-pre-wrap break-words text-sm">{c.body}</p>
+                        <CommentBody body={c.body} members={members} />
                       </div>
                     </div>
                   )
@@ -221,18 +229,13 @@ export function TaskDetailDialog({
             </div>
 
             <div className="flex items-end gap-2">
-              <Textarea
+              <MentionTextarea
                 value={body}
-                onChange={(e) => setBody(e.target.value)}
+                onChange={setBody}
+                members={mentionMembers}
+                onSubmit={send}
                 rows={2}
-                placeholder="Escreva um comentário… (Ctrl+Enter envia)"
-                className="min-h-0 resize-none"
-                onKeyDown={(e) => {
-                  if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
-                    e.preventDefault()
-                    send()
-                  }
-                }}
+                placeholder="Escreva um comentário… (@ menciona, Ctrl+Enter envia)"
               />
               <Button
                 size="icon"
