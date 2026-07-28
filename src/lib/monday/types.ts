@@ -164,8 +164,39 @@ export type MondayBoardData = {
   tasks: MondayTaskWithTags[]
 }
 
-export type MondayProjectWithStats = MondayProject & { overview: MondayProjectOverview | null }
+export type MondayProjectWithStats = MondayProject & {
+  overview: MondayProjectOverview | null
+  /** Perfil do dono do projeto (para agrupar por pessoa na lista). */
+  owner?: MondayMemberProfile | null
+}
 export type MondaySprintWithStats = MondaySprint & { stats: MondaySprintStats | null }
 export type MondayMemberWithProfile = MondayProjectMember & { profile: MondayMemberProfile | null }
 
 export type MondayMemberOption = { id: string; label: string }
+
+// ─── Daily (resumo por pessoa: feito hoje/ontem + a entregar) ────────────────
+export interface DailyTaskItem {
+  id: string
+  title: string
+  status: MondayTaskStatus
+  priority: MondayTaskPriority
+  due_date: string | null
+  completed_at: string | null
+  overdue: boolean
+  projectId: string
+  projectName: string
+  projectKey: string
+  projectColor: string
+}
+
+export interface DailyPersonGroup {
+  assigneeId: string | null
+  person: MondayMemberProfile | null
+  doneToday: DailyTaskItem[]
+  doneYesterday: DailyTaskItem[]
+  toDeliver: DailyTaskItem[]
+}
+
+export interface DailyReport {
+  groups: DailyPersonGroup[]
+}

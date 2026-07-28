@@ -30,7 +30,24 @@ export async function getProjectsWithStats(): Promise<MondayProjectWithStats[]> 
 
   const list = (projects ?? []) as MondayProject[]
   const byId = new Map(((overviews ?? []) as MondayProjectOverview[]).map((o) => [o.project_id, o]))
-  return list.map((p) => ({ ...p, overview: byId.get(p.id) ?? null }))
+
+  // Resolve o dono de cada projeto (p/ agrupar por pessoa na lista).
+  const ownerIds = [...new Set(list.map((p) => p.owner_id))]
+  let owners: MondayMemberProfile[] = []
+  if (ownerIds.length) {
+    const { data: rows } = await supabase
+      .from('profiles')
+      .select('id, name, email')
+      .in('id', ownerIds)
+    owners = (rows ?? []) as MondayMemberProfile[]
+  }
+  const ownerById = new Map(owners.map((o) => [o.id, o]))
+
+  return list.map((p) => ({
+    ...p,
+    overview: byId.get(p.id) ?? null,
+    owner: ownerById.get(p.owner_id) ?? null,
+  }))
 }
 
 export async function getProject(projectId: string): Promise<MondayProject | null> {
