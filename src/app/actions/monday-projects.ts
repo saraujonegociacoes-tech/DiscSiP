@@ -212,8 +212,9 @@ export async function archiveProject(projectId: string): Promise<{ error?: strin
 /**
  * Apaga o projeto DE VEZ. As FKs monday_* usam ON DELETE CASCADE (members, boards,
  * groups, sprints, tasks, tags, task_tags), então tudo some junto — sem erro de FK.
- * A RLS de delete só permite o DONO (monday_project_role = 'owner'); um delete sem
- * permissão volta 0 linhas e nenhum erro, então usamos .select() p/ detectar isso.
+ * A RLS de delete permite a GERÊNCIA (manager/admin) ou o DONO (ver migration
+ * 20260729_monday_project_delete_gerencia.sql); um delete sem permissão volta 0
+ * linhas e nenhum erro, então usamos .select() p/ detectar isso.
  */
 export async function deleteProject(projectId: string): Promise<{ error?: string }> {
   const supabase = await createServerClient()
@@ -229,7 +230,7 @@ export async function deleteProject(projectId: string): Promise<{ error?: string
     .select('id')
   if (error) return { error: error.message }
   if (!data || data.length === 0) {
-    return { error: 'Apenas o dono do projeto pode apagá-lo.' }
+    return { error: 'Sem permissão para excluir este projeto.' }
   }
 
   revalidatePath('/projects')

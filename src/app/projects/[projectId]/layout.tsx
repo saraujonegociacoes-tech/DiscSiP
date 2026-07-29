@@ -65,9 +65,9 @@ export default async function ProjectLayout({
                 initialMembers={members}
                 assignableUsers={assignableUsers}
               />
-              {profile.id === project.owner_id && (
-                <DeleteProjectButton projectId={projectId} projectName={project.name} />
-              )}
+              {/* Gate de papel: o layout ja redireciona quem nao e manager/admin (gerencia).
+                  A permissao real de delete vem da RLS monday_projects_delete (gerencia OU dono). */}
+              <DeleteProjectButton projectId={projectId} projectName={project.name} />
             </div>
           </div>
           <ProjectDescription projectId={projectId} initialDescription={project.description} />
