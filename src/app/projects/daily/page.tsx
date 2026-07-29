@@ -18,6 +18,17 @@ function personLabel(g: DailyPersonGroup): string {
   return g.person?.name || g.person?.email || 'Sem responsável'
 }
 
+// Esta pagina e um Server Component (renderiza no runtime em UTC). Formatar o
+// horario com date-fns usaria o fuso do servidor e mostraria 3h a mais; por isso
+// convertemos explicitamente para America/Sao_Paulo na exibicao.
+function formatBrtTime(iso: string): string {
+  return new Date(iso).toLocaleTimeString('pt-BR', {
+    hour: '2-digit',
+    minute: '2-digit',
+    timeZone: 'America/Sao_Paulo',
+  })
+}
+
 // Modulo Monday (Desenvolvimento / TI): so manager/admin acessam. Segmento estatico
 // `daily` tem precedencia sobre [projectId], entao esta pagina nao usa o layout de projeto.
 export default async function DailyPage() {
@@ -118,7 +129,7 @@ function Bucket({
       {items.length === 0 ? (
         <p className="px-1 py-2 text-xs text-muted-foreground/70">—</p>
       ) : (
-        <div className={cn('space-y-1.5', variant === 'deliver' && 'max-h-80 overflow-y-auto')}>
+        <div className="space-y-1.5">
           {items.map((t) => (
             <TaskRow key={t.id} task={t} variant={variant} />
           ))}
@@ -168,7 +179,7 @@ function TaskRow({ task: t, variant }: { task: DailyTaskItem; variant: 'done' | 
 
         {variant === 'done' && t.completed_at && (
           <span className="text-[10px] text-muted-foreground">
-            {format(parseISO(t.completed_at), 'HH:mm')}
+            {formatBrtTime(t.completed_at)}
           </span>
         )}
       </div>

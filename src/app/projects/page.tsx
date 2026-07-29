@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
-import { CalendarCheck, CheckCircle2, ChevronRight, LayoutGrid, AlertTriangle } from 'lucide-react'
+import { CalendarCheck, CalendarDays, CheckCircle2, ChevronRight, LayoutGrid, AlertTriangle } from 'lucide-react'
 import { getCurrentProfile } from '@/app/actions/auth'
 import { getProjectsWithStats } from '@/app/actions/monday-projects'
 import { initials } from '@/lib/monday/domain'
@@ -62,6 +62,12 @@ export default async function ProjectsPage() {
               <Link href="/projects/daily">
                 <CalendarCheck className="size-4" />
                 Daily
+              </Link>
+            </Button>
+            <Button variant="outline" asChild>
+              <Link href="/projects/calendar">
+                <CalendarDays className="size-4" />
+                Calendário
               </Link>
             </Button>
             {projects.length === 0 && <SeedDemoButton />}

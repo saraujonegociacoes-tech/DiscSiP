@@ -200,3 +200,19 @@ export interface DailyPersonGroup {
 export interface DailyReport {
   groups: DailyPersonGroup[]
 }
+
+// ─── Calendario de entregas (tarefas com prazo, por dia) ─────────────────────
+export interface CalendarTaskItem {
+  id: string
+  title: string
+  status: MondayTaskStatus
+  priority: MondayTaskPriority
+  /** Data de entrega (YYYY-MM-DD, sempre presente neste tipo). */
+  due_date: string
+  projectId: string
+  projectName: string
+  projectKey: string
+  projectColor: string
+  assigneeId: string | null
+  assigneeName: string | null
+}
