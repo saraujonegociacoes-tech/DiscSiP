@@ -201,6 +201,24 @@ export interface DailyReport {
   groups: DailyPersonGroup[]
 }
 
+// ─── Historico de concluidas (timeline de todas as tarefas feitas) ───────────
+export interface HistoryTaskItem extends DailyTaskItem {
+  assigneeName: string | null
+}
+
+export interface HistoryDay {
+  /** Dia da conclusao (YYYY-MM-DD, fuso BRT). */
+  day: string
+  items: HistoryTaskItem[]
+}
+
+export interface HistoryReport {
+  days: HistoryDay[]
+  total: number
+  /** true quando o total atingiu o limite da consulta (ha mais alem do exibido). */
+  capped: boolean
+}
+
 // ─── Calendario de entregas (tarefas com prazo, por dia) ─────────────────────
 export interface CalendarTaskItem {
   id: string

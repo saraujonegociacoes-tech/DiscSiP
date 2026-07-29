@@ -9,6 +9,8 @@ import {
 } from '@/app/actions/monday-projects'
 import { MondayShell } from '@/components/monday/monday-shell'
 import { ProjectTabs } from '@/components/monday/project-tabs'
+import { ProjectName } from '@/components/monday/projects/project-name'
+import { ProjectDescription } from '@/components/monday/projects/project-description'
 import { DeleteProjectButton } from '@/components/monday/projects/delete-project-button'
 import { ManageMembersButton } from '@/components/monday/projects/manage-members-dialog'
 
@@ -43,29 +45,32 @@ export default async function ProjectLayout({
           Todos os projetos
         </Link>
 
-        <div className="flex items-center gap-3">
-          <span
-            className="grid size-9 shrink-0 place-items-center rounded-lg text-sm font-bold text-white"
-            style={{ backgroundColor: project.color }}
-          >
-            {project.key.slice(0, 2)}
-          </span>
-          <div>
-            <h1 className="font-semibold leading-tight">{project.name}</h1>
-            <p className="text-xs text-muted-foreground">{project.key}</p>
+        <div className="space-y-2">
+          <div className="flex items-center gap-3">
+            <span
+              className="grid size-9 shrink-0 place-items-center rounded-lg text-sm font-bold text-white"
+              style={{ backgroundColor: project.color }}
+            >
+              {project.key.slice(0, 2)}
+            </span>
+            <div>
+              <ProjectName projectId={projectId} initialName={project.name} />
+              <p className="text-xs text-muted-foreground">{project.key}</p>
+            </div>
+            <div className="ml-auto flex items-center gap-2">
+              <ManageMembersButton
+                projectId={projectId}
+                ownerId={project.owner_id}
+                currentUserId={profile.id}
+                initialMembers={members}
+                assignableUsers={assignableUsers}
+              />
+              {profile.id === project.owner_id && (
+                <DeleteProjectButton projectId={projectId} projectName={project.name} />
+              )}
+            </div>
           </div>
-          <div className="ml-auto flex items-center gap-2">
-            <ManageMembersButton
-              projectId={projectId}
-              ownerId={project.owner_id}
-              currentUserId={profile.id}
-              initialMembers={members}
-              assignableUsers={assignableUsers}
-            />
-            {profile.id === project.owner_id && (
-              <DeleteProjectButton projectId={projectId} projectName={project.name} />
-            )}
-          </div>
+          <ProjectDescription projectId={projectId} initialDescription={project.description} />
         </div>
 
         <div className="border-b border-border">

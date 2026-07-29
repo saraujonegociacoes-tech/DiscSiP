@@ -34,6 +34,19 @@ export const SPRINT_STATUS_META: Record<
   completed: { label: 'Concluído', className: 'bg-status-todo/15 text-muted-foreground' },
 }
 
+/**
+ * Horario (HH:mm) de um instante ISO no fuso America/Sao_Paulo. As telas Daily/
+ * Historico sao Server Components (renderizam no runtime em UTC); formatar com
+ * date-fns usaria o fuso do servidor e mostraria 3h a mais. Convertemos explicitamente.
+ */
+export function formatBrtTime(iso: string): string {
+  return new Date(iso).toLocaleTimeString('pt-BR', {
+    hour: '2-digit',
+    minute: '2-digit',
+    timeZone: 'America/Sao_Paulo',
+  })
+}
+
 /** Iniciais para avatar a partir de um nome/email. */
 export function initials(name?: string | null, email?: string | null): string {
   const src = (name ?? email ?? '?').trim()

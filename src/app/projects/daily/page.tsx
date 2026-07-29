@@ -2,31 +2,21 @@ import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { format, parseISO } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
-import { ArrowLeft, CalendarClock, CheckCircle2, ChevronRight, ListTodo } from 'lucide-react'
+import { ArrowLeft, CalendarClock, CheckCircle2, ChevronRight, History, ListTodo } from 'lucide-react'
 import { getCurrentProfile } from '@/app/actions/auth'
 import { getDailyReport } from '@/app/actions/monday-daily'
-import { initials } from '@/lib/monday/domain'
+import { formatBrtTime, initials } from '@/lib/monday/domain'
 import type { DailyPersonGroup, DailyTaskItem } from '@/lib/monday/types'
 import { MondayShell } from '@/components/monday/monday-shell'
 import { StatusBadge } from '@/components/monday/status-badge'
 import { PriorityBadge } from '@/components/monday/priority-badge'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
+import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { cn } from '@/lib/utils'
 
 function personLabel(g: DailyPersonGroup): string {
   return g.person?.name || g.person?.email || 'Sem responsável'
-}
-
-// Esta pagina e um Server Component (renderiza no runtime em UTC). Formatar o
-// horario com date-fns usaria o fuso do servidor e mostraria 3h a mais; por isso
-// convertemos explicitamente para America/Sao_Paulo na exibicao.
-function formatBrtTime(iso: string): string {
-  return new Date(iso).toLocaleTimeString('pt-BR', {
-    hour: '2-digit',
-    minute: '2-digit',
-    timeZone: 'America/Sao_Paulo',
-  })
 }
 
 // Modulo Monday (Desenvolvimento / TI): so manager/admin acessam. Segmento estatico
@@ -49,12 +39,20 @@ export default async function DailyPage() {
           Todos os projetos
         </Link>
 
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Daily</h1>
-          <p className="text-sm capitalize text-muted-foreground">
-            {format(new Date(), "EEEE, dd 'de' MMMM", { locale: ptBR })}
-            <span className="lowercase"> · {groups.length} pessoa{groups.length === 1 ? '' : 's'}</span>
-          </p>
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h1 className="text-2xl font-semibold tracking-tight">Daily</h1>
+            <p className="text-sm capitalize text-muted-foreground">
+              {format(new Date(), "EEEE, dd 'de' MMMM", { locale: ptBR })}
+              <span className="lowercase"> · {groups.length} pessoa{groups.length === 1 ? '' : 's'}</span>
+            </p>
+          </div>
+          <Button variant="outline" asChild>
+            <Link href="/projects/history">
+              <History className="size-4" />
+              Histórico
+            </Link>
+          </Button>
         </div>
 
         {groups.length === 0 ? (

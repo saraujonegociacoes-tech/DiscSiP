@@ -6,6 +6,9 @@ import type {
   DailyPersonGroup,
   DailyReport,
   DailyTaskItem,
+  HistoryDay,
+  HistoryReport,
+  HistoryTaskItem,
   MondayMemberProfile,
   MondayProject,
   MondayTask,
@@ -171,4 +174,99 @@ export async function getDailyReport(): Promise<DailyReport> {
     })
 
   return { groups }
+}
+
+const HISTORY_LIMIT = 500
+const HISTORY_TASK_COLS =
+  'id, title, status, priority, due_date, completed_at, assignee_id, board_id'
+
+/**
+ * Timeline de TODAS as tarefas concluidas (nao arquivadas) dos projetos que o
+ * usuario acessa (RLS), da mais recente p/ a mais antiga, agrupadas por dia (BRT).
+ * Limitada a HISTORY_LIMIT p/ nao pesar; `capped` avisa quando ha mais alem disso.
+ */
+export async function getCompletedHistory(): Promise<HistoryReport> {
+  const supabase = await createServerClient()
+
+  const { data: doneData } = await supabase
+    .from('monday_tasks')
+    .select(HISTORY_TASK_COLS)
+    .eq('archived', false)
+    .eq('status', 'done')
+    .not('completed_at', 'is', null)
+    .order('completed_at', { ascending: false })
+    .limit(HISTORY_LIMIT)
+
+  const tasks = (doneData ?? []) as TaskRow[]
+  if (!tasks.length) return { days: [], total: 0, capped: false }
+
+  // board -> projeto
+  const boardIds = [...new Set(tasks.map((t) => t.board_id))]
+  const { data: boards } = await supabase
+    .from('monday_boards')
+    .select('id, project_id')
+    .in('id', boardIds)
+  const boardToProject = new Map(
+    ((boards ?? []) as { id: string; project_id: string }[]).map((b) => [b.id, b.project_id]),
+  )
+
+  const projectIds = [...new Set([...boardToProject.values()])]
+  const { data: projects } = await supabase
+    .from('monday_projects')
+    .select('id, name, key, color')
+    .in('id', projectIds)
+  const projectById = new Map(((projects ?? []) as ProjectRow[]).map((p) => [p.id, p]))
+
+  // responsaveis
+  const assigneeIds = [...new Set(tasks.map((t) => t.assignee_id).filter(Boolean))] as string[]
+  let profiles: MondayMemberProfile[] = []
+  if (assigneeIds.length) {
+    const { data } = await supabase
+      .from('profiles')
+      .select('id, name, email')
+      .in('id', assigneeIds)
+    profiles = (data ?? []) as MondayMemberProfile[]
+  }
+  const profileById = new Map(profiles.map((p) => [p.id, p]))
+
+  // Agrupa por dia BRT preservando a ordem desc (tasks ja vem ordenada por completed_at).
+  const dayOrder: string[] = []
+  const byDay = new Map<string, HistoryTaskItem[]>()
+  let total = 0
+
+  for (const t of tasks) {
+    if (!t.completed_at) continue
+    const projectId = boardToProject.get(t.board_id)
+    const project = projectId ? projectById.get(projectId) : undefined
+    if (!project) continue // projeto fora do alcance (RLS) — ignora
+
+    const person = t.assignee_id ? profileById.get(t.assignee_id) ?? null : null
+    const item: HistoryTaskItem = {
+      id: t.id,
+      title: t.title,
+      status: t.status,
+      priority: t.priority,
+      due_date: t.due_date,
+      completed_at: t.completed_at,
+      overdue: false,
+      projectId: project.id,
+      projectName: project.name,
+      projectKey: project.key,
+      projectColor: project.color,
+      assigneeName: person?.name ?? person?.email ?? null,
+    }
+
+    const day = brtDate(new Date(t.completed_at))
+    let list = byDay.get(day)
+    if (!list) {
+      list = []
+      byDay.set(day, list)
+      dayOrder.push(day)
+    }
+    list.push(item)
+    total++
+  }
+
+  const days: HistoryDay[] = dayOrder.map((day) => ({ day, items: byDay.get(day)! }))
+  return { days, total, capped: tasks.length >= HISTORY_LIMIT }
 }

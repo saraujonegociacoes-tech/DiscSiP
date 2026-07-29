@@ -143,6 +143,60 @@ export async function seedDemo(): Promise<{ id?: string; error?: string }> {
   return { id: data as string }
 }
 
+/**
+ * Atualiza a descricao do projeto. A RLS (can_manage_monday_project) so permite
+ * dono/admin do projeto ou a gerencia; um update sem permissao volta 0 linhas e
+ * nenhum erro, entao usamos .select() p/ detectar isso (mesmo padrao do delete).
+ */
+export async function updateProjectDescription(
+  projectId: string,
+  description: string,
+): Promise<{ description?: string | null; error?: string }> {
+  const supabase = await createServerClient()
+  const trimmed = description.trim()
+  const value = trimmed.length ? trimmed : null
+
+  const { data, error } = await supabase
+    .from('monday_projects')
+    .update({ description: value })
+    .eq('id', projectId)
+    .select('id, description')
+  if (error) return { error: error.message }
+  if (!data || data.length === 0) {
+    return { error: 'Sem permissão para editar este projeto.' }
+  }
+
+  revalidatePath(`/projects/${projectId}`)
+  return { description: (data[0] as { description: string | null }).description }
+}
+
+/**
+ * Renomeia o projeto. Mesma RLS (can_manage_monday_project) e deteccao de "0 linhas"
+ * da descricao. Revalida tambem a lista, onde o nome aparece nos cards.
+ */
+export async function updateProjectName(
+  projectId: string,
+  name: string,
+): Promise<{ name?: string; error?: string }> {
+  const trimmed = name.trim()
+  if (!trimmed) return { error: 'Nome obrigatório.' }
+
+  const supabase = await createServerClient()
+  const { data, error } = await supabase
+    .from('monday_projects')
+    .update({ name: trimmed })
+    .eq('id', projectId)
+    .select('id, name')
+  if (error) return { error: error.message }
+  if (!data || data.length === 0) {
+    return { error: 'Sem permissão para editar este projeto.' }
+  }
+
+  revalidatePath(`/projects/${projectId}`)
+  revalidatePath('/projects')
+  return { name: (data[0] as { name: string }).name }
+}
+
 export async function archiveProject(projectId: string): Promise<{ error?: string }> {
   const supabase = await createServerClient()
   const { error } = await supabase
