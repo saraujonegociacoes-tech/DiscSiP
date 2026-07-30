@@ -38,7 +38,8 @@ O painel puxa de **3 pipes** (mais os domínios já ingeridos para a saúde da e
 
 ## Trava de acesso (papel `ceo`) — implementado no Sprint 0
 
-Um papel novo `ceo` (novo valor no enum de `profiles.role`). O acesso do CEO é centralizado
+Um papel novo `ceo` (novo valor permitido em `profiles.role`, que é `text` + CHECK, não enum —
+ver abaixo). O acesso do CEO é centralizado
 nas **RPCs de leitura do painel** (`SECURITY DEFINER` com guarda interna `IF
 ceo_current_role() NOT IN ('ceo','admin') THEN RETURN`) em vez de espalhar `'ceo'` pelo RLS de
 cada domínio — assim o Sprint 0 **não tocou em nenhuma policy em produção**. Helper
@@ -69,10 +70,12 @@ breve"), não o acesso — quem barra é o middleware e, do Sprint 1 em diante, 
   select é populado por `ROLE_OPTIONS` em
   [`src/app/admin/AdminClient.tsx`](../../../src/app/admin/AdminClient.tsx). Só a primeira
   estava no plano — sem a segunda o papel ficaria inatribuível pela UI.
-- **Nome do enum de `profiles.role`**: em vez de exigir introspecção manual do dono, a
-  migration descobre o tipo pela própria coluna via catálogo (`pg_attribute`/`pg_type`) e é
-  idempotente (`ADD VALUE IF NOT EXISTS`). Se a coluna for `text` em vez de enum, ela avisa e
-  segue sem erro.
+- **`profiles.role` não é enum** — é `text` (typtype=b) com o CHECK `profiles_role_check`
+  limitando aos 5 papéis. Descoberto por introspecção ao vivo em 30/jul. A `20260729` tratava só
+  o caso enum: detectou o não-enum e retornou sem fazer nada, o que era **correto quanto ao enum
+  e incompleto quanto ao CHECK** — que rejeita `'ceo'` do mesmo jeito. Fechado por
+  [`20260730_ceo_role_check.sql`](../../../supabase/migrations/20260730_ceo_role_check.sql).
+  A lição: "não é enum" não significava "nada a fazer", significava "procure o CHECK".
 
 ## Arquitetura (decisões travadas)
 
@@ -87,10 +90,11 @@ breve"), não o acesso — quem barra é o middleware e, do Sprint 1 em diante, 
 
 - **Financeiro & Negociação**: pipe IDs + mapeamento de field-ids são **input do dono**. É o que
   bloqueia o Sprint 1 hoje.
-- ~~**Papel `ceo`**: confirmar o nome do enum~~ — resolvido no Sprint 0: a migration descobre o
-  tipo pelo catálogo. Resta o dono **aplicar as duas partes na ordem** (o `ALTER TYPE ADD VALUE`
-  não pode ter o valor usado na mesma transação, e o editor SQL do Supabase envolve o script
-  todo numa transação só).
+- ~~**Papel `ceo`**: confirmar o nome do enum~~ — resolvido (30/jul): **não é enum**, é `text` com
+  o CHECK `profiles_role_check`. **As duas migrations foram aplicadas em 30/jul**: a `20260729`
+  criou `ceo_current_role()` e a
+  [`20260730_ceo_role_check.sql`](../../../supabase/migrations/20260730_ceo_role_check.sql)
+  liberou `'ceo'` no CHECK (confirmado por `pg_get_constraintdef`). O lado do banco está fechado.
 - **`supabase/` voltou a ser versionado** (decisão do dono, 29/jul): a pasta ignorada existia só
   no worktree `discsip`, e como migrations são um log append-only aplicado a **um** banco, as
   cópias divergiam em silêncio (git não avisa sobre untracked). Efeito colateral bom: os links

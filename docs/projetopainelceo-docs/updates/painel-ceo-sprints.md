@@ -26,7 +26,7 @@ Acesso restrito por uma **trava forte**: um papel novo `ceo`.
 - Projeções de CS: **reutilizar** a lógica/dados que o painel de CS já tem (fase "Aguardando
   Pagamento" já é ingerida). O **único a construir do zero na parte de projeção é a ingestão do
   pipe de Negociação**.
-- Trava = **criar papel `ceo`** (novo valor no enum de papéis).
+- Trava = **criar papel `ceo`** (novo valor permitido em `profiles.role`).
 - Primeiro entregável real (Sprint 1) = **Financeiro (entradas do mês)**.
 
 ### Restrições de arquitetura que respeitamos
@@ -66,19 +66,26 @@ Acesso restrito por uma **trava forte**: um papel novo `ceo`.
 
 ## Sprint 0 — Fundação & trava (papel `ceo` + rota `/ceo` + docs) — ✅ ENTREGUE (29/jul/2026)
 
-> **Pendência do dono:** aplicar
-> [`20260729_ceo_role.sql`](../../../supabase/migrations/20260729_ceo_role.sql) **em duas etapas,
-> na ordem** (PARTE 1 → confirmar NOTICE → PARTE 2), e promover o CEO pelo `/admin` (o papel já
-> aparece no select). Enquanto a migration não roda, o app compila e a rota existe, mas ninguém
-> pode ser `ceo` — o valor não existe no enum.
+> **Banco: pronto (30/jul).** As duas migrations foram aplicadas —
+> [`20260729_ceo_role.sql`](../../../supabase/migrations/20260729_ceo_role.sql) criou
+> `ceo_current_role()` (a PARTE 1 foi no-op: `profiles.role` não é enum) e
+> [`20260730_ceo_role_check.sql`](../../../supabase/migrations/20260730_ceo_role_check.sql)
+> liberou `'ceo'` no CHECK `profiles_role_check`.
+>
+> **Pendência do dono:** promover o CEO pelo `/admin` (o papel já aparece no select) — ninguém tem
+> o papel ainda. É o que falta para a trava ser testada ponta a ponta.
 
 **Papel `ceo` (RBAC em 3 camadas):**
-- **Migration** [`supabase/migrations/20260729_ceo_role.sql`](../../../supabase/migrations/20260729_ceo_role.sql):
-  adiciona `'ceo'` ao enum de `profiles.role` + cria `ceo_current_role()`. O **nome do enum não
-  precisou de confirmação manual** — a migration o descobre pela própria coluna via catálogo
-  (`pg_attribute`/`pg_type`), é idempotente (`ADD VALUE IF NOT EXISTS`) e avisa sem erro se a
-  coluna for `text` em vez de enum. Dividida em PARTE 1 / PARTE 2 porque `ADD VALUE` não permite
-  usar o valor novo na mesma transação, e o editor SQL do Supabase envolve o script todo numa só.
+- **Migrations**: [`20260729_ceo_role.sql`](../../../supabase/migrations/20260729_ceo_role.sql) +
+  [`20260730_ceo_role_check.sql`](../../../supabase/migrations/20260730_ceo_role_check.sql).
+  A primeira cria `ceo_current_role()` (PARTE 2) e trata o caso de `profiles.role` ser enum
+  (PARTE 1), descobrindo o tipo pela própria coluna via catálogo em vez de exigir introspecção
+  manual. **A introspecção ao vivo (30/jul) mostrou que não é enum**: é `text` (typtype=b) com o
+  CHECK `profiles_role_check` limitando aos 5 papéis. A PARTE 1 detectou o não-enum e retornou
+  sem fazer nada — correto quanto ao enum, **incompleto quanto ao CHECK**, que rejeita `'ceo'` do
+  mesmo jeito. A `20260730` fecha esse buraco recriando o CHECK com `'ceo'` na lista (só alarga o
+  domínio, então nenhuma linha existente pode violar; DROP + ADD na mesma transação).
+  **Lição:** "não é enum" não significava "nada a fazer" — significava "procure o CHECK".
 - [`src/lib/types/database.ts:2`](../../../src/lib/types/database.ts#L2): `'ceo'` no union `Role`.
   Não havia nenhum `Record<Role, …>` no código, então a mudança **não gerou erro de compilação em
   lugar nenhum** — o que é justamente o risco: as quebras eram todas silenciosas (as duas abaixo).
@@ -123,7 +130,8 @@ Acesso restrito por uma **trava forte**: um papel novo `ceo`.
 ceo_current_role() NOT IN ('ceo','admin') THEN RETURN`). Isso centraliza o acesso do CEO nas RPCs do
 painel e evita mexer no RLS de cada domínio. (Cada RPC dos sprints seguintes já nasce com essa
 guarda.) **Consequência verificada:** o Sprint 0 não alterou nenhuma policy em produção — o único
-efeito no banco é um valor novo no enum e uma função nova, ambos inertes até o Sprint 1.
+efeito no banco é um valor a mais no CHECK de `profiles.role` e uma função nova, ambos inertes até
+o Sprint 1.
 
 **Docs (padrão do repo):** ✅ `docs/projetopainelceo-docs/` com `reference/.gitkeep`, `updates/`,
 `fixes/.gitkeep`; `updates/painel-ceo-indice.md` (índice/estado) + `updates/painel-ceo-sprints.md`
@@ -218,8 +226,8 @@ a ponte `profile_id` ou mapear por nome). Por isso é o último — maior esfor�
 ## Riscos & dependências (resumo)
 - **Financeiro & Negociação**: pipe IDs + mapeamento de field-ids são **input do dono** (como toda
   integração anterior). Migrations e cenários Make aplicados **à mão** por ele.
-- **Papel `ceo`**: confirmar o nome do enum de `profiles.role` na base ao vivo; `ALTER TYPE ADD VALUE`
-  isolado.
+- ~~**Papel `ceo`**: confirmar o nome do enum de `profiles.role`~~ — resolvido (30/jul): a coluna
+  **não é enum**, é `text` com o CHECK `profiles_role_check`. Ver `20260730_ceo_role_check.sql`.
 - **Leads não versionado** (Sprint 3/4): extrair do Supabase ao vivo antes de depender.
 - **Identidade não unificada** (Sprint 4).
 - **Projeção do CS** ainda não construída no painel de CS — construímos a RPC de leitura aqui.
