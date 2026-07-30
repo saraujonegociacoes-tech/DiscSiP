@@ -8,17 +8,28 @@ export const ROLES: { id: Role; label: string; tagline: string; color: string }[
   { id: "supervisor", label: "Supervisor", tagline: "Gerencia 1 departamento",         color: "#34D399" },
   { id: "manager",    label: "Manager",    tagline: "Enxerga o negócio inteiro",       color: "#A78BFA" },
   { id: "admin",      label: "Admin",      tagline: "Gere usuários e departamentos",   color: "#F472B6" },
+  // Precisa existir aqui: RoleBadge faz ROLES.find(...)! e estouraria (TypeError em
+  // meta.color) para um papel ausente — e /ajuda é liberado a todos, inclusive pending.
+  { id: "ceo",        label: "CEO",        tagline: "Só o painel executivo",           color: "#F97316" },
 ];
 
-export const ROLE_ACCESS: { area: string; pending: string; agent: string; supervisor: string; manager: string; admin: string }[] = [
-  { area: "Dialer",      pending: "—", agent: "✓",             supervisor: "✓",                    manager: "✓",                          admin: "✓" },
-  { area: "Dashboard",   pending: "—", agent: "—",             supervisor: "✓ (1 depto)",          manager: "✓ (todos os deptos)",        admin: "✓ (todos)" },
-  { area: "Campanhas",   pending: "—", agent: "Ver e iniciar", supervisor: "Criar / editar (1 depto)", manager: "Criar / editar (todos)", admin: "Criar / editar (todos)" },
-  { area: "Mailings",    pending: "—", agent: "—",             supervisor: "Subir e mapear",       manager: "Subir e mapear",             admin: "Subir e mapear" },
-  { area: "Admin",       pending: "—", agent: "—",             supervisor: "—",                    manager: "—",                          admin: "Aprovar usuários, departamentos" },
+export const ROLE_ACCESS: { area: string; pending: string; agent: string; supervisor: string; manager: string; admin: string; ceo: string }[] = [
+  { area: "Dialer",       pending: "—", agent: "✓",             supervisor: "✓",                    manager: "✓",                          admin: "✓",                                ceo: "—" },
+  { area: "Dashboard",    pending: "—", agent: "—",             supervisor: "✓ (1 depto)",          manager: "✓ (todos os deptos)",        admin: "✓ (todos)",                        ceo: "—" },
+  { area: "Campanhas",    pending: "—", agent: "Ver e iniciar", supervisor: "Criar / editar (1 depto)", manager: "Criar / editar (todos)", admin: "Criar / editar (todos)",           ceo: "—" },
+  { area: "Mailings",     pending: "—", agent: "—",             supervisor: "Subir e mapear",       manager: "Subir e mapear",             admin: "Subir e mapear",                   ceo: "—" },
+  { area: "Admin",        pending: "—", agent: "—",             supervisor: "—",                    manager: "—",                          admin: "Aprovar usuários, departamentos",  ceo: "—" },
+  { area: "Painel do CEO", pending: "—", agent: "—",            supervisor: "—",                    manager: "—",                          admin: "✓ (suporte)",                      ceo: "✓" },
 ];
 
+// Escada de papéis da OPERAÇÃO. `ceo` fica FORA dela de propósito: é uma trava lateral,
+// não um nível — não herda de agent/supervisor/manager/admin e ninguém herda dele. Um
+// papel fora da escada devolve false. O indexOf −1 já produziria isso por acidente, mas
+// deixar implícito é frágil: reordenar o array mudaria o significado sem aviso.
 export function roleIncludes(current: Role, target: Role): boolean {
   const order: Role[] = ["pending", "agent", "supervisor", "manager", "admin"];
-  return order.indexOf(current) >= order.indexOf(target);
+  const currentIndex = order.indexOf(current);
+  const targetIndex = order.indexOf(target);
+  if (currentIndex < 0 || targetIndex < 0) return false;
+  return currentIndex >= targetIndex;
 }

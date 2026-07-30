@@ -1,5 +1,8 @@
 // Papéis do RBAC (Sprint 7). 'pending' = cadastrado, aguardando aprovação do admin.
-export type Role = 'pending' | 'agent' | 'supervisor' | 'manager' | 'admin'
+// 'ceo' NÃO é hierárquico — não é "acima de admin". É uma trava LATERAL: dá acesso só
+// ao painel executivo /ceo e a nada mais (não opera discador, não gere usuários), e
+// nenhum outro papel herda dele. Ver docs/projetopainelceo-docs/updates/painel-ceo-sprints.md.
+export type Role = 'pending' | 'agent' | 'supervisor' | 'manager' | 'admin' | 'ceo'
 export type CallDirection = 'inbound' | 'outbound'
 export type CallStatus = 'answered' | 'no_answer' | 'busy' | 'failed'
 export type CampaignStatus = 'draft' | 'active' | 'paused' | 'completed'

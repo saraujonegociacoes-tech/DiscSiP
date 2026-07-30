@@ -7,15 +7,17 @@ RPCs/actions, **sem fundir os schemas**. Acesso restrito por um papel novo `ceo`
 [`painel-ceo-sprints.md`](painel-ceo-sprints.md) para o roadmap completo e as decisões
 travadas, e [`../links.md`](../../links.md) (índice geral por domínio).
 
-> **Estado (28/jul/2026): planejamento aprovado, execução não iniciada.** Pasta de docs
-> criada (Sprint 0, parte de docs). Nenhuma migration, rota ou RPC construída ainda. O
-> primeiro entregável real é o **Financeiro — entradas do mês** (Sprint 1).
+> **Estado (29/jul/2026): Sprint 0 entregue.** Papel `ceo` (migration + RBAC no app), rota
+> `/ceo` com as 4 abas em placeholder, helper `ceo_current_role()` e docs. A flag
+> `NEXT_PUBLIC_CEO_ENABLED` nasce **desligada** — a rota existe mas mostra "Em breve" até
+> haver dado. Nenhuma RPC de leitura ainda. O primeiro entregável real é o **Financeiro —
+> entradas do mês** (Sprint 1), que depende de input do dono (id do pipe + field-ids).
 
 ## Roadmap em sprints — estado atual
 
 | Sprint | Entrega | Base de dado | Estado |
 |---|---|---|---|
-| 0 | **Fundação & trava** — papel `ceo`, rota `/ceo` (esqueleto multi-abas), helper `ceo_current_role()`, docs | — | ⏳ só docs criados |
+| 0 | **Fundação & trava** — papel `ceo`, rota `/ceo` (esqueleto multi-abas), helper `ceo_current_role()`, docs | — | ✅ entregue (29/jul) |
 | 1 | **Financeiro — entradas do mês** (carro-chefe) — pipe Financeiro novo (vertical isolada), KPIs + série mensal | Snapshot (pipe novo) | ⏳ não iniciada |
 | 2 | **Projeções de pagamento** — CS reusado + pipe Negociação novo (fase "Aguardando Pagamento") | Snapshot (CS + Negociação) | ⏳ não iniciada |
 | 3 | **Saúde da empresa** — scorecard compondo Financeiro + Leads + CS + Monday + Discador | Agregação multi-domínio | ⏳ não iniciada |
@@ -34,14 +36,43 @@ O painel puxa de **3 pipes** (mais os domínios já ingeridos para a saúde da e
   (`neg_cards` + `ingest_negociacao_card`), só o essencial da fase "Aguardando Pagamento". É o
   **único a construir do zero** na parte de projeção.
 
-## Trava de acesso (papel `ceo`)
+## Trava de acesso (papel `ceo`) — implementado no Sprint 0
 
-Um papel novo `ceo` (novo valor no enum de `profiles.role`). Estratégia recomendada:
-centralizar o acesso do CEO nas **RPCs de leitura do painel** (`SECURITY DEFINER` com guarda
-interna `IF ceo_current_role() NOT IN ('ceo','admin') THEN RETURN`) em vez de espalhar `'ceo'`
-pelo RLS de cada domínio. Gate de rota em
-[`src/lib/supabase/middleware.ts`](../../../src/lib/supabase/middleware.ts) (espelhando o de
-`/admin`). Enquanto não pronto, `NEXT_PUBLIC_CEO_ENABLED` mantém a rota oculta.
+Um papel novo `ceo` (novo valor no enum de `profiles.role`). O acesso do CEO é centralizado
+nas **RPCs de leitura do painel** (`SECURITY DEFINER` com guarda interna `IF
+ceo_current_role() NOT IN ('ceo','admin') THEN RETURN`) em vez de espalhar `'ceo'` pelo RLS de
+cada domínio — assim o Sprint 0 **não tocou em nenhuma policy em produção**. Helper
+`ceo_current_role()` criado em
+[`supabase/migrations/20260729_ceo_role.sql`](../../../supabase/migrations/20260729_ceo_role.sql).
+
+**`ceo` é uma trava LATERAL, não um nível acima de `admin`.** Ele não opera o discador nem
+gere usuários; nada herda dele e ele não herda de ninguém. No middleware isso virou o inverso
+dos outros gates: em vez de listar quem entra numa área, listamos o que o `ceo` alcança
+(`CEO_ROUTES = ['/ceo', '/ajuda']`) e todo o resto volta para `/ceo` — incluindo `/` e o
+pós-login, que para os outros papéis vai para `/softphone`.
+
+`NEXT_PUBLIC_CEO_ENABLED` nasce desligada e controla só o **lançamento** (a rota mostra "Em
+breve"), não o acesso — quem barra é o middleware e, do Sprint 1 em diante, a guarda no banco.
+
+### Pontos que o plano original não previu (achados na execução)
+
+- **`/ajuda` quebrava para o papel `ceo`**: [`RoleBadge`](../../../src/features/ajuda/components/RoleBadge.tsx)
+  faz `ROLES.find(...)!` e estouraria em `meta.color` (TypeError) com um papel ausente do
+  array — e `/ajuda` é liberado a todos. Corrigido em
+  [`src/features/ajuda/content/roles.ts`](../../../src/features/ajuda/content/roles.ts), que
+  ganhou a entrada `ceo` e uma coluna na matriz de acesso.
+- **`roleIncludes()`** é a escada da *operação* e `ceo` fica fora dela de propósito. Passou a
+  devolver `false` explicitamente para papéis fora da escada (antes dependia do `indexOf` −1
+  por acidente, que um reorder do array quebraria em silêncio).
+- **Duas listas de papéis atribuíveis**, não uma: `ROLES` em
+  [`src/app/actions/admin.ts`](../../../src/app/actions/admin.ts) valida no servidor, mas o
+  select é populado por `ROLE_OPTIONS` em
+  [`src/app/admin/AdminClient.tsx`](../../../src/app/admin/AdminClient.tsx). Só a primeira
+  estava no plano — sem a segunda o papel ficaria inatribuível pela UI.
+- **Nome do enum de `profiles.role`**: em vez de exigir introspecção manual do dono, a
+  migration descobre o tipo pela própria coluna via catálogo (`pg_attribute`/`pg_type`) e é
+  idempotente (`ADD VALUE IF NOT EXISTS`). Se a coluna for `text` em vez de enum, ela avisa e
+  segue sem erro.
 
 ## Arquitetura (decisões travadas)
 
@@ -54,11 +85,18 @@ pelo RLS de cada domínio. Gate de rota em
 
 ## Riscos & dependências
 
-- **Financeiro & Negociação**: pipe IDs + mapeamento de field-ids são **input do dono**.
-- **Papel `ceo`**: confirmar o nome do enum de `profiles.role` na base ao vivo (setup core não
-  versionado); `ALTER TYPE ADD VALUE` rodado isolado.
+- **Financeiro & Negociação**: pipe IDs + mapeamento de field-ids são **input do dono**. É o que
+  bloqueia o Sprint 1 hoje.
+- ~~**Papel `ceo`**: confirmar o nome do enum~~ — resolvido no Sprint 0: a migration descobre o
+  tipo pelo catálogo. Resta o dono **aplicar as duas partes na ordem** (o `ALTER TYPE ADD VALUE`
+  não pode ter o valor usado na mesma transação, e o editor SQL do Supabase envolve o script
+  todo numa transação só).
+- **`supabase/` voltou a ser versionado** (decisão do dono, 29/jul): a pasta ignorada existia só
+  no worktree `discsip`, e como migrations são um log append-only aplicado a **um** banco, as
+  cópias divergiam em silêncio (git não avisa sobre untracked). Efeito colateral bom: os links
+  relativos destes docs para `supabase/migrations/*.sql` voltaram a resolver.
 - **Leads não versionado** (Sprints 3/4): RPCs/tabelas base só na base ao vivo — extrair antes de
-  depender.
+  depender. Confirmado na execução do Sprint 0: `supabase/manual/` não existe em nenhum worktree.
 - **Identidade não unificada** (Sprint 4): `lead_agents`/`cs_agents` por `pipefy_user_id`;
   Monday/Discador por `profiles`; a ponte `lead_agents.profile_id` está vazia.
 

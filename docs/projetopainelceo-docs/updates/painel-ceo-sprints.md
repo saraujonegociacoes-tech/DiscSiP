@@ -64,40 +64,77 @@ Acesso restrito por uma **trava forte**: um papel novo `ceo`.
 
 ---
 
-## Sprint 0 — Fundação & trava (papel `ceo` + rota `/ceo` + docs)
+## Sprint 0 — Fundação & trava (papel `ceo` + rota `/ceo` + docs) — ✅ ENTREGUE (29/jul/2026)
+
+> **Pendência do dono:** aplicar
+> [`20260729_ceo_role.sql`](../../../supabase/migrations/20260729_ceo_role.sql) **em duas etapas,
+> na ordem** (PARTE 1 → confirmar NOTICE → PARTE 2), e promover o CEO pelo `/admin` (o papel já
+> aparece no select). Enquanto a migration não roda, o app compila e a rota existe, mas ninguém
+> pode ser `ceo` — o valor não existe no enum.
 
 **Papel `ceo` (RBAC em 3 camadas):**
-- **Migration** `supabase/migrations/AAAAMMDD_ceo_role.sql`: `ALTER TYPE <enum_de_papeis> ADD VALUE 'ceo';`
-  ⚠️ Confirmar na base ao vivo o **nome do enum** de `profiles.role` (a tabela `profiles`/o tipo vivem
-  no setup core **não versionado**). `ADD VALUE` não roda no mesmo bloco transacional que já usa o
-  valor — rodar isolado.
-- [`src/lib/types/database.ts:2`](../../../src/lib/types/database.ts#L2): adicionar `'ceo'` ao union `Role`.
-- [`src/app/actions/admin.ts:6`](../../../src/app/actions/admin.ts#L6): incluir `'ceo'` em `ROLES` (admin
-  pode atribuir).
-- [`src/lib/supabase/middleware.ts`](../../../src/lib/supabase/middleware.ts): novo bloco de gate — `/ceo`
-  só entra `ceo` (e `admin` p/ suporte); qualquer outro papel → redireciona (espelhar o bloco de
-  `/admin`, linhas 76–80).
-- [`src/components/Sidebar.tsx`](../../../src/components/Sidebar.tsx): item novo em `OPERATION_ITEMS`
-  (`{ href: '/ceo', label: 'Painel do CEO', icon: ..., roles: ['ceo','admin'] }`) e `ceo: 'CEO'` no
-  `ROLE_LABEL`.
+- **Migration** [`supabase/migrations/20260729_ceo_role.sql`](../../../supabase/migrations/20260729_ceo_role.sql):
+  adiciona `'ceo'` ao enum de `profiles.role` + cria `ceo_current_role()`. O **nome do enum não
+  precisou de confirmação manual** — a migration o descobre pela própria coluna via catálogo
+  (`pg_attribute`/`pg_type`), é idempotente (`ADD VALUE IF NOT EXISTS`) e avisa sem erro se a
+  coluna for `text` em vez de enum. Dividida em PARTE 1 / PARTE 2 porque `ADD VALUE` não permite
+  usar o valor novo na mesma transação, e o editor SQL do Supabase envolve o script todo numa só.
+- [`src/lib/types/database.ts:2`](../../../src/lib/types/database.ts#L2): `'ceo'` no union `Role`.
+  Não havia nenhum `Record<Role, …>` no código, então a mudança **não gerou erro de compilação em
+  lugar nenhum** — o que é justamente o risco: as quebras eram todas silenciosas (as duas abaixo).
+- [`src/app/actions/admin.ts:6`](../../../src/app/actions/admin.ts#L6) **e**
+  [`src/app/admin/AdminClient.tsx:19`](../../../src/app/admin/AdminClient.tsx#L19): são **duas**
+  listas — `ROLES` valida no servidor, `ROLE_OPTIONS` popula o select. Só a primeira estava no
+  plano; sem a segunda o papel ficaria inatribuível pela UI.
+- [`src/features/ajuda/content/roles.ts`](../../../src/features/ajuda/content/roles.ts) *(não
+  previsto)*: `/ajuda` **quebrava** para o `ceo` —
+  [`RoleBadge`](../../../src/features/ajuda/components/RoleBadge.tsx) faz `ROLES.find(...)!` e
+  estouraria em `meta.color` (TypeError) com papel ausente, e `/ajuda` é liberado a todos.
+  Adicionada a entrada `ceo`, a coluna na matriz de acesso, e `roleIncludes()` passou a devolver
+  `false` explicitamente para papéis fora da escada da operação (antes dependia do `indexOf` −1
+  por acidente, que um reorder do array quebraria em silêncio).
+- [`src/lib/supabase/middleware.ts`](../../../src/lib/supabase/middleware.ts): **dois** blocos, não
+  um. (a) O gate espelhando `/admin`: em `/ceo` só passa `admin` (suporte) — quem é `ceo` já
+  retornou antes. (b) Um bloco **invertido** para o `ceo`, colocado *antes* do redirect de
+  `isPublic`: como `ceo` é trava lateral (não opera discador nem gere usuários), listamos o que
+  ele alcança (`CEO_ROUTES = ['/ceo','/ajuda']`) e mandamos todo o resto para `/ceo`. É isso que
+  faz o **destino pós-login** dele ser `/ceo` em vez de `/softphone` — sem esse bloco, um CEO
+  logava e caía na tela do discador (`/` também redireciona para lá).
+- [`src/components/Sidebar.tsx`](../../../src/components/Sidebar.tsx): item `/ceo` (ícone `Crown`,
+  `roles: ['ceo','admin']`), `ceo: 'CEO'` no `ROLE_LABEL`, e `'ceo'` incluído em `/ajuda` — senão
+  o CEO ficaria com um único item de menu no app inteiro.
 
 **Rota esqueleto:**
-- `src/app/ceo/page.tsx` (server; feature-flag `NEXT_PUBLIC_CEO_ENABLED`, espelhando `cs/page.tsx:16`).
-- `src/app/ceo/CeoClient.tsx` (`AppShell` + `PageHeader` + Radix Tabs `?aba=` com abas placeholder:
-  Financeiro · Projeções · Saúde da Empresa · Saúde da Equipe).
-- `src/features/ceo/` (components/ + barrel `index.ts`), `CeoTabNav.tsx` (clone do `CsTabNav`).
-- `src/app/actions/ceo.ts` (`'use server'`, vazio por ora).
+- [`src/app/ceo/page.tsx`](../../../src/app/ceo/page.tsx) (server; flag `NEXT_PUBLIC_CEO_ENABLED`
+  com early return antes de qualquer query, espelhando `cs/page.tsx:16`) +
+  [`CeoComingSoon.tsx`](../../../src/app/ceo/CeoComingSoon.tsx).
+- [`src/app/ceo/CeoClient.tsx`](../../../src/app/ceo/CeoClient.tsx) (`AppShell` + `PageHeader` +
+  Radix Tabs `?aba=`): abas `financeiro` · `projecoes` · `saude-empresa` · `saude-equipe`, as
+  quatro em placeholder, cada uma já descrevendo o que vai receber e de onde.
+- [`src/features/ceo/`](../../../src/features/ceo/): `CeoTabNav.tsx` + `CeoTabPlaceholder.tsx` +
+  barrel `index.ts` (réplicas locais dos equivalentes de CS — domínio separado).
+- [`src/app/actions/ceo.ts`](../../../src/app/actions/ceo.ts) (`'use server'`, vazio; documenta o
+  padrão que as RPCs seguem — agregar no Postgres + guarda `ceo_current_role()`).
+- [`.env.example`](../../../.env.example): `NEXT_PUBLIC_CEO_ENABLED` registrada e **desligada**.
 
-**Estratégia de RLS do `ceo` (recomendada):** em vez de espalhar `'ceo'` por todas as policies `IN
-('manager','admin')`, criar um helper `ceo_current_role()` (clone de `cs_current_role`) e fazer as
-**RPCs de leitura do painel do CEO** serem `SECURITY DEFINER` com **guarda interna** (`IF
+**Estratégia de RLS do `ceo` (adotada):** em vez de espalhar `'ceo'` por todas as policies `IN
+('manager','admin')`, o helper `ceo_current_role()` (clone de `cs_current_role`) foi criado e as
+**RPCs de leitura do painel do CEO** serão `SECURITY DEFINER` com **guarda interna** (`IF
 ceo_current_role() NOT IN ('ceo','admin') THEN RETURN`). Isso centraliza o acesso do CEO nas RPCs do
-painel e evita mexer no RLS de cada domínio. (Cada RPC dos sprints seguintes já nasce com essa guarda.)
+painel e evita mexer no RLS de cada domínio. (Cada RPC dos sprints seguintes já nasce com essa
+guarda.) **Consequência verificada:** o Sprint 0 não alterou nenhuma policy em produção — o único
+efeito no banco é um valor novo no enum e uma função nova, ambos inertes até o Sprint 1.
 
-**Docs (padrão do repo):** criar `docs/projetopainelceo-docs/` com `reference/.gitkeep`, `updates/`,
+**Docs (padrão do repo):** ✅ `docs/projetopainelceo-docs/` com `reference/.gitkeep`, `updates/`,
 `fixes/.gitkeep`; `updates/painel-ceo-indice.md` (índice/estado) + `updates/painel-ceo-sprints.md`
-(roadmap em sprints + decisões travadas — este arquivo); registrar o projeto na tabela de
+(roadmap em sprints + decisões travadas — este arquivo); projeto registrado na tabela de
 [`docs/links.md`](../../links.md).
+
+**Decisão de infra tomada durante a execução:** `supabase/` **voltou a ser versionado**
+(`.gitignore`). A pasta ignorada existia apenas no worktree `discsip`, e como migrations são um log
+append-only aplicado a **um** banco, as duas cópias divergiriam em silêncio — git não avisa sobre
+arquivos untracked. Versionadas, elas viajam com a branch e a divergência aparece no diff. Efeito
+colateral: os links relativos destes docs para `supabase/migrations/*.sql` voltaram a resolver.
 
 ---
 

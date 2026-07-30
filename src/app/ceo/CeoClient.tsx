@@ -1,0 +1,116 @@
+'use client'
+
+import { useCallback, useMemo } from 'react'
+import { usePathname, useRouter, useSearchParams } from 'next/navigation'
+import { Wallet, CalendarClock, Activity, Users } from 'lucide-react'
+import { AppShell } from '@/components/bluedesk/AppShell'
+import { PageHeader } from '@/components/bluedesk/PageHeader'
+import { Tabs, TabsContent } from '@/components/ui/tabs'
+import { CeoTabNav, CeoTabPlaceholder, type CeoTab } from '@/features/ceo'
+
+// Painel do CEO — camada de leitura/agregação por cima das verticais isoladas (ver
+// docs/projetopainelceo-docs/updates/painel-ceo-sprints.md). Painel de 4 abas, uma por
+// sprint, na ordem de entrega:
+//   1. Financeiro (Sprint 1) — entradas do mês, do pipe Financeiro novo. Carro-chefe.
+//   2. Projeções (Sprint 2) — "quando/quanto vão pagar", somando CS (reusado) + Negociação.
+//   3. Saúde da Empresa (Sprint 3) — scorecard compondo Financeiro + Leads + CS + Monday + Discador.
+//   4. Saúde da Equipe (Sprint 4) — saúde por pessoa; carrega o trabalho de unificar identidade.
+//
+// Sprint 0: as 4 abas são placeholders. A casca (Radix Tabs + ?aba= + AppShell/PageHeader) é
+// réplica local do padrão de app/cs/CsClient.tsx — domínio separado, réplica e não
+// componente compartilhado, mesma decisão que CS tomou em relação a Leads.
+//
+// Sem PeriodPicker aqui ainda: cada aba decide o próprio recorte quando for construída
+// (Financeiro/Saúde usam janela de tempo; Projeções é snapshot). A definição de "mês" do
+// Financeiro (mês civil vs. ciclo 11→10 de src/lib/period.ts) fica para o Sprint 1.
+
+type TabSlug = 'financeiro' | 'projecoes' | 'saude-empresa' | 'saude-equipe'
+
+const TABS: Array<CeoTab & { slug: TabSlug }> = [
+  { slug: 'financeiro', label: 'Financeiro', icon: Wallet },
+  { slug: 'projecoes', label: 'Projeções', icon: CalendarClock },
+  { slug: 'saude-empresa', label: 'Saúde da Empresa', icon: Activity },
+  { slug: 'saude-equipe', label: 'Saúde da Equipe', icon: Users },
+]
+
+export function CeoClient() {
+  const router = useRouter()
+  const pathname = usePathname()
+  const searchParams = useSearchParams()
+
+  // Aba ativa sincronizada com ?aba=; deep-link inválido cai na primeira (financeiro).
+  const requestedTab = searchParams.get('aba')
+  const activeTab = useMemo<TabSlug>(
+    () => (TABS.some((t) => t.slug === requestedTab) ? (requestedTab as TabSlug) : TABS[0].slug),
+    [requestedTab],
+  )
+
+  const handleTabChange = useCallback(
+    (slug: string) => {
+      const params = new URLSearchParams(searchParams.toString())
+      params.set('aba', slug)
+      router.replace(`${pathname}?${params.toString()}`, { scroll: false })
+    },
+    [router, pathname, searchParams],
+  )
+
+  return (
+    <AppShell>
+      <PageHeader
+        title="Painel do CEO"
+        description="Visão executiva do negócio — financeiro, projeções e saúde da empresa e da equipe."
+      />
+
+      <Tabs value={activeTab} onValueChange={handleTabChange} className="w-full">
+        <CeoTabNav tabs={TABS} />
+
+        <div>
+          {/* 1 · Financeiro — entradas do mês (Sprint 1, carro-chefe). Depende do pipe
+              Financeiro novo: ingestão do zero como vertical isolada (fin_cards +
+              ingest_financeiro_card) + KPIs e série mensal. Pendência do dono: id do pipe e
+              os field-ids de valor/data/categoria. */}
+          <TabsContent value="financeiro" className="mt-6">
+            <CeoTabPlaceholder
+              icon={Wallet}
+              title="Entradas do mês em preparação"
+              description="Total do mês, comparativo com o mês anterior e série mensal por categoria, a partir do pipe dedicado do Financeiro. É o primeiro bloco a entrar no ar."
+            />
+          </TabsContent>
+
+          {/* 2 · Projeções (Sprint 2) — fase "Aguardando Pagamento" de dois pipes: CS (já
+              ingerido, só falta a RPC de leitura) e Negociação (o único a integrar do zero
+              nessa parte). */}
+          <TabsContent value="projecoes" className="mt-6">
+            <CeoTabPlaceholder
+              icon={CalendarClock}
+              title="Projeções de pagamento em preparação"
+              description="Quando e quanto os clientes vão pagar, somando as fases de Aguardando Pagamento de CS e de Negociação, com totais por janela de vencimento."
+            />
+          </TabsContent>
+
+          {/* 3 · Saúde da Empresa (Sprint 3) — compõe domínios que já existem. Risco
+              conhecido: as tabelas/RPCs base de Leads não estão versionadas no repo (só na
+              base ao vivo) — extrair antes de depender delas. */}
+          <TabsContent value="saude-empresa" className="mt-6">
+            <CeoTabPlaceholder
+              icon={Activity}
+              title="Saúde da empresa em preparação"
+              description="Scorecard executivo cruzando entradas, conversão comercial, carteira de CS, ritmo de entrega de TI e volume de operação."
+            />
+          </TabsContent>
+
+          {/* 4 · Saúde da Equipe (Sprint 4) — último de propósito: maior esforço e menor
+              prontidão de dados. Carrega o bloqueador de identidade não unificada entre
+              domínios (lead_agents/cs_agents por pipefy_user_id vs. profiles). */}
+          <TabsContent value="saude-equipe" className="mt-6">
+            <CeoTabPlaceholder
+              icon={Users}
+              title="Saúde da equipe em preparação"
+              description="Indicadores por pessoa reunindo CS, Leads, Projetos e Discador. Depende de unificar a identidade dos colaboradores entre os domínios."
+            />
+          </TabsContent>
+        </div>
+      </Tabs>
+    </AppShell>
+  )
+}
