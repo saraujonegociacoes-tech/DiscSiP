@@ -61,11 +61,19 @@ maior minuta. **Export CSV.**
 Arquivos: RPC nas migrations acima; tipos `CsMinutaCard`/`CsMinutasData`/`CsResguardoBucket`;
 action `getCsMinutas`; componente `CsMinutas.tsx`; aba "minutas" do `CsClient`.
 
-### Página 4 — Pagamento + Insights  ·  ⏳ *não iniciada (única que falta)*  ·  *snapshot + série temporal*
-- **Projeção** (quando/quanto vão pagar): construível do snapshot já — `valor_da_parcela`,
-  `data_de_vencimento_da_parcela_do_cliente`, `data_da_quita_o`, contagens P.P/P.A/P.V.
-- **Histórico de pagamento:** definir a fonte (pendência 6) — snapshot de P.P ao longo do
-  tempo (mesma ingestão da Equipe) **ou** fonte externa ao Pipefy.
+### Página 4 — Pagamento + Insights  ·  ✅ *CONSTRUÍDA 2026-07-30 (migration pendente aplicar)*  ·  *snapshot + série*
+Modelo **híbrido** (dono): **projeção** = plano de parcelas criado na fase "Aguardando Pagamento"
+do SC (snapshot, teto 3x); **realizado/histórico** = **conexão do card do SC com o pipe do
+Financeiro** via `child_relations` (relação "Subir pagamento") — 1 card conectado = 1 pagamento de
+1 parcela. Campos do Financeiro: `valor_de_contrata_o` (pago), `data_do_pagamento`,
+`esse_pagamento_referente_a_qual_parcela`, `comprovante_de_pagamento`.
+- **Entregue** (tsc/eslint verdes): migration `20260730b_cs_pagamento.sql` (tabela `cs_card_payments`
+  + `ingest_cs_card` lendo `child_relations` + RPCs `get_cs_pagamento_projecao`/`_historico`; reusa
+  `cs_parse_date` da `20260730`), tipos `CsPagamento*`, actions, `CsPagamento.tsx`, query do import
+  com `child_relations`.
+- **PENDENTE do dono:** aplicar `20260730b`; ligar `child_relations` na query do Make **+ poll
+  sem-delta do balde "Aguardando Pagamento"** (gatilho: pagamento no Financeiro pode não tocar o
+  `updated_at` do card do SC); re-rodar `npm run import:cs-cards`.
 
 ### Página 2 — Equipe (série temporal)  ·  ✅ *CONSTRUÍDA (2026-07-22)*
 - **Entregue** (tsc/lint verdes nos arquivos tocados): migration `20260722_cs_team.sql`

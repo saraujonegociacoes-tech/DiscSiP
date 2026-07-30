@@ -8,16 +8,18 @@
 > dashboard. Réplica do padrão do dashboard de Leads (Pipefy → Make → Supabase) para o
 > pipe de **Sucesso do Cliente**, como domínio **separado**.
 
-## Estado atual (2026-07-27)
+## Estado atual (2026-07-30)
 
-**3 das 4 páginas no ar, com as migrations aplicadas e o Make rodando.**
+**As 4 páginas construídas.** P1/P2/P3 no ar (migrations aplicadas, Make rodando). P4 (Pagamento)
+construída e verde — falta o dono aplicar a migration `20260730b`, ligar `child_relations` na query
+do Make (+ poll sem-delta do balde) e re-rodar o backfill.
 
 | Página | Estado | Migration | Base |
 |---|---|---|---|
 | 1 · Visão Geral + Janelas | ✅ construída e validada | `20260721_cs_age_windows` (aplicada) | snapshot |
 | 2 · Equipe | ✅ construída, série temporal acumulando | `20260722` + `20260722b` + `20260723_cs_team_v2` (aplicadas) | Make |
 | 3 · Controle de Minutas | ✅ no ar | `20260727` + `…b` + `…c` + `…d` (todas aplicadas 2026-07-27) | snapshot |
-| 4 · Pagamento + Insights | ⏳ não iniciada | — | snapshot + série |
+| 4 · Pagamento + Insights | ✅ construída (migration pendente aplicar) | `20260730b_cs_pagamento` | plano na fase (snapshot) + conexão Financeiro (série) |
 
 **Atualização dos dados:** o painel lê o **snapshot no Supabase** (`cs_cards.metadata` etc.),
 que é mantido fresco pelo **mesmo cenário do Make** que já roda (o `ingest_cs_card` grava
@@ -270,21 +272,38 @@ relevante àquele insight).
 desconto mostra os dois**: derivado (`1 − Q.D/Q.A`) na coluna "% desc." **e** a etiqueta
 (`sele_o_de_etiqueta`) na coluna "Etiqueta".
 
-## Página 4 — Controle de Pagamento + Insights  ·  ⏳ não iniciada (única página que falta)
+## Página 4 — Controle de Pagamento + Insights  ·  ✅ CONSTRUÍDA 2026-07-30 (migration PENDENTE dono aplicar)
 
-> Próximo passo do painel. A **projeção** já é construível do snapshot atual; o **histórico**
-> depende de definir a fonte (pendência #6). Não precisa de nada novo no Make (os campos já são
-> ingeridos). Pra começar: responder a pendência #6 e pedir "vamos pra Página 4".
+> Modelo **HÍBRIDO** (decisão do dono, 2026-07-30): o pagamento **NÃO** vem dos campos de negociação
+> (P.P/P.A/P.V são ignoráveis aqui — são de negociação do financiamento). Vem da fase **"Aguardando
+> Pagamento"** (id `343781769`):
+> - **PROJEÇÃO** ("quando/quanto vão pagar") = **plano de parcelas criado NA FASE do SC** (snapshot,
+>   sem período). Teto **3x**. Slugs (o dono duplicou os campos → viraram "copy_of", leio pelos
+>   slugs exatos): parcela 1 `1_parcela_valor` / `1_parcela_data_do_pagamento`; parcela 2
+>   `copy_of_1_parcela_valor` / `copy_of_1_parcela_data_do_pagamento`; parcela 3
+>   `copy_of_2_parcela_valor` / `copy_of_2_parcela_data_do_pagamento`; + `forma_de_pagamento`.
+> - **REALIZADO/HISTÓRICO** ("quanto já pagaram") = **conexão do card do SC com o pipe do FINANCEIRO**
+>   (fonte de verdade do pagamento) via `child_relations` (relação **"Subir pagamento"**, conector
+>   `subir_pagamento`); **1 card do Financeiro = 1 pagamento de 1 parcela**. Campos: valor pago
+>   `valor_de_contrata_o`, data `data_do_pagamento` (DD/MM/YYYY), parcela
+>   `esse_pagamento_referente_a_qual_parcela`, comprovante `comprovante_de_pagamento`. A série é
+>   filtrável por período (11→10). Casa prevista×paga pelo número da parcela.
 
-- **Projeções** e **quando vão pagar**: `valor_da_parcela` ("Valor da Parcela"),
-  `data_de_vencimento_da_parcela_do_cliente` ("Dia de Vencimento da Parcela do Cliente"),
-  `data_da_quita_o` ("Data da quitação"), e contagens de parcelas (`p_p`/`p_a`/`p_v` +
-  `copy_of_quantidade_de_parcelas_em_pagas` = "Total de Parcelas do Financiamento").
-  Projeção construível do snapshot.
-- **Histórico de quanto o cliente já pagou**: ⚠ *Pendência* — não temos série temporal de
-  pagamento. Ou (a) deriva de `P.P - Parcelas Pagas` snapshotado ao longo do tempo (mesma
-  ingestão de histórico da Equipe), ou (b) há uma fonte de pagamento fora do Pipefy.
-  Definir com o dono.
+Verificado com probe read-only (`scripts/probe-cs-connection.mjs`, card teste `1421641222` →
+`1421643991`). Entregue (tsc/eslint verdes): migration `20260730b_cs_pagamento.sql` (tabela
+`cs_card_payments` + RLS via card pai; `ingest_cs_card` estendida lendo `child_relations`; RPCs
+`get_cs_pagamento_projecao()` (snapshot) + `get_cs_pagamento_historico(p_start,p_end)` (série);
+**reusa o `cs_parse_date` corrigido da `20260730`** p/ DD/MM/YYYY — não redefine); tipos
+`CsPagamento*`; actions `getCsPagamentoProjecao`/`getCsPagamentoHistorico`; componente
+`CsPagamento.tsx` (KPIs de carteira · tabela por card com drill do **cronograma parcela-a-parcela
+prevista×paga** · **calendário de recebimento** previsto×recebido por mês · insights clicáveis ·
+export CSV · **histórico** com PeriodPicker); query do `import-cs-cards.mjs` já com `child_relations`.
+
+**PENDENTE do dono (manual):** (1) aplicar `20260730b`; (2) incluir na query do Make
+`child_relations { name cards { id title fields { name value array_value datetime_value field { id } } } }`
+**+ pollar o balde "Aguardando Pagamento" sem filtro de delta** (o `updated_at` do card do SC pode
+não mudar quando o pagamento é conectado no Financeiro — gatilho); (3) re-rodar
+`npm run import:cs-cards` pra semear `cs_card_payments`. Até lá a P4 degrada pra vazio.
 
 ## Classificação das fases finais (dono, 2026-07-21)
 
@@ -334,8 +353,10 @@ reformulação).
    Dívida). Resguardado = maior mês de `valor_de_resguardo_N` com valor > 0.
 5. ✅ **Corte de completude** = Completa=5 · Parcial=3–4 **com Q.D** · Incompleta=1–2 ou 3–4 sem
    Q.D · Sem=0.
-6. ⏳ **Histórico de pagamento** (ABERTA — trava a P4) — deriva do snapshot de `P.P` ao longo do
-   tempo (a P2 já grava `cs_negotiation_snapshots`) ou de fonte externa? Definir com o dono.
+6. ✅ **Histórico de pagamento** (resolvido 2026-07-30) — **não é P.P**. Vem da **conexão do card do
+   SC com o pipe do Financeiro** (`child_relations`, relação "Subir pagamento"): 1 card conectado =
+   1 pagamento de 1 parcela. Projeção = plano de parcelas na fase Aguardando Pagamento. Construído
+   na migration `20260730b_cs_pagamento.sql` (P4).
 7. ✅ **Atribuição por responsável** = qualquer comentário conta (autor guardado p/ trocar depois).
 8. ✅ **Limiar de "update relevante"** = sem epsilon — pela ordem de prioridade Q.D›Q.A›P.A›P.P›P.V.
 

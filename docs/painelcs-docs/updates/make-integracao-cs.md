@@ -54,10 +54,20 @@ query CsDelta($pipeId: ID!, $since: String!, $cursor: String) {
       assignees { id name email }
       fields { name value array_value datetime_value field { id } }
       comments { id text created_at author_name author { id name } }
+      child_relations { name cards { id title fields { name value array_value datetime_value field { id } } } }
     } }
   }
 }
 ```
+
+> **`child_relations` (Página 4 · Pagamento, 2026-07-30):** traz os cards conectados do pipe do
+> **Financeiro** (relação "Subir pagamento") — a `ingest_cs_card` persiste em `cs_card_payments`.
+> **Gatilho:** o `updated_at` do card do SC pode **não** mudar quando o pagamento é conectado no
+> Financeiro, então o filtro delta `updated_at gte` pode **não pegar** o pagamento novo. Solução:
+> um **poll adicional do balde "Aguardando Pagamento" (id `343781769`) SEM filtro de delta** a cada
+> rodada (é um balde pequeno) — mesma query, trocando o `filter` por
+> `filter: { field: "current_phase", operator: eq, value: "343781769" }` (ou o filtro de fase
+> equivalente no seu Make). Assim todo card em pagamento é relido e as parcelas novas sobem.
 - **Variables** (Map desligado, Add item):
   | Key | Value |
   |---|---|
