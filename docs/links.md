@@ -75,6 +75,9 @@ Domínio de produto separado do discador **e** do dashboard de Leads (código/da
 - [`cs-proximos-passos.md`](painelcs-docs/updates/cs-proximos-passos.md) — estado/handoff das páginas 2/3/4 + pendências
 - [`cs-pagina1-alternativas-viz.txt`](painelcs-docs/updates/cs-pagina1-alternativas-viz.txt) — notas de alternativas de visualização da Página 1
 
+## `fixes/`
+- [`correcao-data-quitacao-ddmmyyyy.md`](painelcs-docs/fixes/correcao-data-quitacao-ddmmyyyy.md) — vencimento da minuta trocava dia/mês: `data_da_quita_o` vem em `DD/MM/YYYY` (não ISO) e o `::date` castava em MDY. `cs_parse_date` passa a converter pt-BR explícito (migration `20260730`, **pendente de aplicar**).
+
 ---
 
 # Aquecimento WhatsApp · `warmup-docs/`

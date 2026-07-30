@@ -12,6 +12,10 @@ import type {
   CsTeamNegotiationTotals,
   CsMinutasData,
   CsMinutaCard,
+  CsPagamentoProjecaoData,
+  CsPagamentoCard,
+  CsPagamentoHistoricoData,
+  CsPagamentoRecebido,
 } from '@/lib/types/database'
 
 // Painel de Sucesso do Cliente (CS, Pipefy) — domínio SEPARADO do leads/comercial.
@@ -141,5 +145,56 @@ export async function getCsMinutas(): Promise<CsMinutasData> {
       },
     },
     cards: d.cards ?? [],
+  }
+}
+
+// PÁGINA 4 (Pagamento): duas leituras. PROJEÇÃO = SNAPSHOT (get_cs_pagamento_projecao, sem
+// período, como P1/P3): o plano por parcela (metadata do SC) + os pagamentos realizados (conexão
+// com o Financeiro), por card. HISTÓRICO = SÉRIE (get_cs_pagamento_historico(p_start,p_end),
+// filtrável): os pagamentos com data no período. O RLS escopa igual. Ambas degradam pra vazio se
+// a migration 20260730b ainda não foi aplicada ou não houver acesso.
+
+interface PagamentoProjecaoRpc {
+  referenceAt?: string
+  cards?: CsPagamentoCard[]
+}
+
+export async function getCsPagamentoProjecao(): Promise<CsPagamentoProjecaoData> {
+  const supabase = await createServerClient()
+  const { data, error } = await supabase.rpc('get_cs_pagamento_projecao')
+  if (error || !data) {
+    // Degrada (não quebra) se a migration ainda não foi aplicada ou não houver acesso.
+    return { referenceAt: new Date().toISOString(), cards: [] }
+  }
+  const d = data as unknown as PagamentoProjecaoRpc
+  return {
+    referenceAt: d.referenceAt ?? new Date().toISOString(),
+    cards: d.cards ?? [],
+  }
+}
+
+interface PagamentoHistoricoRpc {
+  periodStart?: string
+  periodEnd?: string
+  totalRecebido?: number
+  count?: number
+  payments?: CsPagamentoRecebido[]
+}
+
+export async function getCsPagamentoHistorico(period: LeadPeriod): Promise<CsPagamentoHistoricoData> {
+  const p = sanitizePeriod(period)
+  const supabase = await createServerClient()
+  const { data, error } = await supabase.rpc('get_cs_pagamento_historico', { p_start: p.start, p_end: p.end })
+  if (error || !data) {
+    // Degrada (não quebra) se a migration ainda não foi aplicada ou não houver acesso.
+    return { periodStart: p.start, periodEnd: p.end, totalRecebido: 0, count: 0, payments: [] }
+  }
+  const d = data as unknown as PagamentoHistoricoRpc
+  return {
+    periodStart: d.periodStart ?? p.start,
+    periodEnd: d.periodEnd ?? p.end,
+    totalRecebido: d.totalRecebido ?? 0,
+    count: d.count ?? 0,
+    payments: d.payments ?? [],
   }
 }
