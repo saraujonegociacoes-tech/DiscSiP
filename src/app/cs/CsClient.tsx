@@ -6,18 +6,19 @@ import { LayoutDashboard, Users, FileText, Wallet } from 'lucide-react'
 import { AppShell } from '@/components/bluedesk/AppShell'
 import { PageHeader } from '@/components/bluedesk/PageHeader'
 import { Tabs, TabsContent } from '@/components/ui/tabs'
-import { CsTabNav, CsTabPlaceholder, CsMatrix, CsTeam, CsMinutas, type CsTab } from '@/features/cs'
+import { CsTabNav, CsMatrix, CsTeam, CsMinutas, CsPagamento, type CsTab } from '@/features/cs'
 import type { CsMatrixData } from '@/lib/types/database'
 
 // Painel de Sucesso do Cliente (CS) reformulado — domínio SEPARADO do dashboard de
-// Leads/comercial. Painel de 4 abas (ver docs/painelcs-docs/updates/painel-sucesso-cliente-cs.md):
-//   1. Visão Geral + Janelas — matriz fase × idade + drill-down (ESTA entrega, funcional).
-//   2. Equipe · 3. Minutas · 4. Pagamento — placeholders (dependem de ingestão nova e
-//      de pendências do dono).
-// SEM filtro de período nesta primeira página (decisão do dono): é uma foto de ESTADO ATUAL
-// (snapshot), não uma janela de tempo — não há o que filtrar por período. As abas de série
-// temporal (Equipe/Pagamento), quando forem construídas, ganham o próprio controle de
-// período localizado nelas.
+// Leads/comercial. Painel de 4 abas (ver docs/painelcs-docs/updates/painel-sucesso-cliente-cs.md),
+// todas construídas:
+//   1. Visão Geral + Janelas — matriz fase × tempo na fase + drill-down (snapshot, sem período).
+//   2. Equipe — movimento/negociação por responsável (série temporal, período próprio).
+//   3. Minutas — controle de acordos/vencimentos (snapshot, sem período).
+//   4. Pagamento + Insights — projeção (plano de parcelas, snapshot) + histórico (conexão com o
+//      pipe do Financeiro, série por período).
+// As abas de série temporal (Equipe/Pagamento) têm o próprio PeriodPicker localizado nelas; as de
+// snapshot (Visão Geral/Minutas) são foto do estado ATUAL, sem filtro de período.
 
 type TabSlug = 'visao-geral' | 'equipe' | 'minutas' | 'pagamento'
 
@@ -80,13 +81,11 @@ export function CsClient({ initialData }: { initialData: CsMatrixData }) {
             <CsMinutas />
           </TabsContent>
 
-          {/* 4 · Pagamento + Insights — projeção (snapshot) + histórico (série temporal). */}
+          {/* 4 · Pagamento + Insights — projeção (plano de parcelas na fase Aguardando Pagamento,
+              snapshot) + realizado/histórico (conexão com o pipe do Financeiro, série por período).
+              Componente busca o próprio dado (getCsPagamentoProjecao + getCsPagamentoHistorico). */}
           <TabsContent value="pagamento" className="mt-6">
-            <CsTabPlaceholder
-              icon={Wallet}
-              title="Controle de Pagamento + Insights em preparação"
-              description="Projeções de quando/quanto vão pagar e histórico de pagamento. O histórico depende de definir a fonte (snapshot de P.P ao longo do tempo ou fonte externa)."
-            />
+            <CsPagamento />
           </TabsContent>
         </div>
       </Tabs>

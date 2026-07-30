@@ -363,6 +363,68 @@ export interface CsMinutasData {
   cards: CsMinutaCard[]
 }
 
+// PÁGINA 4 (Pagamento) — design HÍBRIDO (migration 20260730b_cs_pagamento.sql):
+//   · PROJEÇÃO (o que vão pagar) = plano por parcela criado na fase "Aguardando Pagamento" do SC,
+//     lido do cs_cards.metadata (slugs irregulares, ver a migration). RPC get_cs_pagamento_projecao()
+//     (snapshot, sem período — como a P1/P3).
+//   · REALIZADO/HISTÓRICO (o que já pagaram) = conexão do card do SC com o pipe do FINANCEIRO
+//     (child_relations → tabela cs_card_payments); 1 card do Financeiro = 1 pagamento de 1 parcela.
+//     RPC get_cs_pagamento_historico(p_start,p_end) (série, filtrável por período).
+// A reconciliação prevista×paga (por número de parcela), os KPIs de carteira, o calendário e o
+// status moram no cliente (src/features/cs/components/CsPagamento.tsx). RLS escopa igual às outras.
+
+export interface CsPagamentoPlanoParcela {
+  num: number // 1..3
+  valorPrevisto: number | null // valor planejado da parcela (metadata do card do SC)
+  dataPrevista: string | null // vencimento planejado (ISO date); null se não informado
+}
+
+export interface CsPagamentoRealizado {
+  parcelaNum: number | null // esse_pagamento_referente_a_qual_parcela (a que parcela o pagamento se refere)
+  valorPago: number | null // valor_de_contrata_o ("Valor que o Cliente Pagou?")
+  dataPagamento: string | null // data_do_pagamento (ISO date)
+  comprovanteUrl: string | null // 1º anexo de comprovante_de_pagamento
+  pagamentoId: string | null // n_mera_o_do_pagamento_id
+}
+
+export interface CsPagamentoCard {
+  pipefyCardId: string
+  title: string | null // nome do cliente (dado sensível — só chega a quem o RLS libera)
+  agentId: string | null
+  agentName: string // "Sem responsável" quando agentId é null
+  active: boolean // false = card em fase terminal (inativo)
+  phaseId: string | null
+  phase: string
+  forma: string | null // forma_de_pagamento do card do SC (ex.: "Parcelado 3x")
+  plano: CsPagamentoPlanoParcela[] // parcelas previstas (só as com valor/data preenchidos)
+  pagamentos: CsPagamentoRealizado[] // parcelas efetivamente pagas (da conexão com o Financeiro)
+}
+
+export interface CsPagamentoProjecaoData {
+  referenceAt: string // "agora" (ISO) — a data da foto
+  cards: CsPagamentoCard[]
+}
+
+export interface CsPagamentoRecebido {
+  pipefyCardId: string // card do SC (link do card)
+  paymentCardId: string // card do Financeiro
+  title: string | null // nome do cliente
+  agentId: string | null
+  agentName: string
+  parcelaNum: number | null
+  valorPago: number | null
+  dataPagamento: string | null // ISO date
+  comprovanteUrl: string | null
+}
+
+export interface CsPagamentoHistoricoData {
+  periodStart: string // ISO (início do período, inclusivo)
+  periodEnd: string // ISO (fim do período, exclusivo)
+  totalRecebido: number // Σ valor_pago no período
+  count: number // nº de pagamentos no período
+  payments: CsPagamentoRecebido[]
+}
+
 // ── Aquecimento de números WhatsApp — domínio SEPARADO ──────────────────────
 // Espelham as tabelas de supabase/migrations/20260719_warmup_schema.sql. Módulo
 // sensível: só manager/admin leem/configuram (RLS). As tabelas de execução

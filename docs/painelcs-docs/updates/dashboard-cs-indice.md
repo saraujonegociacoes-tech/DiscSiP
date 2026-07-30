@@ -9,8 +9,10 @@ painel e o de Leads são os primeiros passos). Ver também
 [`dashboard-leads-indice.md`](../../painelleads-docs/updates/dashboard-leads-indice.md) (painel irmão) e
 [`../links.md`](../../links.md) (índice geral por domínio).
 
-> **Estado (28/jul/2026): completo até o sprint 3 — 3 das 4 páginas no ar** (confirmado pelo
-> dono: todas as migrations aplicadas e tudo que precisa; falta só a Página 4). Sprint 0 (navegação/permissões) e Sprint 1
+> **Estado (30/jul/2026): as 4 páginas construídas.** P1/P2/P3 no ar (migrations aplicadas, Make
+> rodando). Sprint 4 (Página 4 · Pagamento) construída e verde — falta o dono aplicar a migration
+> `20260730b`, ligar `child_relations` na query do Make (+ poll sem-delta do balde "Aguardando
+> Pagamento") e re-rodar o backfill. Sprint 0 (navegação/permissões) e Sprint 1
 > (schema/ingestão, 1484 cards) entregues. O dashboard antigo (cards por fase / tempo em fase /
 > contato periódico) foi **substituído** por um painel em **4 páginas** (Visão Geral+Janelas,
 > Equipe, Minutas, Pagamentos+Insights), com ciclo 11→10. **Páginas 1, 2 e 3 construídas e com
@@ -25,7 +27,7 @@ painel e o de Leads são os primeiros passos). Ver também
 | 1 | **Visão Geral + Janelas** — matriz Fase × Tempo na fase (heatmap), drill-down por célula, export CSV | Snapshot | ✅ no ar (migration `20260721`) |
 | 2 | **Equipe** — movimento por responsável no ciclo (movido c/ ou s/ atualização, só atualização, parado) + negociações feitas com drill | Série temporal (Make) | ✅ no ar (`20260722`/`20260722b`/`20260723_v2`) |
 | 3 | **Controle de Minutas** — buckets por vencimento; Dívida do Cliente / Valor da Minuta Final / Última Negociação / Resguardado / % desc. / etiqueta; colunas ordenáveis; KPI "Resguardado na carteira"; insights clicáveis; export CSV | Snapshot | ✅ no ar (migrations `20260727` + `b`/`c`/`d`) |
-| 4 | **Pagamento + Insights** — projeções (quando/quanto vão pagar) + histórico | Snapshot + série temporal | ⏳ não iniciada |
+| 4 | **Pagamento + Insights** — projeção (plano de parcelas na fase Aguardando Pagamento) + realizado/histórico (conexão com o pipe do Financeiro); KPIs de carteira, cronograma parcela-a-parcela, calendário de recebimento, insights, CSV | Snapshot + série (conexão) | ✅ construída (migration `20260730b` pendente aplicar) |
 
 > A **Equipe** é série temporal: enche conforme o Make acumula (a completude já rende do
 > snapshot). As páginas 1 e 3 são **foto de estado atual** (snapshot), sem filtro de período. A

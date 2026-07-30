@@ -67,6 +67,7 @@ query CsDump($pipeId: ID!, $cursor: String, $size: Int!) {
       assignees { id name email }
       fields { name value array_value datetime_value field { id } }
       comments { id text created_at author_name author { id name } }
+      child_relations { name cards { id title fields { name value array_value datetime_value field { id } } } }
     } }
   }
 }`
