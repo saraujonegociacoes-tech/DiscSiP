@@ -46,6 +46,8 @@ export function NotificationBell() {
   const [items, setItems] = useState<AppNotification[]>([])
   const [open, setOpen] = useState(false)
   const [muted, setMuted] = useState(false)
+  // Estado da permissao do SO — usado pra mostrar o aviso de "ative as notificacoes".
+  const [perm, setPerm] = useState<NotificationPermission | 'unsupported'>('default')
   const routerRef = useRef(router)
   routerRef.current = router
 
@@ -54,6 +56,22 @@ export function NotificationBell() {
   const load = useCallback(async () => {
     setItems(await getMyNotifications())
   }, [])
+
+  const supportsNotifications =
+    typeof window !== 'undefined' && 'Notification' in window
+
+  // Le a permissao atual do navegador pro estado.
+  const syncPerm = useCallback(() => {
+    setPerm(supportsNotifications ? Notification.permission : 'unsupported')
+  }, [supportsNotifications])
+
+  // Pede a permissao (precisa de gesto do usuario em alguns navegadores).
+  const enableOsNotifications = useCallback(() => {
+    if (!supportsNotifications) return
+    Notification.requestPermission()
+      .then((p) => setPerm(p))
+      .catch(() => {})
+  }, [supportsNotifications])
 
   useEffect(() => {
     setMuted(isNotificationMuted())
@@ -64,10 +82,11 @@ export function NotificationBell() {
     if (!agentId) return
     load()
     primeNotificationSound() // destrava o audio no 1o gesto (autoplay)
-    if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'default') {
-      Notification.requestPermission().catch(() => {})
+    syncPerm()
+    if (supportsNotifications && Notification.permission === 'default') {
+      Notification.requestPermission().then((p) => setPerm(p)).catch(() => {})
     }
-  }, [agentId, load])
+  }, [agentId, load, syncPerm, supportsNotifications])
 
   // Realtime: novas notificacoes do proprio usuario.
   useEffect(() => {
@@ -94,14 +113,24 @@ export function NotificationBell() {
             action: { label: 'Abrir', onClick: () => routerRef.current.push(notificationHref(n)) },
           })
 
-          // Notificacao do sistema operacional (so com a aba em 2o plano).
+          // Notificacao do sistema operacional (o aviso sonoro confiavel quando a pessoa
+          // nao esta olhando a Blue Desk — o Windows toca o som dele junto). Dispara sempre
+          // que a pagina nao tem foco: outra aba, janela minimizada OU outro app na frente.
+          const unfocused =
+            typeof document !== 'undefined' &&
+            (document.hidden || (typeof document.hasFocus === 'function' && !document.hasFocus()))
           if (
             typeof window !== 'undefined' &&
             'Notification' in window &&
             Notification.permission === 'granted' &&
-            document.hidden
+            unfocused
           ) {
-            const osn = new Notification(mentionTitle(n), { body: n.preview ?? '', tag: n.id })
+            // silent: false pede explicitamente o som padrao do sistema.
+            const osn = new Notification(mentionTitle(n), {
+              body: n.preview ?? '',
+              tag: n.id,
+              silent: false,
+            })
             osn.onclick = () => {
               window.focus()
               routerRef.current.push(notificationHref(n))
@@ -146,9 +175,12 @@ export function NotificationBell() {
 
   function onOpenChange(next: boolean) {
     setOpen(next)
-    // Aproveita o gesto do clique p/ pedir permissao do SO se ainda estiver pendente.
-    if (next && typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'default') {
-      Notification.requestPermission().catch(() => {})
+    if (next) {
+      syncPerm()
+      // Aproveita o gesto do clique p/ pedir permissao do SO se ainda estiver pendente.
+      if (supportsNotifications && Notification.permission === 'default') {
+        Notification.requestPermission().then((p) => setPerm(p)).catch(() => {})
+      }
     }
   }
 
@@ -194,6 +226,21 @@ export function NotificationBell() {
             )}
           </div>
         </div>
+
+        {supportsNotifications && perm !== 'granted' && (
+          <button
+            type="button"
+            onClick={enableOsNotifications}
+            className="flex w-full items-start gap-2 border-b border-border bg-amber-500/10 px-3 py-2 text-left text-xs text-amber-700 transition-colors hover:bg-amber-500/20 dark:text-amber-400"
+          >
+            <Bell className="mt-0.5 size-3.5 shrink-0" />
+            <span>
+              {perm === 'denied'
+                ? 'Avisos do navegador bloqueados. Reative no ícone à esquerda do endereço (cadeado → Notificações) para ser avisado com som mesmo em outras abas.'
+                : 'Ative os avisos do navegador para receber a notificação com som mesmo quando estiver em outra aba.'}
+            </span>
+          </button>
+        )}
 
         <div className="max-h-96 overflow-y-auto">
           {items.length === 0 ? (
