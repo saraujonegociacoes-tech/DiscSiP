@@ -115,10 +115,16 @@ membership, só `manager`/`admin`).
 
 Visão executiva do Blue Desk — **camada de leitura/agregação** por cima das verticais isoladas
 (Financeiro, CS, Negociação, Leads, Monday/Projetos, Discador): compõe os dados dos outros
-domínios em RPCs/actions, **sem schema próprio nem fundir os schemas**. Trava por um papel novo
-`ceo`. Índice completo em
-[`updates/painel-ceo-indice.md`](projetopainelceo-docs/updates/painel-ceo-indice.md).
+domínios em RPCs/actions, **sem fundir os schemas**. Trava por um papel novo `ceo`. Índice
+completo em [`updates/painel-ceo-indice.md`](projetopainelceo-docs/updates/painel-ceo-indice.md).
+
+> Exceção à regra de "sem schema próprio": o **Financeiro** (Sprint 1) era um pipe **não
+> integrado**, então o painel trouxe a vertical inteira (`fin_cards`/`fin_entries` +
+> `ingest_financeiro_card`), como o CS fez com o dele. O que continua valendo é que o painel
+> **não funde** os schemas dos domínios — ele compõe por RPC de leitura.
 
 ## `updates/`
 - [`painel-ceo-indice.md`](projetopainelceo-docs/updates/painel-ceo-indice.md) — índice/estado do painel do CEO
 - [`painel-ceo-sprints.md`](projetopainelceo-docs/updates/painel-ceo-sprints.md) — roadmap em sprints (S0→S4: Fundação/trava · Financeiro · Projeções · Saúde da Empresa · Saúde da Equipe) + decisões travadas
+- [`introspeccao-pipefy-financeiro.md`](projetopainelceo-docs/updates/introspeccao-pipefy-financeiro.md) — mapeamento do pipe Financeiro (field-ids, parsers, achados) + as queries de introspecção reutilizáveis
+- [`make-integracao-financeiro.md`](projetopainelceo-docs/updates/make-integracao-financeiro.md) — cenário Pipefy → Make → Supabase do Financeiro

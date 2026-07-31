@@ -7,3 +7,5 @@
 // das verticais isoladas, e os dados chegam por RPCs de composição em app/actions/ceo.ts.
 export { CeoTabNav, type CeoTab } from './components/CeoTabNav'
 export { CeoTabPlaceholder } from './components/CeoTabPlaceholder'
+export { CeoFinanceiro } from './components/CeoFinanceiro'
+export { CeoPeriodPicker, type CeoPeriodMode } from './components/CeoPeriodPicker'

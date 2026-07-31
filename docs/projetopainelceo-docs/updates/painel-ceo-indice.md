@@ -7,18 +7,39 @@ RPCs/actions, **sem fundir os schemas**. Acesso restrito por um papel novo `ceo`
 [`painel-ceo-sprints.md`](painel-ceo-sprints.md) para o roadmap completo e as decisões
 travadas, e [`../links.md`](../../links.md) (índice geral por domínio).
 
-> **Estado (29/jul/2026): Sprint 0 entregue.** Papel `ceo` (migration + RBAC no app), rota
-> `/ceo` com as 4 abas em placeholder, helper `ceo_current_role()` e docs. A flag
-> `NEXT_PUBLIC_CEO_ENABLED` nasce **desligada** — a rota existe mas mostra "Em breve" até
-> haver dado. Nenhuma RPC de leitura ainda. O primeiro entregável real é o **Financeiro —
-> entradas do mês** (Sprint 1), que depende de input do dono (id do pipe + field-ids).
+> **Estado (31/jul/2026): Sprint 0 entregue e commitada** (`f336c17`). Papel `ceo` (migrations
+> + RBAC no app), rota `/ceo` com as 4 abas em placeholder, helper `ceo_current_role()` e docs.
+> A flag `NEXT_PUBLIC_CEO_ENABLED` nasce **desligada** — a rota existe mas mostra "Em breve" até
+> haver dado. Nenhuma RPC de leitura ainda.
+>
+> **Banco pronto:** `20260729_ceo_role.sql` e `20260730_ceo_role_check.sql` aplicadas e
+> confirmadas por introspecção.
+>
+> **Teste manual da trava: feito pelo dono em 31/jul** — `ceo` cai em `/ceo`, `agent` é barrado e
+> volta para `/softphone`, `admin` entra. Verificado automaticamente antes disso: `tsc` limpo, lint
+> sem erro novo, app sobe, `/ceo` compila e o middleware roda nela (sem sessão → `/login`).
+> **O Sprint 0 está fechado.**
+>
+> **Sprint 1 — código entregue e NO AR (31/jul).** Vertical do Financeiro completa: migration
+> [`20260731_financeiro_schema.sql`](../../../supabase/migrations/20260731_financeiro_schema.sql)
+> (`fin_cards` + `fin_entries` + parsers + `ingest_financeiro_card` + `get_ceo_financeiro`),
+> backfill `npm run import:financeiro`, aba Financeiro construída e doc do cenário Make.
+> Mapeamento e achados em [`introspeccao-pipefy-financeiro.md`](introspeccao-pipefy-financeiro.md).
+>
+> **O dono executou em 31/jul:** migration aplicada · carga histórica rodada · cenário Make
+> montado · `NEXT_PUBLIC_CEO_ENABLED=1` no `.env`. A aba está servindo dado real.
+>
+> **Conferência numérica: ✅ passou (31/jul)** — `npm run verify:financeiro` recomputa as entradas
+> do Pipefy cru e compara com o banco: **4.549/4.549 cards**, **5.348 pagamentos** (3.212 por
+> parcela + 2.136 por card — as duas convenções), **0 divergências card a card**, **32/32 meses
+> batendo**, total geral **R$ 7.310.222,27** idêntico dos dois lados.
 
 ## Roadmap em sprints — estado atual
 
 | Sprint | Entrega | Base de dado | Estado |
 |---|---|---|---|
-| 0 | **Fundação & trava** — papel `ceo`, rota `/ceo` (esqueleto multi-abas), helper `ceo_current_role()`, docs | — | ✅ entregue (29/jul) |
-| 1 | **Financeiro — entradas do mês** (carro-chefe) — pipe Financeiro novo (vertical isolada), KPIs + série mensal | Snapshot (pipe novo) | ⏳ não iniciada |
+| 0 | **Fundação & trava** — papel `ceo`, rota `/ceo` (esqueleto multi-abas), helper `ceo_current_role()`, docs | — | ✅ **fechada** (30/jul) · trava testada pelo dono em 31/jul |
+| 1 | **Financeiro — entradas do mês** (carro-chefe) — pipe Financeiro novo (vertical isolada), KPIs + série mensal | `fin_cards` + `fin_entries` (pipe `304386356`) | ✅ **código entregue** (31/jul) · falta aplicar migration + backfill + Make |
 | 2 | **Projeções de pagamento** — CS reusado + pipe Negociação novo (fase "Aguardando Pagamento") | Snapshot (CS + Negociação) | ⏳ não iniciada |
 | 3 | **Saúde da empresa** — scorecard compondo Financeiro + Leads + CS + Monday + Discador | Agregação multi-domínio | ⏳ não iniciada |
 | 4 | **Saúde da equipe / colaboradores** — saúde por pessoa (CS + Leads + Monday + Discador) | Agregação multi-domínio | ⏳ não iniciada |
@@ -88,8 +109,9 @@ breve"), não o acesso — quem barra é o middleware e, do Sprint 1 em diante, 
 
 ## Riscos & dependências
 
-- **Financeiro & Negociação**: pipe IDs + mapeamento de field-ids são **input do dono**. É o que
-  bloqueia o Sprint 1 hoje.
+- ~~**Financeiro**: pipe ID + mapeamento de field-ids~~ — **resolvido em 31/jul** por introspecção
+  ao vivo (pipe `304386356`); ver [`introspeccao-pipefy-financeiro.md`](introspeccao-pipefy-financeiro.md).
+  **Negociação** (Sprint 2) segue pendente — mesmas queries, outro `pipeId`.
 - ~~**Papel `ceo`**: confirmar o nome do enum~~ — resolvido (30/jul): **não é enum**, é `text` com
   o CHECK `profiles_role_check`. **As duas migrations foram aplicadas em 30/jul**: a `20260729`
   criou `ceo_current_role()` e a
@@ -104,10 +126,73 @@ breve"), não o acesso — quem barra é o middleware e, do Sprint 1 em diante, 
 - **Identidade não unificada** (Sprint 4): `lead_agents`/`cs_agents` por `pipefy_user_id`;
   Monday/Discador por `profiles`; a ponte `lead_agents.profile_id` está vazia.
 
+## Próximo passo (retomar daqui)
+
+**Os três bloqueios da Sprint 1 caíram em 31/jul.** A introspecção do Pipefy foi escrita, rodada e
+documentada em [`introspeccao-pipefy-financeiro.md`](introspeccao-pipefy-financeiro.md) — leia lá o
+mapeamento completo. Resumo:
+
+1. ~~ID do pipe~~ → **`304386356`** ("2.0 - Financeiro"), env `FINANCEIRO_PIPEFY_PIPE_ID`.
+2. ~~Field-ids~~ → valor = `valor_de_contrata_o`, data = `data_do_pagamento`, categoria =
+   `COALESCE` de **três** campos de "referência".
+3. ~~Mês civil ou ciclo~~ → **ambos**, toggle no `PeriodPicker`, default mês civil.
+
+Mais quatro decisões do dono saíram da conversa sobre os achados: histórico **completo** (com
+`fin_entries`), estornos **com sinal** (desconto/devolução negativos), "Jurídico" **normalizado**
+para "Negociação", e duplicidade como **aviso** que leva a categoria em conta.
+
+**Achados que mudaram o desenho** (nenhum era visível na lista de field-ids — vieram da amostra de
+valores reais e da varredura de até 1.200 cards):
+
+- **`fin_parse_date` não pode ser clone do `cs_parse_date`.** O do CS faz `left(raw,10)::date`
+  (ISO); este pipe manda `DD/MM/YYYY` em **100%** dos cards e `datetime_value` sempre `null`. O
+  clone zeraria toda data **em silêncio** (o parser engole a exceção e devolve `NULL`) e o painel
+  mostraria mês vazio. `fin_parse_money`, esse sim, é clone fiel — já trata `"1.500,00"`.
+- **O pipe tem duas convenções de parcelamento.** Card de 2026 = 1 pagamento; card de 2024/2025
+  pode carregar até 4, **com datas em meses diferentes** (222 de 1.200 cards), e nesses o
+  `valor_de_contrata_o` é inconsistente. Por isso o modelo é `fin_cards` + a tabela-filha
+  **`fin_entries`** (um pagamento por linha), decisão do dono de cobrir o histórico inteiro.
+  ⚠️ A primeira varredura (180 cards, todos recentes) concluiu o **oposto** — "1 card = 1 entrada" —
+  e a conclusão só caiu ao ampliar a amostra. Amostra recente não revela mudança de convenção.
+- **Categoria são três campos**, escolhidos pelo departamento → `COALESCE`, nunca `CASE`.
+  `"Departamento - Jurídico"` é o **nome antigo** de "Negociação" (o campo foi renomeado e o
+  histórico ficou com o velho), então a ingestão normaliza os dois para o mesmo valor.
+- **Sinal por categoria:** desconto e devolução entram **negativos**; distrato e reversão, positivos.
+- **`n_mera_o_do_pagamento_id` não é chave do pagamento** — repete entre cards com valores
+  diferentes (é referência de contrato). Dedupe da ingestão continua por `pipefy_card_id`, e o
+  mesmo contrato em vários cards é quase sempre legítimo: só mesmo valor + mesma categoria + mesmo
+  dia vira **aviso** de duplicidade (2 casos em 360 cards).
+
+**A Sprint 1 está fechada (31/jul):** código entregue, migration aplicada, carga histórica rodada,
+Make montado, flag ligada e conferência batendo 100%. A aba Financeiro serve dado real.
+
+**A Sprint 2 (Projeções de pagamento) é a próxima.** Ela tem duas metades bem diferentes:
+
+- **CS — reusar (não bloqueado).** A fase "Aguardando Pagamento" (`343781769`) já é ingerida; falta
+  só a RPC de leitura `get_ceo_projecoes_cs()` com a guarda `ceo`/`admin`. Dá pra escrever agora.
+- **Negociação — integrar do zero (bloqueado em 1 input).** Precisa do **pipe ID + field-ids + id da
+  fase "Aguardando Pagamento"** desse pipe. Mesmo caminho do Financeiro, que agora é mecânico:
+  `node scripts/probe-financeiro-fields.mjs <pipeId>` (o probe é agnóstico de pipe) e
+  `--scan N` pra medir os riscos de schema antes de escrever a migration. Candidato na org:
+  **`304370275` — "3.0 Negociação"** (confirmar; há também `306994213` "2.1 - Controle de Vendas").
+
+**Lição do Sprint 1 a repetir no 2:** rodar o `--scan` com páginas suficientes pra alcançar os anos
+antigos **antes** de fechar o schema. Foi assim que apareceu a mudança de convenção do Financeiro,
+que uma amostra só de cards recentes tinha escondido.
+
+**Ponto menor em aberto:** se os campos de desconto de um pagamento normal
+(`informe_a_soma_total_dos_descontos_conforme_a_listagem_acima` + a checklist) deveriam afetar o
+sinal. Hoje só a **categoria** `Desconto - Devolução` entra negativa. Se mudar, é uma linha em
+`fin_entry_sign`.
+
+~~**Também pendente:** o teste manual da trava (3 casos por papel)~~ — **feito pelo dono em 31/jul**.
+
 ## Referências
 
 - [`painel-ceo-sprints.md`](painel-ceo-sprints.md) — roadmap em sprints + decisões travadas (fonte
   de verdade do projeto).
+- [`introspeccao-pipefy-financeiro.md`](introspeccao-pipefy-financeiro.md) — **mapeamento do pipe
+  Financeiro** (resultado da introspecção) + as queries reutilizáveis para o pipe de Negociação.
 - [`dashboard-cs-indice.md`](../../painelcs-docs/updates/dashboard-cs-indice.md) — painel de CS
   (molde a reutilizar; fase de projeção).
 - [`make-integracao-cs.md`](../../painelcs-docs/updates/make-integracao-cs.md) — cenário Pipefy →

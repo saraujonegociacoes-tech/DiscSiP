@@ -64,7 +64,10 @@ Acesso restrito por uma **trava forte**: um papel novo `ceo`.
 
 ---
 
-## Sprint 0 — Fundação & trava (papel `ceo` + rota `/ceo` + docs) — ✅ ENTREGUE (29/jul/2026)
+## Sprint 0 — Fundação & trava (papel `ceo` + rota `/ceo` + docs) — ✅ FECHADA (29/jul/2026)
+
+> **Trava testada ponta a ponta pelo dono em 31/jul:** `ceo` cai em `/ceo`, `agent` é barrado e volta
+> para `/softphone`, `admin` entra. Era a última pendência do sprint.
 
 > **Banco: pronto (30/jul).** As duas migrations foram aplicadas —
 > [`20260729_ceo_role.sql`](../../../supabase/migrations/20260729_ceo_role.sql) criou
@@ -72,8 +75,8 @@ Acesso restrito por uma **trava forte**: um papel novo `ceo`.
 > [`20260730_ceo_role_check.sql`](../../../supabase/migrations/20260730_ceo_role_check.sql)
 > liberou `'ceo'` no CHECK `profiles_role_check`.
 >
-> **Pendência do dono:** promover o CEO pelo `/admin` (o papel já aparece no select) — ninguém tem
-> o papel ainda. É o que falta para a trava ser testada ponta a ponta.
+> ~~**Pendência do dono:** promover o CEO pelo `/admin`~~ — feito; papel atribuído e trava validada
+> em 31/jul.
 
 **Papel `ceo` (RBAC em 3 camadas):**
 - **Migrations**: [`20260729_ceo_role.sql`](../../../supabase/migrations/20260729_ceo_role.sql) +
@@ -146,32 +149,79 @@ colateral: os links relativos destes docs para `supabase/migrations/*.sql` volta
 
 ---
 
-## Sprint 1 — Financeiro: entradas do mês (carro-chefe)
+## Sprint 1 — Financeiro: entradas do mês (carro-chefe) — ✅ CÓDIGO ENTREGUE (31/jul/2026)
+
+> **Mapeamento fechado por introspecção ao vivo:**
+> [`introspeccao-pipefy-financeiro.md`](introspeccao-pipefy-financeiro.md) — pipe **`304386356`**
+> ("2.0 - Financeiro"), field-ids, fases, formato dos valores e as decisões do dono.
+>
+> **Executado pelo dono em 31/jul:** ✅ migration
+> [`20260731_financeiro_schema.sql`](../../../supabase/migrations/20260731_financeiro_schema.sql)
+> aplicada · ✅ `npm run import:financeiro` rodado (carga histórica, ~4.500 cards) · ✅ cenário Make
+> montado ([`make-integracao-financeiro.md`](make-integracao-financeiro.md)) · ✅
+> `NEXT_PUBLIC_CEO_ENABLED=1`. A aba está no ar com dado real.
+>
+> **Conferência numérica: ✅ passou** (`npm run verify:financeiro`, 31/jul) — 4.549/4.549 cards,
+> 5.348 pagamentos nas duas convenções, 0 divergências card a card, 32/32 meses batendo, total
+> geral R$ 7.310.222,27 idêntico. **O Sprint 1 está fechado tecnicamente.**
+>
+> **Arquivos entregues:** migration acima · `scripts/import-financeiro.mjs`
+> (`npm run import:financeiro`) · `getCeoFinanceiro` em `src/app/actions/ceo.ts` · tipos em
+> `src/lib/types/database.ts` · mês civil em `src/lib/period.ts` ·
+> `src/features/ceo/components/CeoFinanceiro.tsx` + `CeoPeriodPicker.tsx` · aba ligada em
+> `src/app/ceo/CeoClient.tsx` · doc do Make.
 
 **Ingestão do pipe Financeiro (nova vertical isolada, clone do CS):**
-- Migration `AAAAMMDD_financeiro_schema.sql`: `fin_cards` (id, `pipefy_card_id`, `metadata jsonb`,
-  colunas derivadas `entry_value numeric`, `entry_date date`, `category text`), + RPC
-  `ingest_financeiro_card(node)` (`SECURITY DEFINER`, grant só `service_role`) mapeando **field-ids →
-  valor/data/categoria** e upsert idempotente. Reusar `cs_parse_money`/`cs_parse_date` (ou clonar como
-  `fin_parse_*`).
+- Migration `AAAAMMDD_financeiro_schema.sql`: **duas** tabelas, porque o pipe mudou de convenção no
+  meio de 2025 e um card antigo vale até 4 pagamentos com datas próprias (achado 3):
+  - `fin_cards` — contexto do card (`pipefy_card_id`, `metadata jsonb`, `paid_value`,
+    `charged_value`, `net_value`, `paid_date`, `category` ← `COALESCE` dos 3 campos de referência,
+    `department` **normalizado**, `payment_method`, `contract_ref`).
+  - `fin_entries` — **um pagamento por linha** (`fin_card_id`, `entry_value`, `entry_date`, `seq`).
+    É ela que alimenta KPI e série mensal. Card com parcela preenchida → uma linha por parcela
+    (descartando `0,00`) e **ignora** `valor_de_contrata_o`, que é inconsistente nesses cards; card
+    sem parcela (todo 2026) → uma linha de `valor_de_contrata_o` + `data_do_pagamento`.
+  - RPC `ingest_financeiro_card(node)` (`SECURITY DEFINER`, grant só `service_role`), upsert
+    idempotente por `pipefy_card_id`, regenerando as `fin_entries` do card.
+  - `fin_entry_sign(category)`: `-1` em desconto/devolução, `+1` no resto (distrato e reversão são
+    entradas normais — decisão do dono).
+  - ⚠️ `fin_parse_money` é clone fiel de `cs_parse_money`, mas **`fin_parse_date` não pode ser
+    clone**: este pipe manda `DD/MM/YYYY` (nunca ISO, `datetime_value` sempre `null`) e o
+    `left(raw,10)::date` do CS devolveria `NULL` em 100% dos cards — sem erro nenhum. Precisa de
+    `to_date(s,'DD/MM/YYYY')`.
 - RPC de leitura `get_ceo_financeiro(p_start, p_end)` (com a guarda `ceo`/`admin`): total do período,
-  série mensal e breakdown por categoria — **agrega no Postgres** e devolve 1 linha jsonb (evita o teto
-  de 1000 linhas do PostgREST).
-- Backfill `scripts/import-financeiro.mjs` (clone de `import-cs-cards.mjs`) + env
-  `FINANCEIRO_PIPEFY_PIPE_ID` (reusa `PIPEFY_TOKEN`). Registrar `npm run import:financeiro`.
+  série mensal e breakdown por categoria — **agrega no Postgres** sobre `fin_entries` e devolve 1
+  linha jsonb (evita o teto de 1000 linhas do PostgREST). Filtra
+  `current_phase_id <> '327456661'` ("Pagamento cancelado" — as outras 4 fases contam) e soma
+  `entry_value * fin_entry_sign(category)`.
+- **Alerta de duplicidade** (pedido do dono): a RPC devolve, à parte, os grupos de mesmo
+  `contract_ref` **com mesmo valor, mesma categoria e mesmo dia** — o único trio que indica
+  lançamento em duplicata. Mesmo contrato com categorias diferentes é dado bom (pagamento + desconto,
+  por exemplo) e não pode entrar no alerta. É **aviso na tela, nunca dedupe automático**.
+- Backfill [`scripts/import-financeiro.mjs`](../../../scripts/import-financeiro.mjs) (clone de
+  `import-cs-cards.mjs`) + env `FINANCEIRO_PIPEFY_PIPE_ID` (reusa `PIPEFY_TOKEN`), registrado como
+  `npm run import:financeiro`. Reporta `pagamentos` e `cards_sem_entrada` por rodada.
 - Cenário Make (dono monta): Schedule → GraphQL delta → Transform to JSON → POST
-  `rpc/ingest_financeiro_card`. Doc `updates/make-integracao-financeiro.md`.
+  `rpc/ingest_financeiro_card`. Doc [`make-integracao-financeiro.md`](make-integracao-financeiro.md).
 
-**Frontend — aba "Financeiro":** `KpiCard`s (entradas do mês, vs. mês anterior, acumulado) +
-`AreaChart` (Recharts via `useChartTheme`) da série mensal + `PeriodPicker`. Action `getCeoFinanceiro`
-em `src/app/actions/ceo.ts`.
+**Frontend — aba "Financeiro":** 4 `KpiCard`s (entradas no período com delta vs. período anterior,
+nº de pagamentos, ticket médio, maior categoria) + `AreaChart` (Recharts via `useChartTheme`) dos 12
+meses + 3 breakdowns (categoria, departamento, forma de pagamento) + painel de aviso de duplicidade.
+Action `getCeoFinanceiro` em `src/app/actions/ceo.ts`.
 
-**Definição de "mês"** (pequena decisão): recomendo **mês civil** para a visão do CEO (executivo pensa
-em mês de calendário); se preferir consistência com a operação, usar o **ciclo 11→10** de
-[`src/lib/period.ts`](../../../src/lib/period.ts).
+**Período — `CeoPeriodPicker` (novo, local do domínio):** toggle **mês civil** (default) × **ciclo
+11→10**, com intervalo livre. Réplica local em vez de estender o `PeriodPicker` compartilhado, que é
+usado por leads e discadora. Os KPIs seguem a janela escolhida; **a série mensal é sempre em meses
+civis** — em ciclo 11→10 a barra de "julho" não seria julho.
 
-**Dependência do dono:** ID do pipe Financeiro + field-ids (valor da entrada, data, categoria). Aplicar
-a migration e montar o Make.
+**Definição de "mês" — decidido (31/jul): os dois.** O `PeriodPicker` ganha um toggle mês civil ×
+ciclo 11→10, com **mês civil no default** (é como executivo lê faturamento e como bate com o
+extrato). Custa pouco porque a RPC já recebe `p_start`/`p_end` — quem define a janela é o frontend; o
+ciclo reusa [`src/lib/period.ts`](../../../src/lib/period.ts).
+
+~~**Dependência do dono:** ID do pipe Financeiro + field-ids~~ — **fechado em 31/jul** por
+introspecção ao vivo ([`introspeccao-pipefy-financeiro.md`](introspeccao-pipefy-financeiro.md)).
+Resta do dono: **aplicar a migration** e **montar o cenário Make** quando o código estiver pronto.
 
 ---
 
@@ -192,6 +242,10 @@ a migration e montar o Make.
   `KpiCard`s de total projetado por janela (vencidas / ≤30d / 31–90d / 90+).
 
 **Dependência do dono:** ID do pipe Negociação + field-ids + id da fase "Aguardando Pagamento" dele.
+Coletar com as mesmas queries de
+[`introspeccao-pipefy-financeiro.md`](introspeccao-pipefy-financeiro.md) (só troca o `pipeId`) ou
+`node scripts/probe-financeiro-fields.mjs <pipeId>`. Candidato na org: **`304370275` — "3.0
+Negociação"** (confirmar com o dono; há também `306994213` "2.1 - Controle de Vendas").
 
 ---
 
@@ -224,8 +278,15 @@ a ponte `profile_id` ou mapear por nome). Por isso é o último — maior esfor�
 ---
 
 ## Riscos & dependências (resumo)
-- **Financeiro & Negociação**: pipe IDs + mapeamento de field-ids são **input do dono** (como toda
-  integração anterior). Migrations e cenários Make aplicados **à mão** por ele.
+- ~~**Financeiro**: pipe ID + field-ids~~ — resolvido em 31/jul
+  ([`introspeccao-pipefy-financeiro.md`](introspeccao-pipefy-financeiro.md)). **Negociação** ainda
+  pendente (Sprint 2). Migrations e cenários Make continuam aplicados **à mão** pelo dono.
+- **Qualidade do dado do Financeiro**: 2 grupos em 360 cards têm mesmo contrato + mesmo valor +
+  mesma categoria + mesmo dia (suspeita forte de lançamento em duplicata). Vira **aviso** na aba, não
+  dedupe — o mesmo contrato com categorias diferentes é dado legítimo.
+- **Duas convenções de parcelamento no mesmo pipe** (2024/2025 × 2026): resolvido por `fin_entries`,
+  mas é a fonte de erro mais provável do backfill. Conferir o total de um mês de 2024 **e** de um de
+  2026 contra o Pipefy, não só um dos dois.
 - ~~**Papel `ceo`**: confirmar o nome do enum de `profiles.role`~~ — resolvido (30/jul): a coluna
   **não é enum**, é `text` com o CHECK `profiles_role_check`. Ver `20260730_ceo_role_check.sql`.
 - **Leads não versionado** (Sprint 3/4): extrair do Supabase ao vivo antes de depender.
@@ -241,7 +302,19 @@ a ponte `profile_id` ou mapear por nome). Por isso é o último — maior esfor�
 - **Trava/RBAC** (S0): logar como `ceo` → vê `/ceo` e os dados; como `agent`/`supervisor` → `/ceo`
   redireciona (middleware); como `admin` → vê. Enquanto não pronto, `NEXT_PUBLIC_CEO_ENABLED` mantém a
   rota oculta.
-- **Financeiro** (S1): conferir o total de "entradas do mês" contra o Pipefy para um mês conhecido.
+- **Financeiro** (S1): ✅ **feito em 31/jul** por `npm run verify:financeiro`
+  ([`scripts/verify-financeiro.mjs`](../../../scripts/verify-financeiro.mjs)) — o script reimplementa
+  em JS as mesmas regras da migration (parsers, COALESCE da categoria, sinal, as duas convenções),
+  recomputa a partir do **Pipefy cru** e compara card a card com `fin_cards`/`fin_entries`.
+  Resultado: 4.549/4.549 cards · 5.348 pagamentos (parcela 3.212 / card 2.136) · **0** divergências ·
+  32/32 meses · total R$ 7.310.222,27 dos dois lados. Roda com meses específicos:
+  `node scripts/verify-financeiro.mjs 2024-09 2026-07`.
+
+  ⚠️ **O que essa conferência prova e o que não prova.** Ela prova que a **ingestão** está fiel ao
+  Pipefy: parser de `DD/MM/YYYY` correto, as duas convenções de parcelamento tratadas, nenhum card
+  perdido, nada contado em dobro, sinal aplicado. Ela **não** prova que as *regras de negócio* são as
+  certas — se "qual valor é a entrada" ou "quais fases contam" estiver errado, as duas implementações
+  erram junto. Essa parte é leitura do dono: o número do mês tem que fazer sentido pra ele.
 - **Projeções** (S2): somatório projetado por janela bate com os cards em "Aguardando Pagamento".
 
 ## Referências

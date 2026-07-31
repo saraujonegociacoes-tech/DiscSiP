@@ -425,6 +425,58 @@ export interface CsPagamentoHistoricoData {
   payments: CsPagamentoRecebido[]
 }
 
+// ── Painel do CEO — camada de leitura/agregação (não tem schema próprio) ────
+// Ver docs/projetopainelceo-docs/updates/painel-ceo-sprints.md. Cada aba tem uma RPC
+// SECURITY DEFINER com guarda ceo_current_role() que já devolve o painel pronto em 1
+// linha jsonb — nada é agregado no Worker.
+//
+// ABA 1 (Financeiro): get_ceo_financeiro(p_start, p_end), migration
+// 20260731_financeiro_schema.sql. Os valores JÁ vêm com sinal aplicado (desconto e
+// devolução entram negativos; distrato e reversão, positivos — decisão do dono).
+
+/** Uma fatia de um breakdown (categoria, departamento ou forma de pagamento). */
+export interface CeoFinanceiroBucket {
+  key: string
+  total: number
+  count: number
+}
+
+/** Um mês civil da série. `month` é 'YYYY-MM'. */
+export interface CeoFinanceiroMonth {
+  month: string
+  total: number
+  count: number
+}
+
+/**
+ * Suspeita de lançamento em duplicata: mesmo contrato + mesmo valor + mesma categoria
+ * + mesmo dia. É AVISO, não dedupe — o mesmo contrato com categorias diferentes (um
+ * pagamento e um desconto, p.ex.) é dado legítimo e nem aparece aqui.
+ */
+export interface CeoFinanceiroDuplicate {
+  contractRef: string
+  category: string | null
+  paidDate: string // ISO date
+  value: number
+  cards: number // quantos cards no grupo
+  cardIds: string[] // pipefy_card_id de cada um (link do card)
+  departments: string[]
+}
+
+export interface CeoFinanceiroData {
+  periodStart: string // ISO date (inclusivo)
+  periodEnd: string // ISO date (EXCLUSIVO)
+  total: number // Σ das entradas da janela, com sinal
+  count: number // nº de pagamentos na janela
+  previousTotal: number // mesma coisa na janela anterior de igual tamanho (delta do KPI)
+  previousCount: number
+  monthly: CeoFinanceiroMonth[] // 12 meses civis terminando no mês de periodEnd
+  byCategory: CeoFinanceiroBucket[]
+  byDepartment: CeoFinanceiroBucket[]
+  byPaymentMethod: CeoFinanceiroBucket[]
+  duplicates: CeoFinanceiroDuplicate[]
+}
+
 // ── Aquecimento de números WhatsApp — domínio SEPARADO ──────────────────────
 // Espelham as tabelas de supabase/migrations/20260719_warmup_schema.sql. Módulo
 // sensível: só manager/admin leem/configuram (RLS). As tabelas de execução

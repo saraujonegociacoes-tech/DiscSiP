@@ -6,7 +6,7 @@ import { Wallet, CalendarClock, Activity, Users } from 'lucide-react'
 import { AppShell } from '@/components/bluedesk/AppShell'
 import { PageHeader } from '@/components/bluedesk/PageHeader'
 import { Tabs, TabsContent } from '@/components/ui/tabs'
-import { CeoTabNav, CeoTabPlaceholder, type CeoTab } from '@/features/ceo'
+import { CeoTabNav, CeoTabPlaceholder, CeoFinanceiro, type CeoTab } from '@/features/ceo'
 
 // Painel do CEO — camada de leitura/agregação por cima das verticais isoladas (ver
 // docs/projetopainelceo-docs/updates/painel-ceo-sprints.md). Painel de 4 abas, uma por
@@ -16,13 +16,14 @@ import { CeoTabNav, CeoTabPlaceholder, type CeoTab } from '@/features/ceo'
 //   3. Saúde da Empresa (Sprint 3) — scorecard compondo Financeiro + Leads + CS + Monday + Discador.
 //   4. Saúde da Equipe (Sprint 4) — saúde por pessoa; carrega o trabalho de unificar identidade.
 //
-// Sprint 0: as 4 abas são placeholders. A casca (Radix Tabs + ?aba= + AppShell/PageHeader) é
-// réplica local do padrão de app/cs/CsClient.tsx — domínio separado, réplica e não
-// componente compartilhado, mesma decisão que CS tomou em relação a Leads.
+// Sprint 1: a aba Financeiro está construída; as outras 3 seguem placeholder. A casca
+// (Radix Tabs + ?aba= + AppShell/PageHeader) é réplica local do padrão de
+// app/cs/CsClient.tsx — domínio separado, réplica e não componente compartilhado, mesma
+// decisão que CS tomou em relação a Leads.
 //
-// Sem PeriodPicker aqui ainda: cada aba decide o próprio recorte quando for construída
-// (Financeiro/Saúde usam janela de tempo; Projeções é snapshot). A definição de "mês" do
-// Financeiro (mês civil vs. ciclo 11→10 de src/lib/period.ts) fica para o Sprint 1.
+// Sem PeriodPicker aqui: cada aba decide o próprio recorte (Financeiro/Saúde usam janela de
+// tempo; Projeções é snapshot). O Financeiro usa o CeoPeriodPicker, que oferece OS DOIS
+// recortes — mês civil (default) e ciclo 11→10 — porque foi o que o dono pediu.
 
 type TabSlug = 'financeiro' | 'projecoes' | 'saude-empresa' | 'saude-equipe'
 
@@ -65,16 +66,12 @@ export function CeoClient() {
         <CeoTabNav tabs={TABS} />
 
         <div>
-          {/* 1 · Financeiro — entradas do mês (Sprint 1, carro-chefe). Depende do pipe
-              Financeiro novo: ingestão do zero como vertical isolada (fin_cards +
-              ingest_financeiro_card) + KPIs e série mensal. Pendência do dono: id do pipe e
-              os field-ids de valor/data/categoria. */}
+          {/* 1 · Financeiro — entradas do mês (Sprint 1, carro-chefe). CONSTRUÍDA: lê
+              get_ceo_financeiro sobre fin_entries (uma linha por pagamento — o pipe mudou de
+              convenção no meio de 2025 e cards antigos carregam até 4 pagamentos com datas em
+              meses diferentes). Componente busca o próprio dado, com período próprio. */}
           <TabsContent value="financeiro" className="mt-6">
-            <CeoTabPlaceholder
-              icon={Wallet}
-              title="Entradas do mês em preparação"
-              description="Total do mês, comparativo com o mês anterior e série mensal por categoria, a partir do pipe dedicado do Financeiro. É o primeiro bloco a entrar no ar."
-            />
+            <CeoFinanceiro />
           </TabsContent>
 
           {/* 2 · Projeções (Sprint 2) — fase "Aguardando Pagamento" de dois pipes: CS (já
