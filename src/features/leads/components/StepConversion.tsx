@@ -19,20 +19,24 @@ interface StepConversionRow {
   fromOrder: number
   fromPhase: string
   toPhase: string
-  rate: number | null // toReached / fromReached ∈ [0,1]; null se ninguém alcançou a etapa anterior
+  rate: number | null // entrou[i+1]/entrou[i]; null se ninguém entrou na etapa anterior
+  barRate: number | null // rate limitado a [0,1] só para a largura da barra (o rótulo mostra o real)
 }
 
-// Deriva do FUNIL já carregado (data.funnel) — nenhum dado novo. O funil é cumulativo
-// ("alcançou esta ordem ou além"); aqui a razão adjacente reached[i+1]/reached[i] isola ONDE
-// a queda é mais forte passo a passo, diferente do % acumulado desde o início.
+// Deriva do FUNIL já carregado (data.funnel) — nenhum dado novo. O funil agora conta ENTRADAS
+// de fase (não é mais cumulativo); a razão adjacente entrou[i+1]/entrou[i] isola ONDE a queda é
+// mais forte passo a passo. Como um lead pode entrar direto numa etapa posterior (pulo), a razão
+// pode passar de 100% (entrada líquida) — o rótulo mostra o valor real e a barra satura em 100%.
 function buildStepConversion(stages: FunnelStage[]): StepConversionRow[] {
   return stages.slice(0, -1).map((from, i) => {
     const to = stages[i + 1]
+    const rate = from.leadsReached > 0 ? to.leadsReached / from.leadsReached : null
     return {
       fromOrder: from.order,
       fromPhase: from.phase,
       toPhase: to.phase,
-      rate: from.leadsReached > 0 ? to.leadsReached / from.leadsReached : null,
+      rate,
+      barRate: rate == null ? null : Math.min(rate, 1),
     }
   })
 }
@@ -65,7 +69,7 @@ export function StepConversion({
       <div className="pointer-events-none absolute -top-20 right-0 h-48 w-48 rounded-full bg-primary/15 blur-3xl" />
       <h2 className="text-sm font-semibold text-foreground">Conversão entre etapas</h2>
       <p className="mb-4 text-xs text-muted-foreground">
-        Dos leads que alcançaram cada etapa, quantos avançaram para a seguinte. Clique numa barra
+        Dos leads que entraram em cada etapa, quantos entraram na seguinte. Clique numa barra
         para ver a representatividade por responsável.
       </p>
       {!hasData ? (
@@ -102,13 +106,13 @@ export function StepConversion({
                 <Tooltip
                   contentStyle={ct.tooltip}
                   cursor={{ fill: ct.series.primary, fillOpacity: 0.08 }}
-                  formatter={(v, _n, item) => [
-                    `${Math.round((v as number) * 100)}%`,
-                    `De ${(item.payload as StepConversionRow).fromPhase}`,
-                  ]}
+                  formatter={(_v, _n, item) => {
+                    const row = item.payload as StepConversionRow
+                    return [row.rate != null ? `${Math.round(row.rate * 100)}%` : '—', `De ${row.fromPhase}`]
+                  }}
                 />
                 <Bar
-                  dataKey="rate"
+                  dataKey="barRate"
                   fill={ct.series.primary}
                   radius={[0, 4, 4, 0]}
                   name="Conversão"
@@ -127,7 +131,7 @@ export function StepConversion({
           </div>
           {selected && (
             <ResponsibleBreakdown
-              title={`Alcançaram ${selected.fromPhase}`}
+              title={`Entraram em ${selected.fromPhase}`}
               rows={byResponsible[String(selected.fromOrder)] ?? []}
               onClose={() => setSelected(null)}
             />

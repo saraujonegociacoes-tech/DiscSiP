@@ -319,14 +319,14 @@ export function LeadsClient({
             </TabsContent>
           )}
 
-          {/* 🎯 Funil — "Onde estou perdendo leads no processo?" (fluxo cumulativo + volume atual) */}
+          {/* 🎯 Funil — "Onde estou perdendo leads no processo?" (entradas de fase + volume atual) */}
           <TabsContent value="funil" className="mt-6">
             <section className="grid grid-cols-1 items-start gap-4 xl:grid-cols-2">
               <Funnel stages={data.funnel} period={period} />
               <PhaseDistribution data={data.phaseDistribution} period={period} />
             </section>
             <h3 className="mb-1 mt-8 text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-              Acionado no período (por atualização, não por criação)
+              Acionado no período (quando o card entra numa fase)
             </h3>
             <section className="grid grid-cols-1 items-start gap-4 xl:grid-cols-2">
               <FunnelActivity stages={activity.funnel} period={period} />

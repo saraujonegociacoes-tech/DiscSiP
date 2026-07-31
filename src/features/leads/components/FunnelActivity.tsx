@@ -17,10 +17,11 @@ import { LeadsAgentDrill } from './LeadsAgentDrill'
 import type { StageActivity } from '@/app/actions/leads'
 import type { LeadPeriod } from '@/lib/period'
 
-// Funil "geral" — mesmo fluxo cumulativo do Funnel.tsx (quantos leads ALCANÇARAM cada
-// etapa), mas sobre "leads com movimentação no período" (updated_at), não "recebidos no
-// período" (created_at). Cada barra empilha ciclo (criado no período) × retroativo (criado
-// antes), com o total no fim da barra. Cor: ciclo = primary; retroativo = categorical[5]
+// Funil "geral" — leads que ENTRARAM em cada fase no período (acionamento = entrar na
+// fase), não "leads com qualquer updated_at". Diferente do Funnel.tsx (cohort = recebidos
+// no período), aqui o cohort é "acionado no período" e inclui leads de ciclos anteriores
+// que entraram numa fase agora. Cada barra empilha ciclo (criado no período) × retroativo
+// (criado antes), com o total no fim da barra. Cor: ciclo = primary; retroativo = categorical[5]
 // (rosa) — NÃO o `warning` (laranja) usado em StuckCard/LeadsTable, que aqui já satura o
 // olho de tanto aparecer noutros cards da mesma tela; par validado (skill dataviz —
 // script/validate_palette.js, luz e escuro, sem colidir com o vermelho de "morta").
@@ -42,8 +43,9 @@ export function FunnelActivity({ stages, period }: { stages: StageActivity[]; pe
       <div className="pointer-events-none absolute -top-20 right-0 h-48 w-48 rounded-full bg-primary/15 blur-3xl" />
       <h2 className="text-sm font-semibold text-foreground">Funil geral (acionado no período)</h2>
       <p className="mb-4 text-xs text-muted-foreground">
-        Leads com QUALQUER movimentação no período, por etapa alcançada — inclui leads de
-        ciclos anteriores mexidos agora. Clique numa barra para ver por responsável.
+        Leads que ENTRARAM em cada fase no período — inclui leads de ciclos anteriores
+        acionados agora. Só conta a fase em que o card entrou (pulos não preenchem etapas).
+        Clique numa barra para ver por responsável.
       </p>
       {!hasData ? (
         <p className="py-8 text-center text-sm text-muted-foreground">Sem movimentação no período.</p>
@@ -107,7 +109,7 @@ export function FunnelActivity({ stages, period }: { stages: StageActivity[]; pe
             <LeadsAgentDrill
               dimension="funnel_activity"
               dimKey={String(selected.order)}
-              title={`Alcançaram ${selected.phase}`}
+              title={`Entraram em ${selected.phase}`}
               period={period}
               onClose={() => setSelected(null)}
             />

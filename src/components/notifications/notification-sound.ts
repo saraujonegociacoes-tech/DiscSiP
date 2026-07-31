@@ -1,8 +1,8 @@
 'use client'
 
-// Som de notificacao: primeiros ~4s de "ola-macaquito-messi", embutido como data URI
-// base64 (ver notification-sound-data.ts) para nao depender de asset externo — mesma
-// politica de CSP do sino. A preferencia de mudo fica no localStorage (ligado por padrao).
+// Som de notificacao: clipe curto (~0.77s, AAC/MP4) embutido como data URI base64
+// (ver notification-sound-data.ts) para nao depender de asset externo — mesma politica
+// de CSP do sino. A preferencia de mudo fica no localStorage (som ligado por padrao).
 //
 // Autoplay: navegadores bloqueiam audio.play() disparado fora de um gesto do usuario. Como
 // o som toca a partir de um evento de realtime (nao de um clique), "destravamos" o elemento
@@ -66,17 +66,27 @@ export function primeNotificationSound(): void {
   window.addEventListener('keydown', unlock, { once: true })
 }
 
-/** Toca o clipe de notificacao (~4s). No-op se estiver mudo. */
+/** Toca o clipe de notificacao. No-op se estiver mudo (preferencia do usuario). */
 export function playNotificationSound(): void {
   if (isNotificationMuted()) return
   const el = element()
   if (!el) return
+  // Defensivo: a rotina de "priming" toca mudo pra destravar; se por corrida o elemento
+  // ficou mudo/volume zerado, garante audivel aqui.
+  el.muted = false
+  el.volume = 1
   try {
     el.currentTime = 0
   } catch {
     // alguns browsers reclamam se setado antes dos metadados — ignora
   }
-  el.play().catch(() => {
-    // autoplay ainda bloqueado (sem gesto previo) — silencioso
-  })
+  const p = el.play()
+  // Nao engole mais o erro: registra o motivo pra facilitar diagnostico.
+  // NotAllowedError = autoplay bloqueado (nenhum clique na aba ainda neste carregamento).
+  if (p && typeof p.catch === 'function') {
+    p.catch((err: unknown) => {
+      const e = err as { name?: string; message?: string }
+      console.warn(`[notif] som nao tocou: ${e?.name ?? 'erro'} — ${e?.message ?? ''}`)
+    })
+  }
 }

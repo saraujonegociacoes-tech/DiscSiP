@@ -18,8 +18,8 @@ import type { PhaseActivity } from '@/app/actions/leads'
 import type { LeadPeriod } from '@/lib/period'
 
 // Distribuição por fase ATUAL — mesma leitura do PhaseDistribution.tsx (onde os leads
-// estão agora), mas sobre "leads com movimentação no período" (updated_at), não
-// "recebidos no período" (created_at). Cada barra empilha ciclo × retroativo, com o total
+// estão agora), mas sobre o cohort "acionado no período" (entrou em alguma fase no
+// período), não "recebidos no período" (created_at). Cada barra empilha ciclo × retroativo, com o total
 // no fim da barra; como o fill já codifica essa identidade, fases mortas são sinalizadas no
 // rótulo do eixo (texto em vermelho) em vez de recolorir a barra — texto nunca carrega a cor
 // da série (skill dataviz). Cor: ciclo = primary; retroativo = categorical[5] (rosa), não o
@@ -68,8 +68,8 @@ export function PhaseDistributionActivity({
       <div className="pointer-events-none absolute -top-20 right-0 h-48 w-48 rounded-full bg-primary/15 blur-3xl" />
       <h2 className="text-sm font-semibold text-foreground">Distribuição atual (acionado no período)</h2>
       <p className="mb-4 text-xs text-muted-foreground">
-        Onde os leads mexidos no período estão agora (rótulo em vermelho = fase morta). Clique
-        numa barra para ver por responsável.
+        Onde os leads acionados no período (que entraram em alguma fase) estão agora (rótulo
+        em vermelho = fase morta). Clique numa barra para ver por responsável.
       </p>
       {!hasData ? (
         <p className="py-8 text-center text-sm text-muted-foreground">Sem movimentação no período.</p>

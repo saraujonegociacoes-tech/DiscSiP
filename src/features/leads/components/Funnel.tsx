@@ -17,8 +17,9 @@ import type { FunnelStage } from '@/app/actions/leads'
 import type { LeadPeriod } from '@/lib/period'
 
 // Funil de acionamento (S2) — barras horizontais (magnitude), série única. Cada etapa conta
-// quantos leads do período ALCANÇARAM aquela ordem ou além (ordem 0 = todos os recebidos).
-// Clicar numa barra abre o drill por responsável → cards + link do Pipefy (lazy).
+// quantos leads recebidos no período ENTRARAM naquela fase (ordem 0 = todos os recebidos).
+// Contagem por entrada real de fase (get_leads_reach_funnel): quem pula uma etapa não é
+// contado nela. Clicar numa barra abre o drill por responsável → cards + link do Pipefy (lazy).
 export function Funnel({ stages, period }: { stages: FunnelStage[]; period: LeadPeriod }) {
   const ct = useChartTheme()
   const [selected, setSelected] = useState<FunnelStage | null>(null)
@@ -37,7 +38,8 @@ export function Funnel({ stages, period }: { stages: FunnelStage[]; period: Lead
       <div className="pointer-events-none absolute -top-20 right-0 h-48 w-48 rounded-full bg-primary/15 blur-3xl" />
       <h2 className="text-sm font-semibold text-foreground">Funil de acionamento</h2>
       <p className="mb-4 text-xs text-muted-foreground">
-        Leads que alcançaram cada etapa no período. Clique numa barra para ver por responsável.
+        Leads recebidos no período, por fase em que realmente entraram (fase pulada não conta).
+        Clique numa barra para ver por responsável.
       </p>
       {!hasData ? (
         <p className="py-8 text-center text-sm text-muted-foreground">Sem leads no período.</p>
@@ -95,7 +97,7 @@ export function Funnel({ stages, period }: { stages: FunnelStage[]; period: Lead
             <LeadsAgentDrill
               dimension="funnel"
               dimKey={String(selected.order)}
-              title={`Alcançaram ${selected.phase}`}
+              title={`Entraram em ${selected.phase}`}
               period={period}
               onClose={() => setSelected(null)}
             />

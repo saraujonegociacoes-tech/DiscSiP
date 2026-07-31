@@ -53,11 +53,13 @@ export interface PhaseDistribution {
   leads: number
 }
 
-// ── Funil "geral" (acionado no período, por updated_at) ──────────────────────
-// Mesmas DUAS formas do funil normal (cumulativo + distribuição atual), mas sobre o
-// cohort "leads com QUALQUER movimentação no período" (updated_at), não "recebidos no
-// período" (created_at) — ver get_leads_activity (migration 20260718). cycle/retro
-// classificam cada linha pelo created_at do lead: dentro do período = cycle, antes = retro.
+// ── Funil "geral" (acionado no período, por ENTRADA de fase) ─────────────────
+// Cohort "acionado" = leads que tiveram ao menos uma ENTRADA REAL de fase no período
+// (não "qualquer updated_at"). funnel[N] = leads que ENTRARAM numa fase de ordem N
+// dentro do período (não cumulativo `max >= N`, então pulos não preenchem etapas) —
+// ver get_leads_activity (migration 20260731). phaseDistribution = onde esse cohort está
+// agora. cycle/retro classificam cada linha pelo created_at do lead: dentro do período =
+// cycle, antes = retro.
 export interface StageActivity {
   order: number
   phase: string
@@ -586,29 +588,68 @@ async function wonBySaleDate(
   return data as unknown as WonBySaleDate
 }
 
+interface ReachFunnel {
+  funnelByOrder: Record<string, number>
+  funnelByResponsible: Record<string, AgentCount[]>
+}
+
+// Funil de acionamento PRINCIPAL contado por ENTRADA REAL de fase (RPC
+// get_leads_reach_funnel — migration 20260731), substituindo o funnelByOrder/
+// funnelByResponsible que get_leads_dashboard calcula com `max_funnel_order >= ordem`
+// (cumulativo, que "preenche" fases puladas). Regra do dono: acionamento só quando o
+// card ENTRA na fase — um lead que pula de 1° pra Fechamento conta só nessas duas, não
+// nas intermediárias. Ordem 0 = todo o cohort de recebidos (todos entram em Recebidos).
+// null se a migration ainda não rodou → getLeadsData mantém o funil antigo (degradação
+// graciosa, mesmo padrão de wonBySaleDate).
+async function reachFunnel(
+  supabase: SupabaseClient,
+  period: LeadPeriod
+): Promise<ReachFunnel | null> {
+  const { data, error } = await supabase.rpc('get_leads_reach_funnel', {
+    p_start: period.start,
+    p_end: period.end,
+  })
+  if (error || !data) return null
+  return data as unknown as ReachFunnel
+}
+
 // Tudo que deriva dos leads do período. RPC (contado no banco) ou fallback paginado, com o
-// won/dead de topo corrigido por data de venda (ver wonBySaleDate). Funil/ranking/canal
-// continuam vindo do dashboard base (fora de escopo desta correção).
+// won/dead de topo corrigido por data de venda (ver wonBySaleDate) e o funil de acionamento
+// contado por entrada real de fase (ver reachFunnel). Ranking/canal continuam vindo do
+// dashboard base (fora de escopo desta correção).
 export async function getLeadsData(periodInput: LeadPeriod): Promise<LeadsData> {
   const period = sanitizePeriod(periodInput) // saneia o período vindo do cliente
   const supabase = await createServerClient()
-  const [base, sale] = await Promise.all([
+  const [base, sale, reach] = await Promise.all([
     (async () => (await dashboardFromRpc(supabase, period)) ?? dashboardFromScan(supabase, period))(),
     wonBySaleDate(supabase, period),
+    reachFunnel(supabase, period),
   ])
-  if (!sale) return base
-  return {
-    ...base,
-    kpis: {
-      ...base.kpis,
-      wonLeads: sale.won,
-      deadLeads: sale.dead,
-      wonCycle: sale.wonCycle,
-      wonRetro: sale.wonRetro,
-      conversionRate: base.kpis.totalLeads > 0 ? sale.won / base.kpis.totalLeads : 0,
-      deadRate: base.kpis.totalLeads > 0 ? sale.dead / base.kpis.totalLeads : 0,
-    },
+  let out = base
+  // Funil por entrada de fase sobrescreve o cumulativo do dashboard (barras + drill do
+  // StepConversion). Ausente → mantém o funil antigo.
+  if (reach) {
+    out = {
+      ...out,
+      funnel: buildFunnel(reach.funnelByOrder),
+      funnelByResponsible: reach.funnelByResponsible,
+    }
   }
+  if (sale) {
+    out = {
+      ...out,
+      kpis: {
+        ...out.kpis,
+        wonLeads: sale.won,
+        deadLeads: sale.dead,
+        wonCycle: sale.wonCycle,
+        wonRetro: sale.wonRetro,
+        conversionRate: out.kpis.totalLeads > 0 ? sale.won / out.kpis.totalLeads : 0,
+        deadRate: out.kpis.totalLeads > 0 ? sale.dead / out.kpis.totalLeads : 0,
+      },
+    }
+  }
+  return out
 }
 
 // ── Séries temporais (Sprint 2) ───────────────────────────────────────────────
@@ -696,10 +737,10 @@ interface ActivityRpc {
   phaseDistribution: { phase: string; kind: LeadPhaseKind | null; order: number | null; total: number; cycle: number; retro: number }[]
 }
 
-// Funil "geral" (RPC get_leads_activity — migration 20260718): mesmas duas formas do funil
-// normal, mas sobre "leads com movimentação no período" (updated_at), não "recebidos no
-// período" (created_at) — um lead de ciclo anterior mexido hoje aparece aqui. Vazio se a
-// migration ainda não rodou (mesma degradação graciosa das outras métricas novas).
+// Funil "geral" (RPC get_leads_activity — migration 20260731): cohort = leads que ENTRARAM
+// em alguma fase no período (não "updated_at"); cada barra conta quem entrou naquela etapa
+// no período (não cumulativo). Um lead de ciclo anterior que entrou numa fase hoje aparece
+// aqui (lado retro). Vazio se a migration ainda não rodou (degradação graciosa).
 export async function getLeadsActivity(periodInput: LeadPeriod): Promise<LeadActivity> {
   const period = sanitizePeriod(periodInput)
   const supabase = await createServerClient()
@@ -727,8 +768,9 @@ export async function getLeadsActivity(periodInput: LeadPeriod): Promise<LeadAct
 // ── Drill de card por responsável (aba Funil) — lazy, 2 passos ───────────────
 // Clicar numa barra abre os RESPONSÁVEIS daquele recorte (nível 1, leve); clicar num
 // responsável carrega os CARDS dele (nível 2). Evita puxar milhares de cards de uma vez.
-// RPCs get_leads_drill_agents/get_leads_drill_cards (migration 20260723c). p_key: funnel* =
-// ordem ("alcançou ≥ ordem", 0=todos); phase* = nome da fase atual.
+// RPCs get_leads_drill_agents/get_leads_drill_cards (reescritas na migration 20260731 para
+// contar por ENTRADA de fase, casando com as barras). p_key: funnel* = ordem ("entrou na
+// ordem", 0=todos os recebidos); phase* = nome da fase atual.
 export type LeadDrillDimension = 'funnel' | 'phase' | 'funnel_activity' | 'phase_activity'
 
 export interface LeadDrillAgent {
