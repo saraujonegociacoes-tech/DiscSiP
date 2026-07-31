@@ -61,7 +61,7 @@ maior minuta. **Export CSV.**
 Arquivos: RPC nas migrations acima; tipos `CsMinutaCard`/`CsMinutasData`/`CsResguardoBucket`;
 action `getCsMinutas`; componente `CsMinutas.tsx`; aba "minutas" do `CsClient`.
 
-### Página 4 — Pagamento + Insights  ·  ✅ *CONSTRUÍDA 2026-07-30 (migration pendente aplicar)*  ·  *snapshot + série*
+### Página 4 — Pagamento + Insights  ·  ✅ *CONSTRUÍDA 2026-07-30 (migration aplicada)*  ·  *snapshot + série*
 Modelo **híbrido** (dono): **projeção** = plano de parcelas criado na fase "Aguardando Pagamento"
 do SC (snapshot, teto 3x); **realizado/histórico** = **conexão do card do SC com o pipe do
 Financeiro** via `child_relations` (relação "Subir pagamento") — 1 card conectado = 1 pagamento de
@@ -71,9 +71,11 @@ Financeiro** via `child_relations` (relação "Subir pagamento") — 1 card cone
   + `ingest_cs_card` lendo `child_relations` + RPCs `get_cs_pagamento_projecao`/`_historico`; reusa
   `cs_parse_date` da `20260730`), tipos `CsPagamento*`, actions, `CsPagamento.tsx`, query do import
   com `child_relations`.
-- **PENDENTE do dono:** aplicar `20260730b`; ligar `child_relations` na query do Make **+ poll
-  sem-delta do balde "Aguardando Pagamento"** (gatilho: pagamento no Financeiro pode não tocar o
-  `updated_at` do card do SC); re-rodar `npm run import:cs-cards`.
+- **PENDENTE do dono:** ~~aplicar `20260730b`~~ (✅ aplicada — RPCs respondem); ligar
+  `child_relations` na query do Make **+ poll sem-delta do balde "Aguardando Pagamento"** (gatilho:
+  pagamento no Financeiro pode não tocar o `updated_at` do card do SC); re-rodar
+  `npm run import:cs-cards`. Conferido em 31/jul: `cs_card_payments` tem **1 linha** (só o card de
+  teste `1421643991`), então o Make/backfill ainda não semearam.
 
 ### Página 2 — Equipe (série temporal)  ·  ✅ *CONSTRUÍDA (2026-07-22)*
 - **Entregue** (tsc/lint verdes nos arquivos tocados): migration `20260722_cs_team.sql`
@@ -92,6 +94,17 @@ Financeiro** via `child_relations` (relação "Subir pagamento") — 1 card cone
   (checklist verde), backfill re-rodado (snapshots/comentários semeados) e **Make montado,
   testado (200) e rodando** — série temporal já acumulando (trocas de responsável e eventos
   subindo). Fase "Aguardando Pagamento" (id `343781769`) marcada `exclude_from_movement`.
+- **Eixo das negociações trocado (2026-07-31, migration `20260731b_cs_negociacao_por_responsavel.sql`
+  — ✅ APLICADA e conferida):** "Negociações feitas no período" deixou de agrupar pelo assignee do
+  card e passou a agrupar pelo campo da fase `quem_realizou_a_negocia_o` ("Quem realizou a
+  Negociação?", `select`: Larissa/Charles/Laura/Mayara). **Movimento no período segue pelo
+  assignee** (decisão do dono). O campo guarda **texto**, não usuário do Pipefy — não casa com
+  `cs_agents`; card em branco vai pro balde "Sem responsável pela negociação". A migration também
+  adiciona `cs_negotiation_snapshots.negotiator` (congela quem fez a negociação **no momento** dela);
+  snapshot antigo (NULL) cai no valor atual do card, então a tela rende sem backfill. **Nada mais é
+  exigido** — nem query nova no Make (o campo já vem em `fields`), nem re-rodar o import.
+  Conferência pós-aplicação: total 23 (inalterado) em **Laura 20 · Charles 1 · Larissa 1 · Sem
+  responsável pela negociação 1**; movimento seguiu por assignee, em 8 linhas.
 
 ## ❓ Pendências a responder (destravam as páginas acima)
 

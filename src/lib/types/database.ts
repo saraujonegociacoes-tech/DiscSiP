@@ -287,6 +287,10 @@ export type CsTeamMovementTotals = Omit<CsTeamMovementAgent, 'agentId' | 'agentN
 // 2) NEGOCIAÇÕES FEITAS NO PERÍODO (card com mudança real nos 5 campos no período),
 //    classificadas pela completude ATUAL. Completa=5 · Parcial=3–4 com Q.D · Incompleta=resto.
 //    `cards` alimenta o drill-down (campos faltando + link do Pipefy).
+//    ⚠ O eixo NÃO é o assignee do card (como no movimento acima): é o campo da fase de
+//    negociação `quem_realizou_a_negocia_o` ("Quem realizou a Negociação?"), decisão do dono
+//    2026-07-31 — ver migration 20260731b_cs_negociacao_por_responsavel.sql. É um select de
+//    TEXTO (primeiro nome), sem vínculo com cs_agents; por isso a chave é o próprio valor.
 export type CsNegotiationClass = 'completa' | 'parcial' | 'incompleta'
 
 export interface CsNegotiationCard {
@@ -297,8 +301,8 @@ export interface CsNegotiationCard {
 }
 
 export interface CsTeamNegotiationAgent {
-  agentId: string | null
-  agentName: string
+  negotiator: string | null // valor cru do campo; null = campo em branco no card
+  negotiatorName: string // "Sem responsável pela negociação" quando negotiator é null
   total: number
   completa: number
   parcial: number

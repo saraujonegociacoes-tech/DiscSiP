@@ -18,9 +18,14 @@ import { cn } from '@/lib/utils'
 import type { CsTeamData, CsTeamNegotiationAgent, CsNegotiationClass } from '@/lib/types/database'
 
 // PÁGINA 2 do painel de CS — EQUIPE. Duas seções, ambas filtradas pelo PERÍODO:
-//   1) Movimento no período por responsável (recebidos + 4 buckets moveu×comentou).
-//   2) Negociações feitas no período por responsável (Total/Completas/Parcial/Incompletas),
-//      com drill-down: clica num número → cards daquele recorte, campos faltando e link Pipefy.
+//   1) Movimento no período por RESPONSÁVEL DO CARD (assignee): recebidos + 4 buckets
+//      moveu×comentou.
+//   2) Negociações feitas no período por RESPONSÁVEL PELA NEGOCIAÇÃO — o campo da fase
+//      ("Quem realizou a Negociação?"), não o assignee (decisão do dono 2026-07-31, migration
+//      20260731b). Total/Completas/Parcial/Incompletas, com drill-down: clica num número →
+//      cards daquele recorte, campos faltando e link Pipefy.
+// Os dois eixos divergem de propósito: o card fica com o consultor do acompanhamento mensal
+// enquanto a negociação pode ter sido feita por outra pessoa.
 // Série temporal: nasce ~vazia e enche conforme o Make acumula. Ver docs/updates/
 // painel-sucesso-cliente-cs.md.
 
@@ -64,7 +69,9 @@ function Stat({
   )
 }
 
-type NegSel = { agentId: string | null; agentName: string; cls: 'total' | CsNegotiationClass }
+// Recorte selecionado no drill. A chave é o VALOR do campo da fase (texto), não um id de
+// agente — cards sem o campo preenchido caem todos no mesmo balde (negotiator = null).
+type NegSel = { negotiator: string | null; negotiatorName: string; cls: 'total' | CsNegotiationClass }
 
 export function CsTeam() {
   const [period, setPeriod] = useState<LeadPeriod>(() => currentCycle())
@@ -106,7 +113,7 @@ export function CsTeam() {
   // Cards do drill-down selecionado.
   const drill = useMemo(() => {
     if (!negSel) return null
-    const agent = negotiations.find((a) => a.agentId === negSel.agentId)
+    const agent = negotiations.find((a) => a.negotiator === negSel.negotiator)
     if (!agent) return null
     const cards =
       negSel.cls === 'total' ? agent.cards : agent.cards.filter((c) => c.cls === negSel.cls)
@@ -117,9 +124,9 @@ export function CsTeam() {
   function toggleNeg(agent: CsTeamNegotiationAgent, cls: 'total' | CsNegotiationClass, count: number) {
     if (count === 0) return
     setNegSel((cur) =>
-      cur && cur.agentId === agent.agentId && cur.cls === cls
+      cur && cur.negotiator === agent.negotiator && cur.cls === cls
         ? null
-        : { agentId: agent.agentId, agentName: agent.agentName, cls },
+        : { negotiator: agent.negotiator, negotiatorName: agent.negotiatorName, cls },
     )
   }
 
@@ -163,7 +170,7 @@ export function CsTeam() {
                 <ArrowRightLeft className="h-4 w-4 text-primary" /> Movimento no período
               </h2>
               <p className="mt-0.5 text-xs text-muted-foreground">
-                Por responsável, sobre os cards ativos. Ignora entrada/saída de Negociação e
+                Por responsável do card, sobre os cards ativos. Ignora entrada/saída de Negociação e
                 Aguardando pagamento.
               </p>
             </div>
@@ -247,8 +254,10 @@ export function CsTeam() {
                 <Handshake className="h-4 w-4 text-primary" /> Negociações feitas no período
               </h2>
               <p className="mt-0.5 text-xs text-muted-foreground">
-                Cards com mudança nos 5 campos no período, por responsável. Clique num número para
-                ver os cards, o que falta e o link do Pipefy.
+                Cards com mudança nos 5 campos no período, pelo campo{' '}
+                <span className="font-medium text-foreground">Quem realizou a Negociação?</span> da
+                fase de negociação — não pelo responsável do card. Clique num número para ver os
+                cards, o que falta e o link do Pipefy.
               </p>
             </div>
 
@@ -263,7 +272,7 @@ export function CsTeam() {
                     <thead>
                       <tr className="bg-background/95">
                         <th className="px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-                          Responsável
+                          Responsável pela negociação
                         </th>
                         <th className="px-3 py-2 text-center text-[11px] font-semibold uppercase tracking-wider text-foreground">
                           Total
@@ -283,13 +292,16 @@ export function CsTeam() {
                     </thead>
                     <tbody>
                       {negotiations.map((a) => (
-                        <tr key={a.agentId ?? 'none'} className="border-t border-border/60">
+                        <tr key={a.negotiator ?? 'none'} className="border-t border-border/60">
                           <th
                             scope="row"
-                            className="max-w-[200px] truncate px-3 py-1.5 text-left text-xs font-medium text-foreground"
-                            title={a.agentName}
+                            className={cn(
+                              'max-w-[200px] truncate px-3 py-1.5 text-left text-xs font-medium',
+                              a.negotiator ? 'text-foreground' : 'text-muted-foreground',
+                            )}
+                            title={a.negotiatorName}
                           >
-                            {a.agentName}
+                            {a.negotiatorName}
                           </th>
                           <NegCell agent={a} cls="total" value={a.total} sel={negSel} onClick={toggleNeg} strong />
                           <NegCell agent={a} cls="completa" value={a.completa} sel={negSel} onClick={toggleNeg} tone="text-success" />
@@ -306,8 +318,8 @@ export function CsTeam() {
                   <div className="mt-3 rounded-xl border border-border bg-background/40 p-3">
                     <div className="mb-2 flex items-start justify-between gap-2">
                       <div className="min-w-0">
-                        <h3 className="truncate text-sm font-semibold text-foreground" title={negSel.agentName}>
-                          {negSel.agentName}
+                        <h3 className="truncate text-sm font-semibold text-foreground" title={negSel.negotiatorName}>
+                          {negSel.negotiatorName}
                         </h3>
                         <p className="text-xs text-muted-foreground">
                           {drill.label} · {drill.cards.length} card(s)
@@ -382,7 +394,7 @@ function NegCell({
   tone?: string
   strong?: boolean
 }) {
-  const active = sel?.agentId === agent.agentId && sel?.cls === cls
+  const active = sel?.negotiator === agent.negotiator && sel?.cls === cls
   return (
     <td className="p-0">
       <button
