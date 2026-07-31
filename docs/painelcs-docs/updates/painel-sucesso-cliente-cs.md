@@ -8,18 +8,20 @@
 > dashboard. Réplica do padrão do dashboard de Leads (Pipefy → Make → Supabase) para o
 > pipe de **Sucesso do Cliente**, como domínio **separado**.
 
-## Estado atual (2026-07-30)
+## Estado atual (2026-07-31)
 
-**As 4 páginas construídas.** P1/P2/P3 no ar (migrations aplicadas, Make rodando). P4 (Pagamento)
-construída e verde — falta o dono aplicar a migration `20260730b`, ligar `child_relations` na query
-do Make (+ poll sem-delta do balde) e re-rodar o backfill.
+**As 4 páginas construídas, todas as migrations aplicadas.** P1/P2/P3 no ar (Make rodando); a P2
+teve o eixo das "Negociações feitas" trocado para o campo da fase "Quem realizou a Negociação?"
+(`20260731b`, aplicada e conferida — ver Página 2). P4 (Pagamento) construída e com a `20260730b`
+aplicada — falta ligar `child_relations` na query do Make (+ poll sem-delta do balde) e re-rodar o
+backfill pra semear os pagamentos (hoje só o card de teste está em `cs_card_payments`).
 
 | Página | Estado | Migration | Base |
 |---|---|---|---|
 | 1 · Visão Geral + Janelas | ✅ construída e validada | `20260721_cs_age_windows` (aplicada) | snapshot |
-| 2 · Equipe | ✅ construída, série temporal acumulando | `20260722` + `20260722b` + `20260723_cs_team_v2` (aplicadas) | Make |
+| 2 · Equipe | ✅ construída, série temporal acumulando | `20260722` + `20260722b` + `20260723_cs_team_v2` + `20260731b` (todas aplicadas) | Make |
 | 3 · Controle de Minutas | ✅ no ar | `20260727` + `…b` + `…c` + `…d` (todas aplicadas 2026-07-27) | snapshot |
-| 4 · Pagamento + Insights | ✅ construída (migration pendente aplicar) | `20260730b_cs_pagamento` | plano na fase (snapshot) + conexão Financeiro (série) |
+| 4 · Pagamento + Insights | ✅ construída, migration aplicada — falta o Make/backfill semear | `20260730b_cs_pagamento` (aplicada) | plano na fase (snapshot) + conexão Financeiro (série) |
 
 **Atualização dos dados:** o painel lê o **snapshot no Supabase** (`cs_cards.metadata` etc.),
 que é mantido fresco pelo **mesmo cenário do Make** que já roda (o `ingest_cs_card` grava
@@ -161,6 +163,39 @@ Cliente · Responsável · tempo na fase · link do Pipefy, "Ver todos". **Expor
 > atual; **movimento/negociação** enchem conforme o Make acumula. Reformulação visual v2
 > (2026-07-23): KPIs Movimentados/Negociações feitas/Recebidos; tabela "Movimento no período";
 > "Negociações feitas no período" com drill (cards + campos faltando + link Pipefy).
+>
+> **DOIS EIXOS DE RESPONSÁVEL (2026-07-31, migration `20260731b` — ✅ aplicada e conferida):** as
+> duas tabelas da página deixaram de compartilhar o mesmo eixo.
+> - **Movimento no período** → segue por **responsável do CARD** (`responsible_agent_id`, o
+>   assignee do Pipefy). Inalterado, por decisão explícita do dono.
+> - **Negociações feitas no período** → passa a ser por **responsável pela NEGOCIAÇÃO**: o campo
+>   da própria fase `quem_realizou_a_negocia_o` (rótulo "Quem realizou a Negociação?", `select`
+>   com Larissa · Charles · Laura · Mayara).
+>
+> **Por quê:** o assignee responde "de quem é o card", não "quem fez a negociação" — o card fica
+> com o consultor do acompanhamento mensal enquanto a negociação pode ter sido feita por outra
+> pessoa. Introspecção ao vivo (2026-07-31): é o **único** campo de responsável na fase
+> `Negociação do Cliente`; guarda **texto** (primeiro nome), **não** o usuário do Pipefy — logo
+> **não casa com `cs_agents`** (ex.: "Laura" não é assignee de card nenhum) e o agrupamento é pelo
+> próprio valor. O valor **persiste depois que o card sai da fase** (conferido em cards de 3°/5°/6°
+> Mês), que é o que torna o agrupamento possível fora da negociação. Card com o campo em branco cai
+> no balde **"Sem responsável pela negociação"**.
+>
+> **Atribuição point-in-time:** a `20260731b` adiciona `cs_negotiation_snapshots.negotiator` e a
+> `ingest_cs_card` passa a congelar quem estava no campo **no momento da negociação**. A leitura usa
+> o negociador do **último snapshot com delta dentro do período** e, quando ele é NULL (snapshot
+> anterior à migration), cai no **valor atual do card** — então a tela já rende com o histórico
+> existente. Trocar só o responsável **não** gera negociação nova: o gatilho segue sendo a mudança
+> nos 5 campos.
+>
+> ⚠ O total (`negotiationTotals` e o KPI "Negociações feitas") **não muda** — é a mesma coorte de
+> cards, só reagrupada. As páginas 1, 3 e 4 seguem pelo assignee.
+>
+> **Conferido depois de aplicar (2026-07-31, janela de 400 dias):** `negotiationTotals.total = 23`
+> (igual ao eixo antigo) distribuído em **Laura 20 · Charles 1 · Larissa 1 · Sem responsável pela
+> negociação 1**; o movimento seguiu por assignee (Mayara Campos, Larissa Damasceno, Janaina,
+> Juliane, "Sem responsável", 8 linhas). Repare que os dois eixos dão nomes diferentes de propósito
+> — "Laura" não aparece no movimento porque não é assignee de card nenhum.
 
 Controle das movimentações dentro do pipe **por responsável, no ciclo** (11→10, filtrável
 por período). `atualização = comentário no card` (decisão do dono).
