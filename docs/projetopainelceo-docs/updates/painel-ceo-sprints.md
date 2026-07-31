@@ -26,7 +26,7 @@ Acesso restrito por uma **trava forte**: um papel novo `ceo`.
 - Projeções de CS: **reutilizar** a lógica/dados que o painel de CS já tem (fase "Aguardando
   Pagamento" já é ingerida). O **único a construir do zero na parte de projeção é a ingestão do
   pipe de Negociação**.
-- Trava = **criar papel `ceo`** (novo valor no enum de papéis).
+- Trava = **criar papel `ceo`** (novo valor permitido em `profiles.role`).
 - Primeiro entregável real (Sprint 1) = **Financeiro (entradas do mês)**.
 
 ### Restrições de arquitetura que respeitamos
@@ -64,69 +64,164 @@ Acesso restrito por uma **trava forte**: um papel novo `ceo`.
 
 ---
 
-## Sprint 0 — Fundação & trava (papel `ceo` + rota `/ceo` + docs)
+## Sprint 0 — Fundação & trava (papel `ceo` + rota `/ceo` + docs) — ✅ FECHADA (29/jul/2026)
+
+> **Trava testada ponta a ponta pelo dono em 31/jul:** `ceo` cai em `/ceo`, `agent` é barrado e volta
+> para `/softphone`, `admin` entra. Era a última pendência do sprint.
+
+> **Banco: pronto (30/jul).** As duas migrations foram aplicadas —
+> [`20260729_ceo_role.sql`](../../../supabase/migrations/20260729_ceo_role.sql) criou
+> `ceo_current_role()` (a PARTE 1 foi no-op: `profiles.role` não é enum) e
+> [`20260730_ceo_role_check.sql`](../../../supabase/migrations/20260730_ceo_role_check.sql)
+> liberou `'ceo'` no CHECK `profiles_role_check`.
+>
+> ~~**Pendência do dono:** promover o CEO pelo `/admin`~~ — feito; papel atribuído e trava validada
+> em 31/jul.
 
 **Papel `ceo` (RBAC em 3 camadas):**
-- **Migration** `supabase/migrations/AAAAMMDD_ceo_role.sql`: `ALTER TYPE <enum_de_papeis> ADD VALUE 'ceo';`
-  ⚠️ Confirmar na base ao vivo o **nome do enum** de `profiles.role` (a tabela `profiles`/o tipo vivem
-  no setup core **não versionado**). `ADD VALUE` não roda no mesmo bloco transacional que já usa o
-  valor — rodar isolado.
-- [`src/lib/types/database.ts:2`](../../../src/lib/types/database.ts#L2): adicionar `'ceo'` ao union `Role`.
-- [`src/app/actions/admin.ts:6`](../../../src/app/actions/admin.ts#L6): incluir `'ceo'` em `ROLES` (admin
-  pode atribuir).
-- [`src/lib/supabase/middleware.ts`](../../../src/lib/supabase/middleware.ts): novo bloco de gate — `/ceo`
-  só entra `ceo` (e `admin` p/ suporte); qualquer outro papel → redireciona (espelhar o bloco de
-  `/admin`, linhas 76–80).
-- [`src/components/Sidebar.tsx`](../../../src/components/Sidebar.tsx): item novo em `OPERATION_ITEMS`
-  (`{ href: '/ceo', label: 'Painel do CEO', icon: ..., roles: ['ceo','admin'] }`) e `ceo: 'CEO'` no
-  `ROLE_LABEL`.
+- **Migrations**: [`20260729_ceo_role.sql`](../../../supabase/migrations/20260729_ceo_role.sql) +
+  [`20260730_ceo_role_check.sql`](../../../supabase/migrations/20260730_ceo_role_check.sql).
+  A primeira cria `ceo_current_role()` (PARTE 2) e trata o caso de `profiles.role` ser enum
+  (PARTE 1), descobrindo o tipo pela própria coluna via catálogo em vez de exigir introspecção
+  manual. **A introspecção ao vivo (30/jul) mostrou que não é enum**: é `text` (typtype=b) com o
+  CHECK `profiles_role_check` limitando aos 5 papéis. A PARTE 1 detectou o não-enum e retornou
+  sem fazer nada — correto quanto ao enum, **incompleto quanto ao CHECK**, que rejeita `'ceo'` do
+  mesmo jeito. A `20260730` fecha esse buraco recriando o CHECK com `'ceo'` na lista (só alarga o
+  domínio, então nenhuma linha existente pode violar; DROP + ADD na mesma transação).
+  **Lição:** "não é enum" não significava "nada a fazer" — significava "procure o CHECK".
+- [`src/lib/types/database.ts:2`](../../../src/lib/types/database.ts#L2): `'ceo'` no union `Role`.
+  Não havia nenhum `Record<Role, …>` no código, então a mudança **não gerou erro de compilação em
+  lugar nenhum** — o que é justamente o risco: as quebras eram todas silenciosas (as duas abaixo).
+- [`src/app/actions/admin.ts:6`](../../../src/app/actions/admin.ts#L6) **e**
+  [`src/app/admin/AdminClient.tsx:19`](../../../src/app/admin/AdminClient.tsx#L19): são **duas**
+  listas — `ROLES` valida no servidor, `ROLE_OPTIONS` popula o select. Só a primeira estava no
+  plano; sem a segunda o papel ficaria inatribuível pela UI.
+- [`src/features/ajuda/content/roles.ts`](../../../src/features/ajuda/content/roles.ts) *(não
+  previsto)*: `/ajuda` **quebrava** para o `ceo` —
+  [`RoleBadge`](../../../src/features/ajuda/components/RoleBadge.tsx) faz `ROLES.find(...)!` e
+  estouraria em `meta.color` (TypeError) com papel ausente, e `/ajuda` é liberado a todos.
+  Adicionada a entrada `ceo`, a coluna na matriz de acesso, e `roleIncludes()` passou a devolver
+  `false` explicitamente para papéis fora da escada da operação (antes dependia do `indexOf` −1
+  por acidente, que um reorder do array quebraria em silêncio).
+- [`src/lib/supabase/middleware.ts`](../../../src/lib/supabase/middleware.ts): **dois** blocos, não
+  um. (a) O gate espelhando `/admin`: em `/ceo` só passa `admin` (suporte) — quem é `ceo` já
+  retornou antes. (b) Um bloco **invertido** para o `ceo`, colocado *antes* do redirect de
+  `isPublic`: como `ceo` é trava lateral (não opera discador nem gere usuários), listamos o que
+  ele alcança (`CEO_ROUTES = ['/ceo','/ajuda']`) e mandamos todo o resto para `/ceo`. É isso que
+  faz o **destino pós-login** dele ser `/ceo` em vez de `/softphone` — sem esse bloco, um CEO
+  logava e caía na tela do discador (`/` também redireciona para lá).
+- [`src/components/Sidebar.tsx`](../../../src/components/Sidebar.tsx): item `/ceo` (ícone `Crown`,
+  `roles: ['ceo','admin']`), `ceo: 'CEO'` no `ROLE_LABEL`, e `'ceo'` incluído em `/ajuda` — senão
+  o CEO ficaria com um único item de menu no app inteiro.
 
 **Rota esqueleto:**
-- `src/app/ceo/page.tsx` (server; feature-flag `NEXT_PUBLIC_CEO_ENABLED`, espelhando `cs/page.tsx:16`).
-- `src/app/ceo/CeoClient.tsx` (`AppShell` + `PageHeader` + Radix Tabs `?aba=` com abas placeholder:
-  Financeiro · Projeções · Saúde da Empresa · Saúde da Equipe).
-- `src/features/ceo/` (components/ + barrel `index.ts`), `CeoTabNav.tsx` (clone do `CsTabNav`).
-- `src/app/actions/ceo.ts` (`'use server'`, vazio por ora).
+- [`src/app/ceo/page.tsx`](../../../src/app/ceo/page.tsx) (server; flag `NEXT_PUBLIC_CEO_ENABLED`
+  com early return antes de qualquer query, espelhando `cs/page.tsx:16`) +
+  [`CeoComingSoon.tsx`](../../../src/app/ceo/CeoComingSoon.tsx).
+- [`src/app/ceo/CeoClient.tsx`](../../../src/app/ceo/CeoClient.tsx) (`AppShell` + `PageHeader` +
+  Radix Tabs `?aba=`): abas `financeiro` · `projecoes` · `saude-empresa` · `saude-equipe`, as
+  quatro em placeholder, cada uma já descrevendo o que vai receber e de onde.
+- [`src/features/ceo/`](../../../src/features/ceo/): `CeoTabNav.tsx` + `CeoTabPlaceholder.tsx` +
+  barrel `index.ts` (réplicas locais dos equivalentes de CS — domínio separado).
+- [`src/app/actions/ceo.ts`](../../../src/app/actions/ceo.ts) (`'use server'`, vazio; documenta o
+  padrão que as RPCs seguem — agregar no Postgres + guarda `ceo_current_role()`).
+- [`.env.example`](../../../.env.example): `NEXT_PUBLIC_CEO_ENABLED` registrada e **desligada**.
 
-**Estratégia de RLS do `ceo` (recomendada):** em vez de espalhar `'ceo'` por todas as policies `IN
-('manager','admin')`, criar um helper `ceo_current_role()` (clone de `cs_current_role`) e fazer as
-**RPCs de leitura do painel do CEO** serem `SECURITY DEFINER` com **guarda interna** (`IF
+**Estratégia de RLS do `ceo` (adotada):** em vez de espalhar `'ceo'` por todas as policies `IN
+('manager','admin')`, o helper `ceo_current_role()` (clone de `cs_current_role`) foi criado e as
+**RPCs de leitura do painel do CEO** serão `SECURITY DEFINER` com **guarda interna** (`IF
 ceo_current_role() NOT IN ('ceo','admin') THEN RETURN`). Isso centraliza o acesso do CEO nas RPCs do
-painel e evita mexer no RLS de cada domínio. (Cada RPC dos sprints seguintes já nasce com essa guarda.)
+painel e evita mexer no RLS de cada domínio. (Cada RPC dos sprints seguintes já nasce com essa
+guarda.) **Consequência verificada:** o Sprint 0 não alterou nenhuma policy em produção — o único
+efeito no banco é um valor a mais no CHECK de `profiles.role` e uma função nova, ambos inertes até
+o Sprint 1.
 
-**Docs (padrão do repo):** criar `docs/projetopainelceo-docs/` com `reference/.gitkeep`, `updates/`,
+**Docs (padrão do repo):** ✅ `docs/projetopainelceo-docs/` com `reference/.gitkeep`, `updates/`,
 `fixes/.gitkeep`; `updates/painel-ceo-indice.md` (índice/estado) + `updates/painel-ceo-sprints.md`
-(roadmap em sprints + decisões travadas — este arquivo); registrar o projeto na tabela de
+(roadmap em sprints + decisões travadas — este arquivo); projeto registrado na tabela de
 [`docs/links.md`](../../links.md).
+
+**Decisão de infra tomada durante a execução:** `supabase/` **voltou a ser versionado**
+(`.gitignore`). A pasta ignorada existia apenas no worktree `discsip`, e como migrations são um log
+append-only aplicado a **um** banco, as duas cópias divergiriam em silêncio — git não avisa sobre
+arquivos untracked. Versionadas, elas viajam com a branch e a divergência aparece no diff. Efeito
+colateral: os links relativos destes docs para `supabase/migrations/*.sql` voltaram a resolver.
 
 ---
 
-## Sprint 1 — Financeiro: entradas do mês (carro-chefe)
+## Sprint 1 — Financeiro: entradas do mês (carro-chefe) — ✅ CÓDIGO ENTREGUE (31/jul/2026)
+
+> **Mapeamento fechado por introspecção ao vivo:**
+> [`introspeccao-pipefy-financeiro.md`](introspeccao-pipefy-financeiro.md) — pipe **`304386356`**
+> ("2.0 - Financeiro"), field-ids, fases, formato dos valores e as decisões do dono.
+>
+> **Executado pelo dono em 31/jul:** ✅ migration
+> [`20260731_financeiro_schema.sql`](../../../supabase/migrations/20260731_financeiro_schema.sql)
+> aplicada · ✅ `npm run import:financeiro` rodado (carga histórica, ~4.500 cards) · ✅ cenário Make
+> montado ([`make-integracao-financeiro.md`](make-integracao-financeiro.md)) · ✅
+> `NEXT_PUBLIC_CEO_ENABLED=1`. A aba está no ar com dado real.
+>
+> **Conferência numérica: ✅ passou** (`npm run verify:financeiro`, 31/jul) — 4.549/4.549 cards,
+> 5.348 pagamentos nas duas convenções, 0 divergências card a card, 32/32 meses batendo, total
+> geral R$ 7.310.222,27 idêntico. **O Sprint 1 está fechado tecnicamente.**
+>
+> **Arquivos entregues:** migration acima · `scripts/import-financeiro.mjs`
+> (`npm run import:financeiro`) · `getCeoFinanceiro` em `src/app/actions/ceo.ts` · tipos em
+> `src/lib/types/database.ts` · mês civil em `src/lib/period.ts` ·
+> `src/features/ceo/components/CeoFinanceiro.tsx` + `CeoPeriodPicker.tsx` · aba ligada em
+> `src/app/ceo/CeoClient.tsx` · doc do Make.
 
 **Ingestão do pipe Financeiro (nova vertical isolada, clone do CS):**
-- Migration `AAAAMMDD_financeiro_schema.sql`: `fin_cards` (id, `pipefy_card_id`, `metadata jsonb`,
-  colunas derivadas `entry_value numeric`, `entry_date date`, `category text`), + RPC
-  `ingest_financeiro_card(node)` (`SECURITY DEFINER`, grant só `service_role`) mapeando **field-ids →
-  valor/data/categoria** e upsert idempotente. Reusar `cs_parse_money`/`cs_parse_date` (ou clonar como
-  `fin_parse_*`).
+- Migration `AAAAMMDD_financeiro_schema.sql`: **duas** tabelas, porque o pipe mudou de convenção no
+  meio de 2025 e um card antigo vale até 4 pagamentos com datas próprias (achado 3):
+  - `fin_cards` — contexto do card (`pipefy_card_id`, `metadata jsonb`, `paid_value`,
+    `charged_value`, `net_value`, `paid_date`, `category` ← `COALESCE` dos 3 campos de referência,
+    `department` **normalizado**, `payment_method`, `contract_ref`).
+  - `fin_entries` — **um pagamento por linha** (`fin_card_id`, `entry_value`, `entry_date`, `seq`).
+    É ela que alimenta KPI e série mensal. Card com parcela preenchida → uma linha por parcela
+    (descartando `0,00`) e **ignora** `valor_de_contrata_o`, que é inconsistente nesses cards; card
+    sem parcela (todo 2026) → uma linha de `valor_de_contrata_o` + `data_do_pagamento`.
+  - RPC `ingest_financeiro_card(node)` (`SECURITY DEFINER`, grant só `service_role`), upsert
+    idempotente por `pipefy_card_id`, regenerando as `fin_entries` do card.
+  - `fin_entry_sign(category)`: `-1` em desconto/devolução, `+1` no resto (distrato e reversão são
+    entradas normais — decisão do dono).
+  - ⚠️ `fin_parse_money` é clone fiel de `cs_parse_money`, mas **`fin_parse_date` não pode ser
+    clone**: este pipe manda `DD/MM/YYYY` (nunca ISO, `datetime_value` sempre `null`) e o
+    `left(raw,10)::date` do CS devolveria `NULL` em 100% dos cards — sem erro nenhum. Precisa de
+    `to_date(s,'DD/MM/YYYY')`.
 - RPC de leitura `get_ceo_financeiro(p_start, p_end)` (com a guarda `ceo`/`admin`): total do período,
-  série mensal e breakdown por categoria — **agrega no Postgres** e devolve 1 linha jsonb (evita o teto
-  de 1000 linhas do PostgREST).
-- Backfill `scripts/import-financeiro.mjs` (clone de `import-cs-cards.mjs`) + env
-  `FINANCEIRO_PIPEFY_PIPE_ID` (reusa `PIPEFY_TOKEN`). Registrar `npm run import:financeiro`.
+  série mensal e breakdown por categoria — **agrega no Postgres** sobre `fin_entries` e devolve 1
+  linha jsonb (evita o teto de 1000 linhas do PostgREST). Filtra
+  `current_phase_id <> '327456661'` ("Pagamento cancelado" — as outras 4 fases contam) e soma
+  `entry_value * fin_entry_sign(category)`.
+- **Alerta de duplicidade** (pedido do dono): a RPC devolve, à parte, os grupos de mesmo
+  `contract_ref` **com mesmo valor, mesma categoria e mesmo dia** — o único trio que indica
+  lançamento em duplicata. Mesmo contrato com categorias diferentes é dado bom (pagamento + desconto,
+  por exemplo) e não pode entrar no alerta. É **aviso na tela, nunca dedupe automático**.
+- Backfill [`scripts/import-financeiro.mjs`](../../../scripts/import-financeiro.mjs) (clone de
+  `import-cs-cards.mjs`) + env `FINANCEIRO_PIPEFY_PIPE_ID` (reusa `PIPEFY_TOKEN`), registrado como
+  `npm run import:financeiro`. Reporta `pagamentos` e `cards_sem_entrada` por rodada.
 - Cenário Make (dono monta): Schedule → GraphQL delta → Transform to JSON → POST
-  `rpc/ingest_financeiro_card`. Doc `updates/make-integracao-financeiro.md`.
+  `rpc/ingest_financeiro_card`. Doc [`make-integracao-financeiro.md`](make-integracao-financeiro.md).
 
-**Frontend — aba "Financeiro":** `KpiCard`s (entradas do mês, vs. mês anterior, acumulado) +
-`AreaChart` (Recharts via `useChartTheme`) da série mensal + `PeriodPicker`. Action `getCeoFinanceiro`
-em `src/app/actions/ceo.ts`.
+**Frontend — aba "Financeiro":** 4 `KpiCard`s (entradas no período com delta vs. período anterior,
+nº de pagamentos, ticket médio, maior categoria) + `AreaChart` (Recharts via `useChartTheme`) dos 12
+meses + 3 breakdowns (categoria, departamento, forma de pagamento) + painel de aviso de duplicidade.
+Action `getCeoFinanceiro` em `src/app/actions/ceo.ts`.
 
-**Definição de "mês"** (pequena decisão): recomendo **mês civil** para a visão do CEO (executivo pensa
-em mês de calendário); se preferir consistência com a operação, usar o **ciclo 11→10** de
-[`src/lib/period.ts`](../../../src/lib/period.ts).
+**Período — `CeoPeriodPicker` (novo, local do domínio):** toggle **mês civil** (default) × **ciclo
+11→10**, com intervalo livre. Réplica local em vez de estender o `PeriodPicker` compartilhado, que é
+usado por leads e discadora. Os KPIs seguem a janela escolhida; **a série mensal é sempre em meses
+civis** — em ciclo 11→10 a barra de "julho" não seria julho.
 
-**Dependência do dono:** ID do pipe Financeiro + field-ids (valor da entrada, data, categoria). Aplicar
-a migration e montar o Make.
+**Definição de "mês" — decidido (31/jul): os dois.** O `PeriodPicker` ganha um toggle mês civil ×
+ciclo 11→10, com **mês civil no default** (é como executivo lê faturamento e como bate com o
+extrato). Custa pouco porque a RPC já recebe `p_start`/`p_end` — quem define a janela é o frontend; o
+ciclo reusa [`src/lib/period.ts`](../../../src/lib/period.ts).
+
+~~**Dependência do dono:** ID do pipe Financeiro + field-ids~~ — **fechado em 31/jul** por
+introspecção ao vivo ([`introspeccao-pipefy-financeiro.md`](introspeccao-pipefy-financeiro.md)).
+Resta do dono: **aplicar a migration** e **montar o cenário Make** quando o código estiver pronto.
 
 ---
 
@@ -147,6 +242,10 @@ a migration e montar o Make.
   `KpiCard`s de total projetado por janela (vencidas / ≤30d / 31–90d / 90+).
 
 **Dependência do dono:** ID do pipe Negociação + field-ids + id da fase "Aguardando Pagamento" dele.
+Coletar com as mesmas queries de
+[`introspeccao-pipefy-financeiro.md`](introspeccao-pipefy-financeiro.md) (só troca o `pipeId`) ou
+`node scripts/probe-financeiro-fields.mjs <pipeId>`. Candidato na org: **`304370275` — "3.0
+Negociação"** (confirmar com o dono; há também `306994213` "2.1 - Controle de Vendas").
 
 ---
 
@@ -179,10 +278,17 @@ a ponte `profile_id` ou mapear por nome). Por isso é o último — maior esfor�
 ---
 
 ## Riscos & dependências (resumo)
-- **Financeiro & Negociação**: pipe IDs + mapeamento de field-ids são **input do dono** (como toda
-  integração anterior). Migrations e cenários Make aplicados **à mão** por ele.
-- **Papel `ceo`**: confirmar o nome do enum de `profiles.role` na base ao vivo; `ALTER TYPE ADD VALUE`
-  isolado.
+- ~~**Financeiro**: pipe ID + field-ids~~ — resolvido em 31/jul
+  ([`introspeccao-pipefy-financeiro.md`](introspeccao-pipefy-financeiro.md)). **Negociação** ainda
+  pendente (Sprint 2). Migrations e cenários Make continuam aplicados **à mão** pelo dono.
+- **Qualidade do dado do Financeiro**: 2 grupos em 360 cards têm mesmo contrato + mesmo valor +
+  mesma categoria + mesmo dia (suspeita forte de lançamento em duplicata). Vira **aviso** na aba, não
+  dedupe — o mesmo contrato com categorias diferentes é dado legítimo.
+- **Duas convenções de parcelamento no mesmo pipe** (2024/2025 × 2026): resolvido por `fin_entries`,
+  mas é a fonte de erro mais provável do backfill. Conferir o total de um mês de 2024 **e** de um de
+  2026 contra o Pipefy, não só um dos dois.
+- ~~**Papel `ceo`**: confirmar o nome do enum de `profiles.role`~~ — resolvido (30/jul): a coluna
+  **não é enum**, é `text` com o CHECK `profiles_role_check`. Ver `20260730_ceo_role_check.sql`.
 - **Leads não versionado** (Sprint 3/4): extrair do Supabase ao vivo antes de depender.
 - **Identidade não unificada** (Sprint 4).
 - **Projeção do CS** ainda não construída no painel de CS — construímos a RPC de leitura aqui.
@@ -196,7 +302,19 @@ a ponte `profile_id` ou mapear por nome). Por isso é o último — maior esfor�
 - **Trava/RBAC** (S0): logar como `ceo` → vê `/ceo` e os dados; como `agent`/`supervisor` → `/ceo`
   redireciona (middleware); como `admin` → vê. Enquanto não pronto, `NEXT_PUBLIC_CEO_ENABLED` mantém a
   rota oculta.
-- **Financeiro** (S1): conferir o total de "entradas do mês" contra o Pipefy para um mês conhecido.
+- **Financeiro** (S1): ✅ **feito em 31/jul** por `npm run verify:financeiro`
+  ([`scripts/verify-financeiro.mjs`](../../../scripts/verify-financeiro.mjs)) — o script reimplementa
+  em JS as mesmas regras da migration (parsers, COALESCE da categoria, sinal, as duas convenções),
+  recomputa a partir do **Pipefy cru** e compara card a card com `fin_cards`/`fin_entries`.
+  Resultado: 4.549/4.549 cards · 5.348 pagamentos (parcela 3.212 / card 2.136) · **0** divergências ·
+  32/32 meses · total R$ 7.310.222,27 dos dois lados. Roda com meses específicos:
+  `node scripts/verify-financeiro.mjs 2024-09 2026-07`.
+
+  ⚠️ **O que essa conferência prova e o que não prova.** Ela prova que a **ingestão** está fiel ao
+  Pipefy: parser de `DD/MM/YYYY` correto, as duas convenções de parcelamento tratadas, nenhum card
+  perdido, nada contado em dobro, sinal aplicado. Ela **não** prova que as *regras de negócio* são as
+  certas — se "qual valor é a entrada" ou "quais fases contam" estiver errado, as duas implementações
+  erram junto. Essa parte é leitura do dono: o número do mês tem que fazer sentido pra ele.
 - **Projeções** (S2): somatório projetado por janela bate com os cards em "Aguardando Pagamento".
 
 ## Referências

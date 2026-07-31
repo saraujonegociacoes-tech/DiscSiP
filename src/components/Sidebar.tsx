@@ -14,6 +14,7 @@ import {
   Handshake,
   Flame,
   FolderKanban,
+  Crown,
   type LucideIcon,
 } from 'lucide-react'
 import { useSoftphoneStore } from '@/store/softphoneStore'
@@ -45,7 +46,10 @@ const OPERATION_ITEMS: NavItem[] = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['supervisor', 'manager', 'admin'] },
   { href: '/campaigns', label: 'Campanhas', icon: Megaphone, roles: ['supervisor', 'manager', 'admin'] },
   { href: '/admin', label: 'Admin', icon: Shield, roles: ['admin'] },
-  { href: '/ajuda', label: 'Como usar?', icon: HelpCircle, roles: ['agent', 'supervisor', 'manager', 'admin'] },
+  // Painel do CEO: papel `ceo` (dono da área) + admin, pra suporte. Único item que o ceo
+  // enxerga além da ajuda — o middleware devolve qualquer outra rota pra cá.
+  { href: '/ceo', label: 'Painel do CEO', icon: Crown, roles: ['ceo', 'admin'] },
+  { href: '/ajuda', label: 'Como usar?', icon: HelpCircle, roles: ['agent', 'supervisor', 'manager', 'admin', 'ceo'] },
 ]
 
 // Painéis por vertical de negócio (departamento). Comercial, CS e Negociação são
@@ -89,6 +93,7 @@ const ROLE_LABEL: Record<string, string> = {
   supervisor: 'Supervisor',
   manager: 'Gerente',
   admin: 'Admin',
+  ceo: 'CEO',
 }
 
 export function Sidebar() {

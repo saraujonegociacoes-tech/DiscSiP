@@ -7,7 +7,7 @@ export function RoleMatrix() {
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.92rem" }}>
           <thead>
             <tr style={{ background: "rgba(91,168,255,0.06)" }}>
-              {["Área", "Pending", "Agente", "Supervisor", "Manager", "Admin"].map((h) => (
+              {["Área", "Pending", "Agente", "Supervisor", "Manager", "Admin", "CEO"].map((h) => (
                 <th
                   key={h}
                   style={{
@@ -35,6 +35,7 @@ export function RoleMatrix() {
                 <td style={{ padding: "14px 18px" }}>{row.supervisor}</td>
                 <td style={{ padding: "14px 18px" }}>{row.manager}</td>
                 <td style={{ padding: "14px 18px" }}>{row.admin}</td>
+                <td style={{ padding: "14px 18px" }}>{row.ceo}</td>
               </tr>
             ))}
           </tbody>

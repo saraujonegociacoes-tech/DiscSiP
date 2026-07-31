@@ -79,6 +79,38 @@ export function recentCycles(count = 6, now: Date = new Date()): LeadPeriod[] {
   return Array.from({ length: count }, (_, i) => shiftCycle(cur, -i))
 }
 
+// ── Mês civil (1º ao último dia) ────────────────────────────────────────────
+// O ciclo 11→10 acima é a convenção da OPERAÇÃO. O painel do CEO usa os dois: o
+// executivo lê faturamento em mês de calendário (e é assim que bate com extrato e
+// contabilidade), mas o dono quis poder comparar com o recorte da operação. Quem
+// escolhe é o toggle do CeoPeriodPicker; o default é o mês civil.
+// Mesmas garantias do ciclo: corte em BRT, `end` EXCLUSIVO, `key` estável.
+
+// Mês civil de (year, month). `month` pode estar fora de 1..12 (Date.UTC normaliza).
+export function civilMonthStartingAt(year: number, month: number): LeadPeriod {
+  const start = brtMidnightUtcISO(year, month, 1)
+  const end = brtMidnightUtcISO(year, month + 1, 1)
+  const s = brtParts(new Date(start))
+  return {
+    start,
+    end,
+    key: start.slice(0, 10),
+    label: `${MONTHS_PT[s.month - 1]}/${s.year}`,
+  }
+}
+
+// Mês civil que contém `now` (default: agora), em BRT.
+export function currentCivilMonth(now: Date = new Date()): LeadPeriod {
+  const { year, month } = brtParts(now)
+  return civilMonthStartingAt(year, month)
+}
+
+// Os N meses civis mais recentes (o corrente primeiro), para o seletor.
+export function recentCivilMonths(count = 12, now: Date = new Date()): LeadPeriod[] {
+  const { year, month } = brtParts(now)
+  return Array.from({ length: count }, (_, i) => civilMonthStartingAt(year, month - i))
+}
+
 // Período arbitrário a partir de duas datas BRT ('YYYY-MM-DD', do <input type="date">).
 // `endYMD` é o último dia INCLUSIVO; o `end` interno vira 00:00 BRT do dia seguinte.
 export function customPeriod(startYMD: string, endYMD: string): LeadPeriod {

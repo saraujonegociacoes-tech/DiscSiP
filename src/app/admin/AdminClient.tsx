@@ -16,12 +16,15 @@ import {
 } from '@/app/actions/admin'
 import type { Profile, Department, Role } from '@/lib/types/database'
 
+// Espelha o ROLES de src/app/actions/admin.ts (que valida no servidor) — as duas listas
+// precisam andar juntas: sem a entrada aqui, o papel fica inatribuível pela UI.
 const ROLE_OPTIONS: { value: Role; label: string }[] = [
   { value: 'pending', label: 'Pendente' },
   { value: 'agent', label: 'Agente' },
   { value: 'supervisor', label: 'Supervisor' },
   { value: 'manager', label: 'Gerente' },
   { value: 'admin', label: 'Admin' },
+  { value: 'ceo', label: 'CEO' },
 ]
 
 // estilo compartilhado para selects/inputs nativos
