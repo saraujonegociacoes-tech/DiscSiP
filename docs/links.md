@@ -59,6 +59,7 @@ Domínio de produto separado do discador (código/dados/RLS). Índice completo e
 
 ## `fixes/`
 - [`correcao-ganhos-retroativos-e-funil-geral.md`](painelleads-docs/fixes/correcao-ganhos-retroativos-e-funil-geral.md) — ganhos/mortos passam a contar por data de venda (`finalized_at`), não `created_at`, com split ciclo × retroativo; funil "geral" novo (por `updated_at`). **Migrations não aplicadas ainda.**
+- [`correcao-acionamento-por-entrada-de-fase.md`](painelleads-docs/fixes/correcao-acionamento-por-entrada-de-fase.md) — acionamento passa a contar por **entrada real de fase** (via `lead_events` + `LAG`), não por `updated_at` nem `max_funnel_order` cumulativo: pulo de fase não preenche etapas e editar campo não conta como acionado. **Migration 20260731 aplicada** (31/jul; substituiu a 20260723c).
 - Cross-projeto: o **truncamento em 1000** (RPC `get_leads_dashboard`) mora em [`discadora-docs/fixes/correcao-truncamento-1000-linhas.md`](discadora-docs/fixes/correcao-truncamento-1000-linhas.md).
 
 ---
