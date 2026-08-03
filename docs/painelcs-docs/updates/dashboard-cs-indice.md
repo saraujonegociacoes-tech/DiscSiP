@@ -9,14 +9,16 @@ painel e o de Leads são os primeiros passos). Ver também
 [`dashboard-leads-indice.md`](../../painelleads-docs/updates/dashboard-leads-indice.md) (painel irmão) e
 [`../links.md`](../../links.md) (índice geral por domínio).
 
-> **Estado (30/jul/2026): as 4 páginas construídas.** P1/P2/P3 no ar (migrations aplicadas, Make
-> rodando). Sprint 4 (Página 4 · Pagamento) construída e verde — falta o dono aplicar a migration
-> `20260730b`, ligar `child_relations` na query do Make (+ poll sem-delta do balde "Aguardando
-> Pagamento") e re-rodar o backfill. Sprint 0 (navegação/permissões) e Sprint 1
+> **Estado (31/jul/2026): as 4 páginas construídas, todas as migrations aplicadas.** P1/P2/P3 no ar
+> (Make rodando); a P2 teve o eixo das negociações trocado para o campo da fase "Quem realizou a
+> Negociação?" (`20260731b`, aplicada e conferida). Sprint 4 (Página 4 · Pagamento) construída e com
+> a `20260730b` aplicada — falta ligar `child_relations` na query do Make (+ poll sem-delta do balde
+> "Aguardando Pagamento") e re-rodar o backfill pra semear os pagamentos. Sprint 0
+> (navegação/permissões) e Sprint 1
 > (schema/ingestão, 1484 cards) entregues. O dashboard antigo (cards por fase / tempo em fase /
 > contato periódico) foi **substituído** por um painel em **4 páginas** (Visão Geral+Janelas,
-> Equipe, Minutas, Pagamentos+Insights), com ciclo 11→10. **Páginas 1, 2 e 3 construídas e com
-> as migrations aplicadas; Make (Pipefy→Make→Supabase) rodando. Falta só a Página 4 (Pagamento).**
+> Equipe, Minutas, Pagamentos+Insights), com ciclo 11→10. **As 4 páginas construídas e com as
+> migrations aplicadas; Make (Pipefy→Make→Supabase) rodando. Falta só semear a Página 4 (Pagamento).**
 > Ver [`painel-sucesso-cliente-cs.md`](painel-sucesso-cliente-cs.md) pra o design completo e o
 > mapeamento de campos, e [`cs-proximos-passos.md`](cs-proximos-passos.md) pro estado/handoff.
 
@@ -25,9 +27,9 @@ painel e o de Leads são os primeiros passos). Ver também
 | Aba | Página | Base de dado | Estado |
 |---|---|---|---|
 | 1 | **Visão Geral + Janelas** — matriz Fase × Tempo na fase (heatmap), drill-down por célula, export CSV | Snapshot | ✅ no ar (migration `20260721`) |
-| 2 | **Equipe** — movimento por responsável no ciclo (movido c/ ou s/ atualização, só atualização, parado) + negociações feitas com drill | Série temporal (Make) | ✅ no ar (`20260722`/`20260722b`/`20260723_v2`) |
+| 2 | **Equipe** — movimento por responsável **do card** no ciclo (movido c/ ou s/ atualização, só atualização, parado) + negociações feitas por responsável **pela negociação** (campo da fase), com drill | Série temporal (Make) | ✅ no ar (`20260722`/`20260722b`/`20260723_v2`/`20260731b`) |
 | 3 | **Controle de Minutas** — buckets por vencimento; Dívida do Cliente / Valor da Minuta Final / Última Negociação / Resguardado / % desc. / etiqueta; colunas ordenáveis; KPI "Resguardado na carteira"; insights clicáveis; export CSV | Snapshot | ✅ no ar (migrations `20260727` + `b`/`c`/`d`) |
-| 4 | **Pagamento + Insights** — projeção (plano de parcelas na fase Aguardando Pagamento) + realizado/histórico (conexão com o pipe do Financeiro); KPIs de carteira, cronograma parcela-a-parcela, calendário de recebimento, insights, CSV | Snapshot + série (conexão) | ✅ construída (migration `20260730b` pendente aplicar) |
+| 4 | **Pagamento + Insights** — projeção (plano de parcelas na fase Aguardando Pagamento) + realizado/histórico (conexão com o pipe do Financeiro); KPIs de carteira, cronograma parcela-a-parcela, calendário de recebimento, insights, CSV | Snapshot + série (conexão) | ✅ construída, migration `20260730b` aplicada — falta o Make/backfill semear (só o card de teste em `cs_card_payments`, conferido 31/jul) |
 
 > A **Equipe** é série temporal: enche conforme o Make acumula (a completude já rende do
 > snapshot). As páginas 1 e 3 são **foto de estado atual** (snapshot), sem filtro de período. A
@@ -46,6 +48,12 @@ painel e o de Leads são os primeiros passos). Ver também
   (`q_a_valor_da_quita_o_atualizada_sem_desconto`), P.A (`p_a_parcelas_em_atraso`), P.P
   (`p_p_parcelas_a_pagar`), P.V (`p_v_parcelas_vencer`). Mapeamento completo + prioridade
   em [`painel-sucesso-cliente-cs.md`](painel-sucesso-cliente-cs.md).
+- **Responsável pela negociação:** `quem_realizou_a_negocia_o` ("Quem realizou a
+  Negociação?", `select`: Larissa · Charles · Laura · Mayara), na fase `Negociação do
+  Cliente`. É o eixo da tabela "Negociações feitas" da P2 desde a `20260731b` — guarda
+  **texto**, não usuário do Pipefy, então **não** casa com `cs_agents`. Não confundir com
+  `defina_o_respons_vel_para_a_consultoria` (fase Triagem, `assignee_select`), que é o
+  responsável da consultoria e não é usado por nenhum painel.
 - **Superado:** o antigo "contato periódico" (campos `data_do_proximo_atendimento_N` por
   fase mensal) deixou de ser o eixo do painel na reformulação. Os campos continuam no
   `metadata` e podem servir a métricas futuras, mas não são mais prioridade.

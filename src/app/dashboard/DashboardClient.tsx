@@ -80,7 +80,7 @@ export function DashboardClient({ stats, campaigns, callsByHour, agents }: Dashb
       </section>
 
       <PageHeader
-        title="Painel da operação"
+        title="Painel da Discadora"
         description="Acompanhamento em tempo real das campanhas e indicadores do time."
         actions={
           <Button asChild variant="outline" size="sm">

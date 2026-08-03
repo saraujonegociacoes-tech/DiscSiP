@@ -25,11 +25,17 @@ interface AgentState {
   // (o MicroSIP não devolve o estado real), então persiste entre chamadas até o agente trocar.
   micMuted: boolean
   speakerMuted: boolean
+  // Impersonação do papel 'tester': quando o papel REAL é 'tester', o app usa estes valores
+  // para decidir a NAVEGAÇÃO (menu + gates de página no cliente), sem tocar nos dados reais.
+  // null/null = "ver como si mesmo" (acesso total). Só tem efeito se role === 'tester'.
+  viewAsRole: Role | null
+  viewAsSlug: string | null
 
   setProfile: (profile: Profile) => void
   setCallStatus: (status: CallStatus, number?: string) => void
   setHelperOnline: (online: boolean, version?: string | null) => void
   setMuted: (device: 'mic' | 'speaker', muted: boolean) => void
+  setViewAs: (role: Role | null, slug: string | null) => void
   resetCall: () => void
   logout: () => void
 }
@@ -48,6 +54,8 @@ export const useSoftphoneStore = create<AgentState>((set) => ({
   helperVersion: null,
   micMuted: false,
   speakerMuted: false,
+  viewAsRole: null,
+  viewAsSlug: null,
 
   setProfile: (profile) =>
     set({
@@ -84,6 +92,8 @@ export const useSoftphoneStore = create<AgentState>((set) => ({
   setMuted: (device, muted) =>
     set(device === 'mic' ? { micMuted: muted } : { speakerMuted: muted }),
 
+  setViewAs: (role, slug) => set({ viewAsRole: role, viewAsSlug: slug }),
+
   resetCall: () => set({ callStatus: 'idle', callNumber: null, callStartedAt: null }),
 
   logout: () =>
@@ -100,5 +110,7 @@ export const useSoftphoneStore = create<AgentState>((set) => ({
       helperVersion: null,
       micMuted: false,
       speakerMuted: false,
+      viewAsRole: null,
+      viewAsSlug: null,
     }),
 }))

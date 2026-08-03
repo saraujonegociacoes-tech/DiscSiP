@@ -25,6 +25,7 @@ const ROLE_OPTIONS: { value: Role; label: string }[] = [
   { value: 'manager', label: 'Gerente' },
   { value: 'admin', label: 'Admin' },
   { value: 'ceo', label: 'CEO' },
+  { value: 'tester', label: 'Tester' },
 ]
 
 // estilo compartilhado para selects/inputs nativos
