@@ -11,6 +11,7 @@
     "probe:financeiro": "node scripts/probe-financeiro-fields.mjs",
     "import:financeiro": "node scripts/import-financeiro.mjs",
     "verify:financeiro": "node scripts/verify-financeiro.mjs",
+    "import:minutas": "node scripts/import-minutas.mjs",
     "prebuild": "node scripts/sync-helper.mjs",
     "prebuild:cf": "node scripts/sync-helper.mjs",
     "build": "next build",

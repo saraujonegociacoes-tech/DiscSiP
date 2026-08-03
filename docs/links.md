@@ -12,6 +12,8 @@ manter o padrão. O README do projeto fica na raiz do repo (`../README.md`).
 | Painel de Sucesso do Cliente (CS) | `painelcs-docs/` | [`updates/dashboard-cs-indice.md`](painelcs-docs/updates/dashboard-cs-indice.md) |
 | Aquecimento WhatsApp | `warmup-docs/` | [`updates/aquecimento-whatsapp-indice.md`](warmup-docs/updates/aquecimento-whatsapp-indice.md) |
 | Projetos (Desenvolvimento / TI) | `projetos-docs/` | [`updates/projetos-blue-desk.md`](projetos-docs/updates/projetos-blue-desk.md) |
+| Minutas Processuais (Jurídico) | `minutas-docs/` | [`updates/painel-minutas-processuais.md`](minutas-docs/updates/painel-minutas-processuais.md) |
+| RBAC / Acessos (transversal) | `rbac-docs/` | [`updates/acessos-e-papel-tester.md`](rbac-docs/updates/acessos-e-papel-tester.md) |
 | Painel do CEO (executivo) | `projetopainelceo-docs/` | [`updates/painel-ceo-indice.md`](projetopainelceo-docs/updates/painel-ceo-indice.md) |
 
 Os cinco primeiros são **domínios de produto separados** (código, dados e RLS isolados entre si);
@@ -109,6 +111,35 @@ membership, só `manager`/`admin`).
 - [`editar-apagar-sprint-e-formatacao.md`](projetos-docs/updates/editar-apagar-sprint-e-formatacao.md) —
   botões de editar/apagar sprint no card (apagar devolve tarefas ao backlog) + render `RichText`
   (tópicos/numeração/negrito/quebras) nas descrições de tarefa e objetivos de sprint. **Sem migration.**
+
+---
+
+# Minutas Processuais (Jurídico) · `minutas-docs/`
+
+Área nova do Blue Desk (rota `/minutas`), departamento **Jurídico** — controle de minutas
+processuais (obrigações de pagamento por processo, com parcelas recorrentes). **App-native/CRUD**
+(tabelas `proc_*`, RLS por departamento), não espelho de pipe. **Domínio SEPARADO das "Minutas" do
+CS** (aba dentro de `/cs`, tabelas `cs_*`) — não confundir.
+
+## `updates/`
+- [`painel-minutas-processuais.md`](minutas-docs/updates/painel-minutas-processuais.md) — a área,
+  modelo de dados (`proc_acordos` + `proc_parcelas`), acesso/RLS, as 3 abas (Visão Geral /
+  Calendário / Minutas) e o script de carga da planilha (CSV/xlsx). Migration
+  `20260731b_minutas_processuais.sql` **aplicada** + carga rodada (23 acordos / 87 parcelas, 03/ago).
+
+---
+
+# RBAC / Acessos (transversal) · `rbac-docs/`
+
+Controle de acesso do Blue Desk: escopo por departamento em toda a navegação (cada supervisor só a
+própria equipe; Discador exclusivo do Comercial) + papel novo `tester` (acesso total + seletor "ver
+como"). Transversal — toca Sidebar, middleware, store e os gates de página.
+
+## `updates/`
+- [`acessos-e-papel-tester.md`](rbac-docs/updates/acessos-e-papel-tester.md) — matriz de acesso, o
+  papel `tester` e como está implementado (Sidebar/middleware/store). Migration
+  `20260803_tester_role.sql` **aplicada** (03/ago). Pendente: escopo de DADOS por departamento no
+  Painel da Discadora/Campanhas.
 
 ---
 

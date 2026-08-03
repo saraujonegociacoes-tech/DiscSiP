@@ -2,7 +2,10 @@
 // 'ceo' NÃO é hierárquico — não é "acima de admin". É uma trava LATERAL: dá acesso só
 // ao painel executivo /ceo e a nada mais (não opera discador, não gere usuários), e
 // nenhum outro papel herda dele. Ver docs/projetopainelceo-docs/updates/painel-ceo-sprints.md.
-export type Role = 'pending' | 'agent' | 'supervisor' | 'manager' | 'admin' | 'ceo'
+// 'tester' = acesso TOTAL (como admin) + um seletor "ver como" no app que troca a
+// navegação/gates de página no cliente (sem mexer nos dados reais) — para conferir o que
+// cada papel/departamento enxerga sem trocar de conta.
+export type Role = 'pending' | 'agent' | 'supervisor' | 'manager' | 'admin' | 'ceo' | 'tester'
 export type CallDirection = 'inbound' | 'outbound'
 export type CallStatus = 'answered' | 'no_answer' | 'busy' | 'failed'
 export type CampaignStatus = 'draft' | 'active' | 'paused' | 'completed'
@@ -585,4 +588,67 @@ export interface WarmupNumberStats {
   sentDryRun: number
   sentToday: number
   dailyCap: number
+}
+
+// ── Minutas Processuais (área Jurídico) ──────────────────────────────────────
+// Domínio SEPARADO das "Minutas" do CS (aba dentro de /cs). App-native/CRUD
+// (migration 20260731b_minutas_processuais.sql). Um ACORDO (proc_acordos) é a
+// minuta em si (cliente + processo + recorrência); as PARCELAS (proc_parcelas)
+// são geradas dele. O status da parcela é DERIVADO na leitura (getMinutas): pago
+// quando data_pagamento está preenchida; senão vencida se já passou do
+// vencimento, senão pendente. O corte do dia é BRT.
+export type Recorrencia =
+  | 'mensal'
+  | 'bimestral'
+  | 'trimestral'
+  | 'semestral'
+  | 'anual'
+  | 'avulsa'
+  | 'personalizada'
+
+export type ProcParcelaStatus = 'pago' | 'vencida' | 'pendente'
+
+export interface ProcParcela {
+  id: string
+  acordoId: string
+  num: number
+  valor: number | null
+  vencimento: string | null // ISO date
+  dataPagamento: string | null // ISO date; preenchida = paga
+  observacoes: string | null
+  status: ProcParcelaStatus // derivado na leitura
+  daysToDue: number | null // vencimento − hoje (BRT), em dias; null se sem vencimento
+}
+
+export interface ProcAcordo {
+  id: string
+  cliente: string | null
+  numeroProcesso: string | null
+  titulo: string | null
+  recorrencia: Recorrencia
+  intervaloDias: number | null
+  parcelaTotal: number
+  valorParcela: number | null
+  primeiroVencimento: string | null // ISO date
+  observacoes: string | null
+  createdAt: string // ISO
+  parcelas: ProcParcela[]
+}
+
+export interface ProcMinutasData {
+  referenceAt: string // "agora" (ISO) — data da foto usada pro status/daysToDue
+  acordos: ProcAcordo[]
+}
+
+// Entrada do formulário "Nova minuta" (vira a RPC proc_create_acordo).
+export interface CreateMinutaInput {
+  cliente: string
+  numeroProcesso: string
+  titulo: string
+  recorrencia: Recorrencia
+  intervaloDias: number | null // só usado quando recorrencia = 'personalizada'
+  numParcelas: number
+  valorParcela: number | null
+  primeiroVencimento: string | null // ISO date
+  observacoes: string
 }

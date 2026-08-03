@@ -257,7 +257,7 @@ export function LeadsClient({
   return (
     <AppShell>
       <PageHeader
-        title="Dashboard de leads"
+        title="Painel de Leads"
         description={`Funil de leads do Pipefy · ${period.label}`}
         actions={
           <div className="flex flex-wrap items-center gap-3">

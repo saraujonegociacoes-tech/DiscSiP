@@ -41,7 +41,7 @@ function groupByOwner(projects: MondayProjectWithStats[]): OwnerGroup[] {
 export default async function ProjectsPage() {
   const profile = await getCurrentProfile()
   if (!profile) redirect('/login')
-  if (profile.role !== 'manager' && profile.role !== 'admin') redirect('/')
+  if (profile.role !== 'manager' && profile.role !== 'admin' && profile.role !== 'tester') redirect('/')
 
   const projects = await getProjectsWithStats()
   const groups = groupByOwner(projects)
