@@ -11,6 +11,7 @@ export const ROLES: { id: Role; label: string; tagline: string; color: string }[
   // Precisa existir aqui: RoleBadge faz ROLES.find(...)! e estouraria (TypeError em
   // meta.color) para um papel ausente — e /ajuda é liberado a todos, inclusive pending.
   { id: "ceo",        label: "CEO",        tagline: "Só o painel executivo",           color: "#F97316" },
+  { id: "tester",     label: "Tester",    tagline: "Vê tudo + seletor de visão",       color: "#22D3EE" },
 ];
 
 export const ROLE_ACCESS: { area: string; pending: string; agent: string; supervisor: string; manager: string; admin: string; ceo: string }[] = [
@@ -27,8 +28,10 @@ export const ROLE_ACCESS: { area: string; pending: string; agent: string; superv
 // papel fora da escada devolve false. O indexOf −1 já produziria isso por acidente, mas
 // deixar implícito é frágil: reordenar o array mudaria o significado sem aviso.
 export function roleIncludes(current: Role, target: Role): boolean {
+  // 'tester' vê tudo → equivale a admin na escada da ajuda. 'ceo' segue fora (trava lateral).
+  const c: Role = current === "tester" ? "admin" : current;
   const order: Role[] = ["pending", "agent", "supervisor", "manager", "admin"];
-  const currentIndex = order.indexOf(current);
+  const currentIndex = order.indexOf(c);
   const targetIndex = order.indexOf(target);
   if (currentIndex < 0 || targetIndex < 0) return false;
   return currentIndex >= targetIndex;

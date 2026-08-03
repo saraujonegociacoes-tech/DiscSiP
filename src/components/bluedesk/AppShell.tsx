@@ -4,6 +4,7 @@ import type { ReactNode } from 'react'
 import { SidebarProvider, SidebarTrigger } from '@/components/ui/sidebar'
 import { Sidebar } from '@/components/Sidebar'
 import { ThemeToggle } from '@/components/bluedesk/ThemeToggle'
+import { ViewAsSelector } from '@/components/bluedesk/ViewAsSelector'
 import { NotificationBell } from '@/components/notifications/notification-bell'
 import { Toaster } from '@/components/ui/sonner'
 
@@ -22,6 +23,7 @@ export function AppShell({ children, header }: { children: ReactNode; header?: R
             <SidebarTrigger className="text-muted-foreground hover:text-foreground" />
             {header}
             <div className="ml-auto flex items-center gap-3">
+              <ViewAsSelector />
               <NotificationBell />
               <ThemeToggle />
             </div>

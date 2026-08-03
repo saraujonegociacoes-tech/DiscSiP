@@ -9,6 +9,28 @@ const PUBLIC_ROUTES = ['/login', '/cadastro', '/verifique-email']
 // Ver docs/projetopainelceo-docs/updates/painel-ceo-sprints.md.
 const CEO_ROUTES = ['/ceo', '/ajuda']
 
+// Acesso total (vê tudo). 'tester' entra aqui de propósito — é um admin com seletor de visão.
+const managerLevel = (role: string) => role === 'manager' || role === 'admin' || role === 'tester'
+
+// "Casa" de cada papel/departamento: destino pós-login e fallback quando um gate barra. O
+// Discador é exclusivo do Comercial, então CS/Negociação/Jurídico caem no próprio painel.
+function homeFor(role: string, slug: string | null): string {
+  if (managerLevel(role)) return '/softphone'
+  if (slug === 'cs') return '/cs'
+  if (slug === 'negociacao') return '/negociacao'
+  if (slug === 'juridico') return '/minutas'
+  return '/softphone' // comercial e sem-departamento
+}
+
+// Painéis por vertical: cada um exige o departamento correspondente (acesso total passa por
+// tudo). Fecha o acesso por URL — a Sidebar só ESCONDE, isto BARRA de fato.
+const VERTICAL_GATES: { prefix: string; slug: string }[] = [
+  { prefix: '/leads', slug: 'comercial' },
+  { prefix: '/cs', slug: 'cs' },
+  { prefix: '/negociacao', slug: 'negociacao' },
+  { prefix: '/minutas', slug: 'juridico' },
+]
+
 // Refresca a sessão (cookies) e aplica o gate de acesso:
 //  - sem sessão → /login (exceto rotas públicas e /auth/*)
 //  - sessão com role 'pending' → /aguardando
@@ -43,88 +65,77 @@ export async function updateSession(request: NextRequest) {
   const { pathname } = request.nextUrl
   const isPublic = PUBLIC_ROUTES.some((r) => pathname === r || pathname.startsWith(`${r}/`))
 
-  // Sem sessão: só pode acessar rotas públicas (o matcher já exclui /auth e estáticos)
-  if (!user) {
-    if (isPublic) return supabaseResponse
+  // Redireciona limpando a query (não arrasta ?aba= etc. para a nova rota).
+  const redirectTo = (path: string) => {
     const url = request.nextUrl.clone()
-    url.pathname = '/login'
+    url.pathname = path
+    url.search = ''
     return NextResponse.redirect(url)
   }
 
-  // Com sessão: verifica o papel para decidir entre app e "aguardando aprovação"
+  // Sem sessão: só pode acessar rotas públicas (o matcher já exclui /auth e estáticos)
+  if (!user) {
+    return isPublic ? supabaseResponse : redirectTo('/login')
+  }
+
+  // Com sessão: papel + slug do departamento numa query só (embed da FK profiles→departments).
   const { data: profile } = await supabase
     .from('profiles')
-    .select('role')
+    .select('role, departments(slug)')
     .eq('id', user.id)
     .single()
 
-  const isPending = !profile || profile.role === 'pending'
+  const role: string = profile?.role ?? ''
+  const dep = (profile as { departments?: { slug?: string } | { slug?: string }[] } | null)?.departments
+  const slug: string | null = (Array.isArray(dep) ? dep[0]?.slug : dep?.slug) ?? null
 
-  if (isPending) {
-    // Pendente só pode ficar em /aguardando — ou abrir a ajuda (/ajuda), de onde
-    // o botão "Voltar" o traz de volta para /aguardando.
-    if (pathname !== '/aguardando' && pathname !== '/ajuda') {
-      const url = request.nextUrl.clone()
-      url.pathname = '/aguardando'
-      return NextResponse.redirect(url)
-    }
-    return supabaseResponse
+  // Pendente só pode ficar em /aguardando — ou abrir a ajuda (/ajuda), de onde o "Voltar"
+  // o traz de volta.
+  if (!profile || role === 'pending') {
+    return pathname === '/aguardando' || pathname === '/ajuda' ? supabaseResponse : redirectTo('/aguardando')
   }
 
-  // Papel `ceo`: trava LATERAL, não um nível acima de admin (ver
-  // docs/projetopainelceo-docs/updates/painel-ceo-sprints.md). Ele não opera o discador
-  // nem gere usuários — só o painel executivo e a ajuda. Por isso este bloco é o inverso
-  // dos gates abaixo: em vez de listar quem entra numa área, lista o que o ceo alcança, e
-  // manda todo o resto pra /ceo (inclusive `/`, que redireciona pro softphone, e /login).
-  // Fica ANTES do redirect de isPublic justamente pra que o destino pós-login seja /ceo.
-  // Com NEXT_PUBLIC_CEO_ENABLED desligada ele cai no "Em breve" da própria /ceo.
-  if (profile?.role === 'ceo') {
+  // Papel `ceo`: trava LATERAL (só painel executivo + ajuda). Fica ANTES do redirect de
+  // isPublic para que o destino pós-login seja /ceo. Ver painel-ceo-sprints.md.
+  if (role === 'ceo') {
     const allowed = CEO_ROUTES.some((r) => pathname === r || pathname.startsWith(`${r}/`))
-    if (!allowed) {
-      const url = request.nextUrl.clone()
-      url.pathname = '/ceo'
-      url.search = ''
-      return NextResponse.redirect(url)
-    }
-    return supabaseResponse
+    return allowed ? supabaseResponse : redirectTo('/ceo')
   }
 
-  // Aprovado: não faz sentido ficar em telas de auth/aguardando
+  // Aprovado em tela de auth/aguardando → vai pra "casa" do seu papel/departamento.
   if (isPublic || pathname === '/aguardando') {
-    const url = request.nextUrl.clone()
-    url.pathname = '/softphone'
-    return NextResponse.redirect(url)
+    return redirectTo(homeFor(role, slug))
   }
 
-  // Área do admin: só admin entra (defesa além do RLS)
-  if (pathname.startsWith('/admin') && profile?.role !== 'admin') {
-    const url = request.nextUrl.clone()
-    url.pathname = '/softphone'
-    return NextResponse.redirect(url)
+  // Admin e Painel do CEO: só admin (suporte) e tester (visão de teste). O ceo já retornou.
+  if ((pathname.startsWith('/admin') || pathname.startsWith('/ceo')) && role !== 'admin' && role !== 'tester') {
+    return redirectTo(homeFor(role, slug))
   }
 
-  // Painel do CEO: quem é `ceo` já retornou no bloco acima, então aqui só sobra o resto —
-  // e só admin passa (suporte/depuração). Espelha o gate de /admin logo acima.
-  if (pathname.startsWith('/ceo') && profile?.role !== 'admin') {
-    const url = request.nextUrl.clone()
-    url.pathname = '/softphone'
-    return NextResponse.redirect(url)
+  // Operação COMERCIAL de gestão (Painel da Discadora + Campanhas + Warmup): acesso total ou
+  // supervisor do Comercial. Supervisor de outro departamento vê só os painéis da própria equipe.
+  const comercialOps =
+    pathname.startsWith('/dashboard') ||
+    pathname.startsWith('/campaigns') ||
+    pathname.startsWith('/aquecimento')
+  if (comercialOps && !managerLevel(role) && !(role === 'supervisor' && slug === 'comercial')) {
+    return redirectTo(homeFor(role, slug))
   }
 
-  // Dashboard e gestão de campanhas: só supervisor/manager/admin (agente fica no dialer)
-  const managerArea = pathname.startsWith('/dashboard') || pathname.startsWith('/campaigns')
-  if (managerArea && !['supervisor', 'manager', 'admin'].includes(profile?.role ?? '')) {
-    const url = request.nextUrl.clone()
-    url.pathname = '/softphone'
-    return NextResponse.redirect(url)
+  // Discador: exclusivo do Comercial. Agente/supervisor de CS/Negociação/Jurídico têm o próprio
+  // painel; comercial e sem-departamento entram, e o acesso total também.
+  if (
+    pathname.startsWith('/softphone') &&
+    !managerLevel(role) &&
+    ['cs', 'negociacao', 'juridico'].includes(slug ?? '')
+  ) {
+    return redirectTo(homeFor(role, slug))
   }
 
-  // Aquecimento WhatsApp: módulo sensível (risco de bloqueio de conta/BM) — só
-  // supervisor/manager/admin (defesa além do RLS e da navegação). Agente não entra.
-  if (pathname.startsWith('/aquecimento') && !['supervisor', 'manager', 'admin'].includes(profile?.role ?? '')) {
-    const url = request.nextUrl.clone()
-    url.pathname = '/softphone'
-    return NextResponse.redirect(url)
+  // Painéis por vertical: cada um só para o próprio departamento (ou acesso total).
+  const gate = VERTICAL_GATES.find((g) => pathname.startsWith(g.prefix))
+  if (gate && !managerLevel(role) && slug !== gate.slug) {
+    return redirectTo(homeFor(role, slug))
   }
 
   return supabaseResponse

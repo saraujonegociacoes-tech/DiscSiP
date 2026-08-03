@@ -14,6 +14,7 @@ import {
   Handshake,
   Flame,
   FolderKanban,
+  Scale,
   Crown,
   type LucideIcon,
 } from 'lucide-react'
@@ -36,15 +37,21 @@ import {
 import { BlueDeskLogo, Mark } from '@/components/brand/BlueDeskLogo'
 import { cn } from '@/lib/utils'
 
-type NavItem = { href: string; label: string; icon: LucideIcon; roles: Role[] }
+// Slugs de departamento REAL (para escopar itens de operação); 'ti' é um grupo sem depto.
+type DeptSlug = 'comercial' | 'cs' | 'negociacao' | 'juridico'
+type GroupSlug = DeptSlug | 'ti'
 
-// Itens que não são específicos de uma vertical de negócio — todo mundo aprovado navega
-// entre eles conforme o papel, igual sempre foi.
+// `depts` (opcional): além do papel, o item só aparece para quem é daquele(s) departamento(s)
+// — ou para quem tem acesso total (manager/admin). Sem `depts`, vale só o filtro de papel.
+type NavItem = { href: string; label: string; icon: LucideIcon; roles: Role[]; depts?: DeptSlug[] }
+
+// Itens de operação (topo). Discador, Warmup e Campanhas são da operação COMERCIAL
+// (depts: comercial): só a equipe comercial (+ acesso total) os vê — cada supervisor enxerga
+// apenas os painéis do próprio departamento. Admin/CEO/Ajuda são transversais por papel.
 const OPERATION_ITEMS: NavItem[] = [
-  { href: '/softphone', label: 'Discador', icon: PhoneCall, roles: ['agent', 'supervisor', 'manager', 'admin'] },
-  { href: '/aquecimento', label: 'Warmup Whatsapp', icon: Flame, roles: ['supervisor', 'manager', 'admin'] },
-  { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['supervisor', 'manager', 'admin'] },
-  { href: '/campaigns', label: 'Campanhas', icon: Megaphone, roles: ['supervisor', 'manager', 'admin'] },
+  { href: '/softphone', label: 'Discador', icon: PhoneCall, roles: ['agent', 'supervisor', 'manager', 'admin'], depts: ['comercial'] },
+  { href: '/aquecimento', label: 'Warmup Whatsapp', icon: Flame, roles: ['supervisor', 'manager', 'admin'], depts: ['comercial'] },
+  { href: '/campaigns', label: 'Campanhas', icon: Megaphone, roles: ['supervisor', 'manager', 'admin'], depts: ['comercial'] },
   { href: '/admin', label: 'Admin', icon: Shield, roles: ['admin'] },
   // Painel do CEO: papel `ceo` (dono da área) + admin, pra suporte. Único item que o ceo
   // enxerga além da ajuda — o middleware devolve qualquer outra rota pra cá.
@@ -52,15 +59,17 @@ const OPERATION_ITEMS: NavItem[] = [
   { href: '/ajuda', label: 'Como usar?', icon: HelpCircle, roles: ['agent', 'supervisor', 'manager', 'admin', 'ceo'] },
 ]
 
-// Painéis por vertical de negócio (departamento). Comercial, CS e Negociação são
-// departamentos SEPARADOS (não subdivisão de um maior) — cada grupo só aparece pra quem é
-// do respectivo departamento (department_slug) ou é manager/admin (vê tudo). Ver
-// docs/painelcs-docs/updates/painel-sucesso-cliente-cs.md.
-const VERTICAL_GROUPS: { slug: 'comercial' | 'cs' | 'negociacao' | 'ti'; label: string; items: NavItem[] }[] = [
+// Painéis por vertical de negócio (departamento). Cada grupo só aparece pra quem é do
+// respectivo departamento (department_slug) ou tem acesso total (manager/admin). O Comercial
+// reúne o Painel da Discadora (métricas do discador, supervisor+) e o Painel de Leads.
+const VERTICAL_GROUPS: { slug: GroupSlug; label: string; items: NavItem[] }[] = [
   {
     slug: 'comercial',
     label: 'Comercial',
-    items: [{ href: '/leads', label: 'Leads', icon: Target, roles: ['agent', 'supervisor', 'manager', 'admin'] }],
+    items: [
+      { href: '/dashboard', label: 'Painel da Discadora', icon: LayoutDashboard, roles: ['supervisor', 'manager', 'admin'] },
+      { href: '/leads', label: 'Painel de Leads', icon: Target, roles: ['agent', 'supervisor', 'manager', 'admin'] },
+    ],
   },
   {
     slug: 'cs',
@@ -82,6 +91,18 @@ const VERTICAL_GROUPS: { slug: 'comercial' | 'cs' | 'negociacao' | 'ti'; label: 
     ],
   },
   {
+    slug: 'juridico',
+    label: 'Jurídico',
+    items: [
+      {
+        href: '/minutas',
+        label: 'Minutas Processuais',
+        icon: Scale,
+        roles: ['agent', 'supervisor', 'manager', 'admin'],
+      },
+    ],
+  },
+  {
     slug: 'ti',
     label: 'Desenvolvimento / TI',
     items: [{ href: '/projects', label: 'Projetos', icon: FolderKanban, roles: ['manager', 'admin'] }],
@@ -94,13 +115,15 @@ const ROLE_LABEL: Record<string, string> = {
   manager: 'Gerente',
   admin: 'Admin',
   ceo: 'CEO',
+  tester: 'Tester',
 }
 
 export function Sidebar() {
   const pathname = usePathname()
   const { state } = useSidebar()
   const collapsed = state === 'collapsed'
-  const { agentId, agentName, extension, role, departmentSlug, helperOnline, setProfile } = useSoftphoneStore()
+  const { agentId, agentName, extension, role, departmentSlug, viewAsRole, viewAsSlug, helperOnline, setProfile } =
+    useSoftphoneStore()
 
   // Hidrata o perfil da sessão se ainda não estiver no store (páginas que não são
   // o softphone montam a Sidebar sem o perfil carregado)
@@ -111,14 +134,23 @@ export function Sidebar() {
     })
   }, [agentId, setProfile])
 
-  // Enquanto o papel não carregou, mostra o mínimo (Discador) pra não piscar links proibidos
-  const operationItems = OPERATION_ITEMS.filter((item) => item.roles.includes(role ?? 'agent'))
+  // Papel/departamento EFETIVOS. Só o papel real 'tester' pode impersonar: sem seleção age
+  // como admin (acesso total); com seleção, navega exatamente como o papel/depto escolhido.
+  // Para todos os outros papéis, efetivo = real.
+  const isTester = role === 'tester'
+  const effRole: Role = isTester ? (viewAsRole ?? 'admin') : (role ?? 'agent')
+  const effSlug: string | null = isTester ? (viewAsRole ? viewAsSlug : departmentSlug) : departmentSlug
+  const fullAccess = effRole === 'manager' || effRole === 'admin'
 
-  // Manager/admin veem as 3 verticais; agente/supervisor só a do próprio departamento.
-  // Sem departamento reconhecido (slug null/não mapeado), nenhum grupo de vertical aparece.
-  const isManagerLevel = role === 'manager' || role === 'admin'
-  const verticalGroups = VERTICAL_GROUPS.filter((group) => isManagerLevel || group.slug === departmentSlug)
-    .map((group) => ({ ...group, items: group.items.filter((item) => item.roles.includes(role ?? 'agent')) }))
+  // Item com `depts` só aparece pra acesso total, pra quem é de um dos deptos, ou quando o
+  // depto é desconhecido (null) — fallback pra não travar um agente sem departamento.
+  const deptOk = (item: NavItem) =>
+    !item.depts || fullAccess || effSlug === null || item.depts.includes(effSlug as DeptSlug)
+  const operationItems = OPERATION_ITEMS.filter((item) => item.roles.includes(effRole) && deptOk(item))
+
+  // Acesso total vê todas as verticais; os demais só a do próprio departamento.
+  const verticalGroups = VERTICAL_GROUPS.filter((group) => fullAccess || group.slug === effSlug)
+    .map((group) => ({ ...group, items: group.items.filter((item) => item.roles.includes(effRole)) }))
     .filter((group) => group.items.length > 0)
 
   const initials = (agentName ?? '?')

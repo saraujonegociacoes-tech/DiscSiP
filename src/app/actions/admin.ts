@@ -5,7 +5,7 @@ import type { Profile, Role } from '@/lib/types/database'
 
 // Papéis atribuíveis pelo admin. Espelha ROLE_OPTIONS de src/app/admin/AdminClient.tsx —
 // as duas listas precisam andar juntas (esta valida no servidor, a de lá popula o select).
-const ROLES: Role[] = ['pending', 'agent', 'supervisor', 'manager', 'admin', 'ceo']
+const ROLES: Role[] = ['pending', 'agent', 'supervisor', 'manager', 'admin', 'ceo', 'tester']
 
 // ─── Usuários ────────────────────────────────────────────────────────────────
 
