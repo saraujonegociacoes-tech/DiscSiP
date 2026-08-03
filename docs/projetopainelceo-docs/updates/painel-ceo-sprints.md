@@ -161,9 +161,10 @@ colateral: os links relativos destes docs para `supabase/migrations/*.sql` volta
 > montado ([`make-integracao-financeiro.md`](make-integracao-financeiro.md)) · ✅
 > `NEXT_PUBLIC_CEO_ENABLED=1`. A aba está no ar com dado real.
 >
-> **Conferência numérica: ✅ passou** (`npm run verify:financeiro`, 31/jul) — 4.549/4.549 cards,
-> 5.348 pagamentos nas duas convenções, 0 divergências card a card, 32/32 meses batendo, total
-> geral R$ 7.310.222,27 idêntico. **O Sprint 1 está fechado tecnicamente.**
+> **Conferência: ✅ passou** (`npm run verify:financeiro`, 31/jul) — 4.549/4.549 cards, 5.348
+> pagamentos nas duas convenções, 0 divergências card a card, 32/32 meses, total
+> R$ 7.310.222,27 idêntico. Parsers confirmados por chamada ao vivo; **painel aberto e testado
+> pelo dono**. **SPRINT 1 FECHADA.**
 >
 > **Arquivos entregues:** migration acima · `scripts/import-financeiro.mjs`
 > (`npm run import:financeiro`) · `getCeoFinanceiro` em `src/app/actions/ceo.ts` · tipos em
@@ -225,27 +226,121 @@ Resta do dono: **aplicar a migration** e **montar o cenário Make** quando o có
 
 ---
 
-## Sprint 2 — Projeções de pagamento (CS reusado + Negociação novo)
+## Sprint 2 — Projeções de pagamento (CS reusado + Negociação novo) — ✅ FECHADA (03/ago/2026)
 
-- **CS (reusar):** RPC `get_ceo_projecoes_cs()` (guarda `ceo`/`admin`) lendo a fase **"Aguardando
-  Pagamento"** (id `343781769`, já seedada/ingerida) + `valor_da_parcela`,
-  `data_de_vencimento_da_parcela_do_cliente`, `data_da_quita_o`, contagens P.P/P.A/P.V de
-  `cs_cards.metadata`. Reusa `cs_parse_money`/`cs_parse_date`.
-  ⚠️ A P4 (Pagamento) do painel de CS **ainda não foi construída** — os dados existem, mas não há RPC de
-  projeção pronta. Construir aqui uma RPC de leitura compartilhável (e, se/quando a P4 do CS nascer, ela
-  reaproveita a mesma).
-- **Negociação (novo — "o único a fazer"):** integrar o pipe de Negociação como **vertical isolada**
-  (clone do CS): migration `AAAAMMDD_negociacao_schema.sql` (`neg_cards` + `ingest_negociacao_card`),
-  backfill `scripts/import-negociacao.mjs`, env `NEGOCIACAO_PIPEFY_PIPE_ID`, cenário Make. Foco na fase
-  **"Aguardando Pagamento"** desse pipe. RPC `get_ceo_projecoes_negociacao()`.
+> **Mapeamento da Negociação fechado por introspecção ao vivo (03/ago):**
+> [`introspeccao-pipefy-negociacao.md`](introspeccao-pipefy-negociacao.md) — pipe **`304370275`**
+> ("3.0 Negociação"), 3.343 cards, fases, field-ids, parsers e os 8 achados.
+>
+> **As 4 decisões do dono (03/ago):** projeção **só da fase `326422800`** (⚠️ **contra** a minha
+> recomendação — eu propus incluir `338815768`, que é do Comercial) · card já pago **fora** ·
+> 2ª parcela vencida **é** projeção, em janela própria · RPC do CS **escrita** mesmo sem dado.
+>
+> **Executado pelo dono em 03/ago:** ✅ [`20260731b`](../../../supabase/migrations/20260731b_negociacao_schema.sql)
+> (schema + ingestão + RPCs) · ✅ [`20260731c`](../../../supabase/migrations/20260731c_ceo_guard_null_safe.sql)
+> (correção da guarda, confirmada ao vivo) · ✅ `npm run import:negociacao` (3.343 cards) ·
+> ✅ cenário Make montado ([`make-integracao-negociacao.md`](make-integracao-negociacao.md)) ·
+> ✅ card de teste órfão do CS removido.
+>
+> ✅ [`20260803`](../../../supabase/migrations/20260803_negociacao_fase_unica.sql) (fase única) —
+> aplicada e **confirmada ao vivo**: `neg_is_waiting_phase('338815768')` → `false`.
+>
+> ⚠️ Ela **rodou sem efeito na primeira tentativa** (`338815768` continuava `true`), porque a
+> `20260731b` tem um `CREATE OR REPLACE` da mesma função com a versão de duas fases — reexecutar
+> aquele arquivo **desfaz esta correção em silêncio**. Os dois ganharam aviso no lugar exato.
+> Conferência que pega o erro: `SELECT public.neg_is_waiting_phase('338815768');` → **false**.
+>
+> **Conferência: ✅ passou** (`npm run verify:negociacao`, 03/ago) — 3.343/3.343 cards, 0 faltando,
+> **0 divergências de dado**, total idêntico dos dois lados: **R$ 10.000,00 em 8 cards**
+> (R$ 4.750,00 vencidos em 5 · R$ 5.250,00 a vencer ≤30d em 3). Por sinal: 5 `parcela2`, 3 `fase`.
+>
+> **O filtro de fase carrega 99% do resultado** (medido em 03/ago, depois da `20260803`): existem
+> **665 cards** fora da fase de espera que têm valor e data de projeção preenchidos, somando
+> **R$ 1.041.813,33** — restos de campos que ficam no card depois que ele sai da fase (achado 7).
+> Sem `neg_is_waiting_phase` a aba mostraria R$ 1.051.813,33 em vez de R$ 10.000,00. É por isso
+> que a RPC filtra por fase e **nunca** por "tem valor de projeção preenchido".
+>
+> ⚠️ **A conferência achou um bug de segurança na guarda** das RPCs do painel — inclusive a do
+> Financeiro **em produção**. Corrigido e aplicado
+> ([`20260731c`](../../../supabase/migrations/20260731c_ceo_guard_null_safe.sql), [fix
+> documentado](../fixes/correcao-guarda-ceo-null.md)).
+>
+> **Arquivos entregues:** [`20260731b_negociacao_schema.sql`](../../../supabase/migrations/20260731b_negociacao_schema.sql)
+> · [`20260731c_ceo_guard_null_safe.sql`](../../../supabase/migrations/20260731c_ceo_guard_null_safe.sql)
+> · [`20260803_negociacao_fase_unica.sql`](../../../supabase/migrations/20260803_negociacao_fase_unica.sql)
+> · `scripts/import-negociacao.mjs` (`npm run import:negociacao`) · `scripts/verify-negociacao.mjs`
+> (`npm run verify:negociacao`) · `scripts/probe-negociacao-fields.mjs` (`npm run probe:negociacao`)
+> · `getCeoProjecoes` em `src/app/actions/ceo.ts` · tipos em `src/lib/types/database.ts` ·
+> `src/features/ceo/components/CeoProjecoes.tsx` · aba ligada em `src/app/ceo/CeoClient.tsx` ·
+> env `NEGOCIACAO_PIPEFY_PIPE_ID` · doc do Make.
+
+**Estado das duas metades — mudou em relação ao plano original:**
+
+- **CS: destravado no código, mas SEM DADO.** A P4 (Pagamento) do painel de CS **já foi construída**
+  — [`20260730b_cs_pagamento.sql`](../../../supabase/migrations/20260730b_cs_pagamento.sql) está
+  aplicada e traz `get_cs_pagamento_projecao()` + `get_cs_pagamento_historico()`. ⚠️ **Mas a
+  operação ainda não usa a fase:** conferido ao vivo em 31/jul, a fase "Aguardando Pagamento"
+  (`343781769`) tem **1 card, "teste filipe"**, e **1 de 1.493 `cs_cards`** tem o plano de pagamento
+  preenchido — o mesmo card de teste. `cs_card_payments` tem 1 linha.
+  ⚠️ **Os field-ids que este roadmap listava estavam errados**: não são `valor_da_parcela` /
+  `data_de_vencimento_da_parcela_do_cliente` / `data_da_quita_o` (esses são os campos das
+  **minutas**). O plano de pagamento do CS mora em slugs irregulares, teto de 3 parcelas:
+  `1_parcela_valor`/`1_parcela_data_do_pagamento`, `copy_of_1_parcela_valor`/`copy_of_1_parcela_data_do_pagamento`,
+  `copy_of_2_parcela_valor`/`copy_of_2_parcela_data_do_pagamento`.
+  → `get_ceo_projecoes_cs()` vira um wrapper fino com a guarda `ceo`/`admin` sobre os mesmos slugs.
+  **Escrevê-la hoje entrega uma aba que mostra 1 card de teste** — a decisão de valer a pena é do dono.
+- **Negociação: mapeada, pronta pra construir.** Vertical isolada (clone do Financeiro): migration
+  `AAAAMMDD_negociacao_schema.sql` (`neg_cards` + `neg_parse_money`/`neg_parse_date` +
+  `ingest_negociacao_card`), backfill `scripts/import-negociacao.mjs`, env
+  `NEGOCIACAO_PIPEFY_PIPE_ID=304370275`, cenário Make, RPC `get_ceo_projecoes_negociacao()`.
+
+**Os três achados que mudam o desenho** (detalhe em
+[`introspeccao-pipefy-negociacao.md`](introspeccao-pipefy-negociacao.md)):
+
+1. ⚠️ **O realizado da Negociação já está no Financeiro.** O conector `lan_ar_pagamento` da fase
+   aponta para o pipe `304386356` — o mesmo do Sprint 1. `neg_cards` fornece **só a projeção**;
+   somar o realizado contaria o mesmo dinheiro duas vezes entre as abas.
+2. ⚠️ **`o_pagamento_foi_reaizado = 'Sim'` ⟺ tem conexão com o Financeiro, em 24/24 cards.** É o
+   sinal anti-dupla-contagem, e é barato (está no `metadata`). Sem ele a projeção da fase é
+   R$ 10.500,00; com ele, **R$ 4.000,00** — os outros R$ 6.500,00 já entraram.
+3. **A fase de projeção é `326422800`, e SÓ ela.** 6 dos 14 cards não têm valor nem data nos campos
+   da própria fase — nesses o sinal é a 2ª parcela da venda, quase sempre vencida. ❌ Eu havia
+   recomendado incluir também **"Pré - Triagem - 2° Parcela📝"** (`338815768`), por estar bem mais
+   preenchida; **o dono corrigiu em 03/ago: aquela fase é do COMERCIAL** e não é projeção deste
+   painel. Removida em
+   [`20260803_negociacao_fase_unica.sql`](../../../supabase/migrations/20260803_negociacao_fase_unica.sql).
+   **Lição: densidade de preenchimento não é sinal de pertencimento** — nenhuma query distingue
+   "espera de pagamento da Negociação" de "espera de pagamento do Comercial dentro do mesmo pipe".
+
+**⚠️ Armadilha de formato deste pipe — o inverso da do Financeiro.** Lá `datetime_value` vinha
+sempre `null`. Aqui os campos `datetime`/`due_date` trazem `datetime_value` em **100%** dos casos —
+**em UTC**, enquanto o `value` é local (BRT). **79 de 968 cards (8,2%)** têm o **dia divergente**
+entre os dois (`"06/08/2026 21:00"` → `"2026-08-07T00:00Z"`). **A ingestão lê `value`, nunca
+`datetime_value`.** `neg_parse_date` é clone fiel de `fin_parse_date` (confirmado ao vivo: ele já
+engole `DD/MM/YYYY HH:MM` porque a regex não é ancorada e ele faz `left(s,10)`).
+
 - **Frontend — aba "Projeções":** timeline/gráfico "quando/quanto vão pagar" somando CS + Negociação +
   `KpiCard`s de total projetado por janela (vencidas / ≤30d / 31–90d / 90+).
 
-**Dependência do dono:** ID do pipe Negociação + field-ids + id da fase "Aguardando Pagamento" dele.
-Coletar com as mesmas queries de
-[`introspeccao-pipefy-financeiro.md`](introspeccao-pipefy-financeiro.md) (só troca o `pipeId`) ou
-`node scripts/probe-financeiro-fields.mjs <pipeId>`. Candidato na org: **`304370275` — "3.0
-Negociação"** (confirmar com o dono; há também `306994213` "2.1 - Controle de Vendas").
+~~**Dependência do dono:** ID do pipe Negociação + field-ids + id da fase~~ — **fechado em 31/jul**.
+O pipe é `304370275`; o candidato `306994213` ("2.1 - Controle de Vendas") está **descartado** (0
+cards em todas as 8 fases, nunca usado).
+
+**Decisões do dono — todas tomadas em 31/jul, pelas recomendações:**
+
+| # | Pergunta | Resposta | Onde vive |
+|---|---|---|---|
+| 1 | Projeção sai só de `326422800` ou também de `338815768`? | **SÓ `326422800`** — a outra é do Comercial | `neg_is_waiting_phase()` (corrigida na `20260803`) |
+| 2 | Card com `o_pagamento_foi_reaizado = 'Sim'` entra? | **Não** | filtro `paid_flag` na RPC |
+| 3 | 2ª parcela vencida é projeção ou inadimplência? | **Projeção**, janela "vencidas" | `window_key` na RPC |
+| 4 | Escrever `get_ceo_projecoes_cs()` com o CS sem dado? | **Sim** — volta vazia hoje | PARTE 6 da migration |
+
+**Decisão de desenho que veio junto: COALESCE, não soma.** Um card pode ter os dois sinais
+preenchidos e eles não são dívidas somáveis — real (`#1348129801`): venda de R$ 890,00, 2ª parcela
+de R$ 590,00 vencida, e um pagamento agendado de R$ 1.500,00. Somar daria R$ 2.090,00 a receber num
+contrato de R$ 890,00. O agendamento da fase **supersede** a parcela antiga. Por isso `neg_projection()`
+é COALESCE por prioridade e **não há tabela-filha** aqui (o Financeiro precisou de `fin_entries`
+porque lá um card guardava vários pagamentos **históricos já ocorridos** — problema diferente).
 
 ---
 
@@ -279,8 +374,40 @@ a ponte `profile_id` ou mapear por nome). Por isso é o último — maior esfor�
 
 ## Riscos & dependências (resumo)
 - ~~**Financeiro**: pipe ID + field-ids~~ — resolvido em 31/jul
-  ([`introspeccao-pipefy-financeiro.md`](introspeccao-pipefy-financeiro.md)). **Negociação** ainda
-  pendente (Sprint 2). Migrations e cenários Make continuam aplicados **à mão** pelo dono.
+  ([`introspeccao-pipefy-financeiro.md`](introspeccao-pipefy-financeiro.md)).
+  ~~**Negociação** ainda pendente~~ — **resolvido em 31/jul** (`304370275`,
+  [`introspeccao-pipefy-negociacao.md`](introspeccao-pipefy-negociacao.md)). Migrations e cenários
+  Make continuam aplicados **à mão** pelo dono.
+- ⚠️ **Contagem dupla entre as abas Financeiro e Projeções** (Sprint 2): o realizado da Negociação
+  entra no pipe do Financeiro pelo conector `lan_ar_pagamento`, então já está em `fin_entries`. A
+  projeção tem que excluir card com `o_pagamento_foi_reaizado = 'Sim'` — sem isso a projeção da fase
+  infla 160% (R$ 10.500 em vez de R$ 4.000).
+- ⚠️ **`datetime_value` do Pipefy vem em UTC** (Sprint 2): nos campos `datetime`/`due_date` ele
+  existe e parece o campo "pronto", mas 8,2% dos cards caem no **dia errado** por causa do fuso.
+  Parse sempre o `value`. Generaliza a regra do `DD/MM/YYYY` do Sprint 1.
+- ⚠️ **A projeção do CS não tem dado real** (Sprint 2): a P4 está construída e aplicada, mas a fase
+  "Aguardando Pagamento" tem só o card "teste filipe" (1 de 1.493 `cs_cards`). O bloqueio é de
+  **adoção da operação**, não de código — nenhuma RPC resolve.
+- ⚠️ **`CREATE OR REPLACE` da mesma função em duas migrations = a última que rodar vence**
+  (mordeu em 03/ago). A `20260803` corrige `neg_is_waiting_phase`, mas a `20260731b` também a
+  define — reexecutar a antiga desfaz a correção **sem erro nenhum**. É o mesmo tipo de falha
+  silenciosa do resto deste projeto: nada quebra, só o número fica errado. Os dois arquivos têm
+  aviso no ponto exato, e a conferência barata é
+  `SELECT public.neg_is_waiting_phase('338815768');` → **false**.
+- ⚠️ **CARD APAGADO NO PIPEFY NÃO SOME DO SUPABASE** (descoberto em 03/ago, vale para **todos** os
+  domínios: `cs_cards`, `fin_cards`, `neg_cards`, leads). A ingestão é upsert por `pipefy_card_id`
+  e o poll por delta só enxerga o que **existe**; não há sincronização de exclusão. O card fica no
+  banco para sempre e continua sendo somado.
+  Foi assim que o "teste filipe" reapareceu na aba Projeções depois de o dono apagá-lo no Pipefy:
+  a API do Pipefy já responde "Acesso negado" para o card `1421641222`, mas a linha em `cs_cards`
+  (e a de `cs_card_payments`) seguem lá. Limpeza é manual hoje. Se isso virar recorrente, a saída
+  é o backfill marcar como `deleted_at` quem não voltou na varredura completa — mas aí o backfill
+  passa a ser autoridade sobre exclusão, o que é uma decisão, não um detalhe.
+- ⚠️ ~~**A guarda `ceo_current_role()` não bloqueava com papel NULL**~~ — **corrigido em 31/jul**
+  ([`20260731c_ceo_guard_null_safe.sql`](../../../supabase/migrations/20260731c_ceo_guard_null_safe.sql),
+  [fix documentado](../fixes/correcao-guarda-ceo-null.md)). `NULL NOT IN (...)` é NULL, não TRUE, e
+  `IF NULL THEN` não entra — a guarda caía direto no corpo da função. Afetava as 4 RPCs do painel,
+  inclusive a do Financeiro em produção.
 - **Qualidade do dado do Financeiro**: 2 grupos em 360 cards têm mesmo contrato + mesmo valor +
   mesma categoria + mesmo dia (suspeita forte de lançamento em duplicata). Vira **aviso** na aba, não
   dedupe — o mesmo contrato com categorias diferentes é dado legítimo.
@@ -315,7 +442,27 @@ a ponte `profile_id` ou mapear por nome). Por isso é o último — maior esfor�
   perdido, nada contado em dobro, sinal aplicado. Ela **não** prova que as *regras de negócio* são as
   certas — se "qual valor é a entrada" ou "quais fases contam" estiver errado, as duas implementações
   erram junto. Essa parte é leitura do dono: o número do mês tem que fazer sentido pra ele.
-- **Projeções** (S2): somatório projetado por janela bate com os cards em "Aguardando Pagamento".
+- **Projeções** (S2): `npm run verify:negociacao`
+  ([`scripts/verify-negociacao.mjs`](../../../scripts/verify-negociacao.mjs)) — mesmo molde do
+  Financeiro: reimplementa em JS as regras da migration (parsers, prioridade do sinal, filtro de
+  fase, filtro de pago), recomputa do **Pipefy cru** e compara card a card com `neg_cards`.
+  Roda **antes** da migration em modo **prévia** (mostra o número que vai dar) e depois em modo
+  conferência. Resultado em 03/ago, já com o banco carregado: **3.343/3.343 cards, 0 divergências
+  de dado, R$ 10.000,00 em 8 cards** batendo dos dois lados (R$ 4.750,00 vencidos / R$ 5.250,00 a
+  vencer ≤30d), 5 do sinal `parcela2` e 3 do sinal `fase`.
+
+  **Defasagem de fase não reprova.** O script separa divergência de DADO (valor/data/sinal/pago —
+  erro de ingestão) de card que mudou de fase depois da carga (o poll do Make ainda não passou —
+  normal num sistema vivo). Só chama atenção quando a fase defasada é a de projeção, porque aí a
+  aba mostra número velho. Em 03/ago: 1 card defasado, fora da fase de projeção.
+
+  Ele confere duas coisas que o do Financeiro não precisava:
+  - **Anti-dupla-contagem:** quanto está nas fases de espera já marcado como pago (R$ 7.898,60 em
+    7 cards) — dinheiro que já está em `fin_entries` e tem que ficar **fora** da projeção. Sem esse
+    filtro a projeção inflaria ~50%.
+  - **Alarme de fuso:** quantos campos de data têm o dia local ≠ o dia do `datetime_value` (79). É
+    um número informativo permanente — se alguém trocar a ingestão pra ler `datetime_value`, as
+    divergências card a card saem de 0 e o script falha.
 
 ## Referências
 

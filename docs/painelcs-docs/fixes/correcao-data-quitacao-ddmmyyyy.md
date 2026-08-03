@@ -1,7 +1,15 @@
 # Correção crítica — vencimento da minuta trocando dia/mês (DD/MM ↔ MM/DD)
 
 **Data:** 2026-07-30 · **Migration:** `supabase/migrations/20260730_cs_parse_date_ptbr.sql`
-(pendente de aplicação manual pelo dono) · **Frontend:** nenhuma mudança.
+✅ **aplicada** (confirmado por chamada ao vivo em 31/jul: `cs_parse_date('08/04/2026')` →
+`2026-04-08`, e não `2026-08-04`) · **Frontend:** nenhuma mudança.
+
+> **A mesma armadilha reapareceu no dia seguinte, em outro domínio.** O pipe do Financeiro
+> (Painel do CEO, Sprint 1) também manda `DD/MM/YYYY` com `datetime_value` nulo. Lá o
+> `fin_parse_date` já nasceu com `to_date(...,'DD/MM/YYYY')` **porque este fix existia** — foi a
+> amostra de valores reais que denunciou, antes de escrever o parser. Ver
+> [`introspeccao-pipefy-financeiro.md`](../../projetopainelceo-docs/updates/introspeccao-pipefy-financeiro.md).
+> Conclusão pra qualquer pipe novo: **nunca assumir ISO em campo `date` do Pipefy.**
 
 ## Sintoma
 

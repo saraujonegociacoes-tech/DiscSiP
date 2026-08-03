@@ -79,7 +79,7 @@ Domínio de produto separado do discador **e** do dashboard de Leads (código/da
 - [`cs-pagina1-alternativas-viz.txt`](painelcs-docs/updates/cs-pagina1-alternativas-viz.txt) — notas de alternativas de visualização da Página 1
 
 ## `fixes/`
-- [`correcao-data-quitacao-ddmmyyyy.md`](painelcs-docs/fixes/correcao-data-quitacao-ddmmyyyy.md) — vencimento da minuta trocava dia/mês: `data_da_quita_o` vem em `DD/MM/YYYY` (não ISO) e o `::date` castava em MDY. `cs_parse_date` passa a converter pt-BR explícito (migration `20260730`, **pendente de aplicar**).
+- [`correcao-data-quitacao-ddmmyyyy.md`](painelcs-docs/fixes/correcao-data-quitacao-ddmmyyyy.md) — vencimento da minuta trocava dia/mês: `data_da_quita_o` vem em `DD/MM/YYYY` (não ISO) e o `::date` castava em MDY. `cs_parse_date` passa a converter pt-BR explícito (migration `20260730_cs_parse_date_ptbr.sql`, **aplicada** — confirmado ao vivo em 31/jul). A mesma armadilha reapareceu no Financeiro do Painel do CEO: **campo `date` do Pipefy não vem em ISO.** E o pipe de Negociação fechou a regra pelo outro lado — lá o `datetime_value` **existe** (campos `datetime`/`due_date`), mas **em UTC**, e 8,2% dos cards caem no dia seguinte por isso. A regra completa: **parse sempre o `value`; o `datetime_value` ou não existe ou está em UTC.**
 
 ---
 
@@ -159,4 +159,9 @@ completo em [`updates/painel-ceo-indice.md`](projetopainelceo-docs/updates/paine
 - [`painel-ceo-indice.md`](projetopainelceo-docs/updates/painel-ceo-indice.md) — índice/estado do painel do CEO
 - [`painel-ceo-sprints.md`](projetopainelceo-docs/updates/painel-ceo-sprints.md) — roadmap em sprints (S0→S4: Fundação/trava · Financeiro · Projeções · Saúde da Empresa · Saúde da Equipe) + decisões travadas
 - [`introspeccao-pipefy-financeiro.md`](projetopainelceo-docs/updates/introspeccao-pipefy-financeiro.md) — mapeamento do pipe Financeiro (field-ids, parsers, achados) + as queries de introspecção reutilizáveis
+- [`introspeccao-pipefy-negociacao.md`](projetopainelceo-docs/updates/introspeccao-pipefy-negociacao.md) — mapeamento do pipe Negociação `304370275` (Sprint 2): fase da projeção, field-ids, parsers e 8 achados. Dois deles mudam o desenho: o **realizado já cai no pipe do Financeiro** (risco de contagem dupla) e o **`datetime_value` vem em UTC** (8,2% dos cards no dia errado)
 - [`make-integracao-financeiro.md`](projetopainelceo-docs/updates/make-integracao-financeiro.md) — cenário Pipefy → Make → Supabase do Financeiro
+- [`make-integracao-negociacao.md`](projetopainelceo-docs/updates/make-integracao-negociacao.md) — cenário Pipefy → Make → Supabase da Negociação (Sprint 2). Traz **só projeção**: o realizado desse pipe já entra pelo cenário do Financeiro
+
+## `fixes/`
+- [`correcao-guarda-ceo-null.md`](projetopainelceo-docs/fixes/correcao-guarda-ceo-null.md) — a guarda das RPCs do CEO **não bloqueava** quando `ceo_current_role()` devolvia NULL: `NULL NOT IN (...)` é NULL, não TRUE, e `IF NULL THEN` não entra. Afetava as 4 RPCs do painel, inclusive a do Financeiro em produção. Corrigido na origem (o helper nunca mais devolve NULL) — migration `20260731c_ceo_guard_null_safe.sql`

@@ -26,21 +26,27 @@ travadas, e [`../links.md`](../../links.md) (índice geral por domínio).
 > backfill `npm run import:financeiro`, aba Financeiro construída e doc do cenário Make.
 > Mapeamento e achados em [`introspeccao-pipefy-financeiro.md`](introspeccao-pipefy-financeiro.md).
 >
-> **O dono executou em 31/jul:** migration aplicada · carga histórica rodada · cenário Make
-> montado · `NEXT_PUBLIC_CEO_ENABLED=1` no `.env`. A aba está servindo dado real.
+> **✅ SPRINT 1 FECHADA (31/jul) — testada pelo dono na tela, funcionando.** Ele aplicou a
+> migration, rodou a carga histórica, montou o cenário Make, ligou
+> `NEXT_PUBLIC_CEO_ENABLED=1` e abriu o painel: a aba Financeiro traz dado real.
 >
-> **Conferência numérica: ✅ passou (31/jul)** — `npm run verify:financeiro` recomputa as entradas
-> do Pipefy cru e compara com o banco: **4.549/4.549 cards**, **5.348 pagamentos** (3.212 por
-> parcela + 2.136 por card — as duas convenções), **0 divergências card a card**, **32/32 meses
-> batendo**, total geral **R$ 7.310.222,27** idêntico dos dois lados.
+> **Três camadas de verificação, todas verdes:**
+> 1. **Ingestão** — `npm run verify:financeiro`: **4.549/4.549 cards**, **5.348 pagamentos**
+>    (3.212 `parcela` + 2.136 `card` — as duas convenções), **0 divergências card a card**,
+>    **32/32 meses**, total **R$ 7.310.222,27** idêntico ao Pipefy recomputado.
+> 2. **Funções no banco (chamadas ao vivo, 31/jul)** — `fin_parse_date('10/07/2026')` →
+>    `2026-07-10` e `('08/04/2026')` → `2026-04-08` (sem troca dia/mês);
+>    `fin_parse_money('1.500,00')` → `1500.00`; `fin_entry_sign` → `-1` em desconto/devolução e
+>    `1` em distrato.
+> 3. **Tela** — aberta pelo dono, com sessão real. Era a única camada que dependia dele.
 
 ## Roadmap em sprints — estado atual
 
 | Sprint | Entrega | Base de dado | Estado |
 |---|---|---|---|
 | 0 | **Fundação & trava** — papel `ceo`, rota `/ceo` (esqueleto multi-abas), helper `ceo_current_role()`, docs | — | ✅ **fechada** (30/jul) · trava testada pelo dono em 31/jul |
-| 1 | **Financeiro — entradas do mês** (carro-chefe) — pipe Financeiro novo (vertical isolada), KPIs + série mensal | `fin_cards` + `fin_entries` (pipe `304386356`) | ✅ **código entregue** (31/jul) · falta aplicar migration + backfill + Make |
-| 2 | **Projeções de pagamento** — CS reusado + pipe Negociação novo (fase "Aguardando Pagamento") | Snapshot (CS + Negociação) | ⏳ não iniciada |
+| 1 | **Financeiro — entradas do mês** (carro-chefe) — pipe Financeiro novo (vertical isolada), KPIs + série mensal | `fin_cards` + `fin_entries` (pipe `304386356`) | ✅ **fechada** (31/jul) — no ar, conferida e testada na tela |
+| 2 | **Projeções de pagamento** — CS reusado + pipe Negociação novo (fase "Aguardando pagamento") | `neg_cards` (pipe `304370275`) + plano do CS | ✅ **fechada** (03/ago) — no ar, conferida (3.343/3.343, 0 divergências) e concluída pelo dono |
 | 3 | **Saúde da empresa** — scorecard compondo Financeiro + Leads + CS + Monday + Discador | Agregação multi-domínio | ⏳ não iniciada |
 | 4 | **Saúde da equipe / colaboradores** — saúde por pessoa (CS + Leads + Monday + Discador) | Agregação multi-domínio | ⏳ não iniciada |
 
@@ -53,9 +59,12 @@ O painel puxa de **3 pipes** (mais os domínios já ingeridos para a saúde da e
 - **CS** — já integrado (pipe "3.3 - Customer Success", id `305801110`). **Reusado** para as
   projeções (fase "Aguardando Pagamento", id `343781769`, já seedada/ingerida). Ver
   [`dashboard-cs-indice.md`](../../painelcs-docs/updates/dashboard-cs-indice.md).
-- **Negociação** — pipe próprio, **ainda não integrado**. Ingestão nova como vertical isolada
-  (`neg_cards` + `ingest_negociacao_card`), só o essencial da fase "Aguardando Pagamento". É o
-  **único a construir do zero** na parte de projeção.
+- **Negociação** — pipe **`304370275`** ("3.0 Negociação", 3.342 cards), **mapeado em 31/jul**
+  ([`introspeccao-pipefy-negociacao.md`](introspeccao-pipefy-negociacao.md)), ainda não integrado.
+  Ingestão nova como vertical isolada (`neg_cards` + `ingest_negociacao_card`), só o essencial das
+  fases de espera de pagamento. É o **único a construir do zero** na parte de projeção.
+  ⚠️ O **realizado** desse pipe já cai no pipe do Financeiro (conector `lan_ar_pagamento`), então
+  `neg_cards` fornece **só a projeção** — somar os dois contaria o mesmo dinheiro duas vezes.
 
 ## Trava de acesso (papel `ceo`) — implementado no Sprint 0
 
@@ -166,19 +175,105 @@ valores reais e da varredura de até 1.200 cards):
 **A Sprint 1 está fechada (31/jul):** código entregue, migration aplicada, carga histórica rodada,
 Make montado, flag ligada e conferência batendo 100%. A aba Financeiro serve dado real.
 
-**A Sprint 2 (Projeções de pagamento) é a próxima.** Ela tem duas metades bem diferentes:
+**A Sprint 2 (Projeções de pagamento) — NO AR desde 03/ago.** As 4 decisões do dono foram tomadas
+(a #1 **contra** a minha recomendação — ver abaixo) e a vertical foi construída:
+[`20260731b_negociacao_schema.sql`](../../../supabase/migrations/20260731b_negociacao_schema.sql)
+(`neg_cards` + parsers + `ingest_negociacao_card` + `get_ceo_projecoes_negociacao` +
+`get_ceo_projecoes_cs` + `get_ceo_projecoes`), backfill `npm run import:negociacao`, conferência
+`npm run verify:negociacao`, aba `CeoProjecoes` e doc do Make.
 
-- **CS — reusar (não bloqueado).** A fase "Aguardando Pagamento" (`343781769`) já é ingerida; falta
-  só a RPC de leitura `get_ceo_projecoes_cs()` com a guarda `ceo`/`admin`. Dá pra escrever agora.
-- **Negociação — integrar do zero (bloqueado em 1 input).** Precisa do **pipe ID + field-ids + id da
-  fase "Aguardando Pagamento"** desse pipe. Mesmo caminho do Financeiro, que agora é mecânico:
-  `node scripts/probe-financeiro-fields.mjs <pipeId>` (o probe é agnóstico de pipe) e
-  `--scan N` pra medir os riscos de schema antes de escrever a migration. Candidato na org:
-  **`304370275` — "3.0 Negociação"** (confirmar; há também `306994213` "2.1 - Controle de Vendas").
+**Executado pelo dono em 03/ago:** ✅ [`20260731b`](../../../supabase/migrations/20260731b_negociacao_schema.sql)
+(schema/ingestão/RPCs) · ✅ [`20260731c`](../../../supabase/migrations/20260731c_ceo_guard_null_safe.sql)
+(guarda) · ✅ `npm run import:negociacao` (3.343 cards) · ✅ cenário Make ·
+✅ card de teste órfão do CS removido.
 
-**Lição do Sprint 1 a repetir no 2:** rodar o `--scan` com páginas suficientes pra alcançar os anos
-antigos **antes** de fechar o schema. Foi assim que apareceu a mudança de convenção do Financeiro,
-que uma amostra só de cards recentes tinha escondido.
+✅ [`20260803`](../../../supabase/migrations/20260803_negociacao_fase_unica.sql) (fase única)
+aplicada e confirmada ao vivo — `neg_is_waiting_phase('338815768')` → `false`.
+
+⚠️ Ela **rodou sem efeito na primeira tentativa**: a `20260731b` redefine a mesma função com a
+versão de duas fases, então reexecutar aquele arquivo desfaz a correção **em silêncio**. Os dois
+ganharam aviso no ponto exato. Conferência que pega:
+`SELECT public.neg_is_waiting_phase('338815768');` → **false**.
+
+**A Sprint 2 está fechada (03/ago):** código entregue, 3 migrations aplicadas, backfill rodado,
+Make montado, conferência batendo e o dono deu por concluída.
+
+**Conferência: ✅ passou** (`npm run verify:negociacao`, 03/ago) — 3.343/3.343 cards, 0 faltando,
+**0 divergências de dado**, e o total bate dos dois lados: **R$ 10.000,00 em 8 cards**
+(R$ 4.750,00 vencidos em 5 cards · R$ 5.250,00 a vencer em até 30 dias em 3). Por sinal: 5 de
+`parcela2`, 3 de `fase`.
+
+⚠️ Também em 03/ago, a conferência achou um **bug de segurança na guarda** das RPCs do painel —
+`ceo_current_role()` devolvia NULL e `NULL NOT IN (...)` não bloqueia. Afetava as 4 RPCs, inclusive
+a do Financeiro **em produção**. Corrigido e aplicado
+([`20260731c`](../../../supabase/migrations/20260731c_ceo_guard_null_safe.sql), [fix
+documentado](../fixes/correcao-guarda-ceo-null.md)); confirmado ao vivo que as 4 voltam `NULL` para
+quem não é `ceo`/`admin`.
+
+O mapeamento completo está em
+[`introspeccao-pipefy-negociacao.md`](introspeccao-pipefy-negociacao.md). Resumo:
+
+1. ~~ID do pipe~~ → **`304370275`** ("3.0 Negociação", 3.342 cards), env `NEGOCIACAO_PIPEFY_PIPE_ID`.
+   O candidato alternativo `306994213` ("2.1 - Controle de Vendas") está **descartado**: 0 cards em
+   todas as 8 fases, pipe montado e nunca usado.
+2. ~~Field-ids + fase~~ → fase **`326422800`** ("Aguardando pagamento ⏳💰", 14 cards); valor =
+   `informe_o_valor_do_pagamento`, data = `informe_a_data_agendada_para_o_pagamento_1`, flag de pago
+   = `o_pagamento_foi_reaizado`, categoria = `sele_o_de_lista` ("Produto contratado", 100%
+   preenchido).
+3. Parsers → **clones fiéis dos do Financeiro** (`fin_parse_date` já engole `DD/MM/YYYY HH:MM`,
+   confirmado por chamada ao vivo).
+
+**Três achados que mudaram o desenho** (nenhum aparecia na lista de field-ids):
+
+- ⚠️ **O realizado da Negociação já está no Financeiro.** O conector `lan_ar_pagamento` da fase
+  aponta para o pipe `304386356` — o mesmo do Sprint 1, e os cards ligados estão em "Pagamento
+  finalizado". `neg_cards` fornece **só a projeção**; somar o realizado contaria o mesmo dinheiro
+  duas vezes entre as abas Financeiro e Projeções.
+- ⚠️ **`o_pagamento_foi_reaizado = 'Sim'` ⟺ tem conexão com o Financeiro — em 24/24 cards.**
+  Correlação perfeita, então o flag é o sinal anti-dupla-contagem, e é barato (está no `metadata`).
+  Sem ele a projeção da fase é R$ 10.500,00; com ele, **R$ 4.000,00**.
+- **A fase de projeção é `326422800`, e só ela.** 6 dos 14 cards não têm valor nem data nos campos
+  da fase — nesses o sinal é a 2ª parcela da venda, quase sempre vencida. ❌ Eu havia recomendado
+  incluir também **"Pré - Triagem - 2° Parcela📝"** (`338815768`) por estar mais bem preenchida;
+  **o dono corrigiu em 03/ago — aquela fase é do Comercial.** Removida na
+  [`20260803`](../../../supabase/migrations/20260803_negociacao_fase_unica.sql). Lição:
+  **densidade de preenchimento não é sinal de pertencimento.**
+
+**A armadilha de formato deste pipe é o INVERSO da do Financeiro.** Lá `datetime_value` vinha sempre
+`null` e a regra virou "use `value`, é o que existe". Aqui os campos `datetime`/`due_date` trazem
+`datetime_value` em **100%** dos casos — e **em UTC**, enquanto o `value` é local. **79 de 968 cards
+(8,2%)** caem no **dia errado** por isso (`"06/08/2026 21:00"` → `"2026-08-07T00:00Z"`). Demonstrado
+ao vivo: `fin_parse_date('2026-08-07T00:00:54+00:00')` → `2026-08-07`, errado;
+`fin_parse_date('06/08/2026 21:00')` → `2026-08-06`, certo. A regra do repo vira:
+> **Campo de data do Pipefy: parse sempre o `value`. O `datetime_value` ou não existe (`date`) ou
+> está em UTC (`datetime`/`due_date`).**
+
+⚠️ **A metade do CS não está bloqueada por código, está sem dado.** A P4 do painel de CS **já foi
+construída** ([`20260730b_cs_pagamento.sql`](../../../supabase/migrations/20260730b_cs_pagamento.sql),
+aplicada, com `get_cs_pagamento_projecao()`), e este índice dizia que ela não existia. Mas conferido
+ao vivo em 31/jul: a fase "Aguardando Pagamento" (`343781769`) tinha **1 card, "teste filipe"**, e
+**1 de 1.493 `cs_cards`** com plano de pagamento preenchido — o mesmo card, que o dono depois
+apagou. Ou seja: **o CS hoje contribui zero para a projeção.**
+
+Mesmo assim `get_ceo_projecoes_cs()` **foi escrita** (decisão do dono): ela é mecânica, os slugs já
+estão provados pela migration aplicada, e assim a aba soma CS + Negociação sem retrabalho no dia em
+que a operação adotar a fase. Ela volta vazia hoje, e **isso é esperado, não bug** — a aba mostra o
+total **por origem** justamente pra que o zero do CS apareça como causa explícita, em vez de virar
+um número que "parece baixo". Os field-ids que este índice listava estavam errados (eram os das
+**minutas**); os certos são `1_parcela_valor`/`1_parcela_data_do_pagamento` + os `copy_of_*`.
+
+**A lição do Sprint 1 foi aplicada:** a varredura cobriu o **pipe inteiro** (3.342 cards, 112
+páginas), não uma amostra recente. Desta vez não havia quebra de convenção escondida — o formato é
+uniforme desde 2024; o que muda por ano é só o quanto os campos são usados.
+
+~~**Falta decidir (bloqueia a migration)**~~ — **as 4 decisões saíram em 31/jul**, todas pelas
+recomendações: projeção das **duas** fases de espera · card já pago **fora** · 2ª parcela vencida
+**é** projeção (em janela própria) · RPC do CS **escrita** mesmo sem dado.
+
+**Próximo passo daqui: Sprint 3 (Saúde da empresa).** O risco conhecido dela continua de pé e é o
+primeiro bloqueio a atacar: as RPCs/tabelas base de **Leads não estão versionadas** no repo (só na
+base ao vivo, `supabase/manual/leads_dashboard_setup.sql` ausente em todos os worktrees) — extrair
+do Supabase antes de depender delas.
 
 **Ponto menor em aberto:** se os campos de desconto de um pagamento normal
 (`informe_a_soma_total_dos_descontos_conforme_a_listagem_acima` + a checklist) deveriam afetar o

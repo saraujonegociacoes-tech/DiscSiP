@@ -484,6 +484,59 @@ export interface CeoFinanceiroData {
   duplicates: CeoFinanceiroDuplicate[]
 }
 
+// ABA 2 (Projeções): get_ceo_projecoes(), migration 20260731b_negociacao_schema.sql.
+// SNAPSHOT, não série — "quem deve, quanto e quando", olhando o presente. Por isso não
+// tem período: a janela aqui é de VENCIMENTO, calculada contra hoje em BRT.
+//
+// ⚠️ Só dinheiro NÃO recebido. O realizado das duas fontes já entra no pipe do
+// Financeiro (conectores "Lançar pagamento" na Negociação e "Subir pagamento" no CS) e
+// portanto já está em `fin_entries`, contado na aba Financeiro. Somar as duas abas
+// contaria o mesmo dinheiro duas vezes.
+
+/** Janela de vencimento de uma projeção, relativa a hoje. */
+export type CeoProjecaoWindow = 'vencida' | 'ate30' | 'd31a90' | 'mais90'
+
+/** Total consolidado de uma janela (as duas fontes somadas). */
+export interface CeoProjecaoWindowTotal {
+  total: number
+  count: number
+}
+
+/** Total de uma das fontes, para o CEO saber de onde vem o dinheiro. */
+export interface CeoProjecaoSourceTotal {
+  total: number
+  count: number
+}
+
+/** Um pagamento projetado. */
+export interface CeoProjecaoItem {
+  source: 'negociacao' | 'cs'
+  pipefyCardId: string
+  client: string
+  product: string // Negociação: "Produto contratado". CS: "Parcela N".
+  phase: string
+  value: number
+  dueDate: string // ISO date
+  window: CeoProjecaoWindow
+  /**
+   * De qual sinal a projeção saiu — `'fase'` (pagamento agendado na própria fase),
+   * `'parcela2'` (2ª parcela da venda) ou `'plano'` (plano de pagamento do CS).
+   */
+  signal: string | null
+  totalValue: number | null // valor total do contrato, quando existe
+}
+
+export interface CeoProjecaoData {
+  referenceDate: string // ISO date — o "hoje" que classificou as janelas (BRT)
+  total: number
+  count: number
+  negociacao: CeoProjecaoSourceTotal
+  cs: CeoProjecaoSourceTotal
+  byProduct: CeoFinanceiroBucket[] // só Negociação (o CS não tem produto por parcela)
+  byWindow: Partial<Record<CeoProjecaoWindow, CeoProjecaoWindowTotal>>
+  items: CeoProjecaoItem[]
+}
+
 // ── Aquecimento de números WhatsApp — domínio SEPARADO ──────────────────────
 // Espelham as tabelas de supabase/migrations/20260719_warmup_schema.sql. Módulo
 // sensível: só manager/admin leem/configuram (RLS). As tabelas de execução
