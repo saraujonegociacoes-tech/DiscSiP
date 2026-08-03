@@ -84,6 +84,23 @@ valor_de_contrata_o      [currency] value="1.500,00"    datetime_value=null
 
 > Este é o item que só a **amostra de valores reais** pega — a lista de field-ids sozinha diria
 > `type: date` e a gente teria clonado o parser errado.
+>
+> **Não é hipótese: o CS levou exatamente esse bug em produção no dia anterior.** O
+> `data_da_quita_o` também vem em `DD/MM/YYYY`, o `::date` castou em MDY e o vencimento das
+> minutas apareceu com dia e mês trocados (08/04 virou 04/08) — ver
+> [`correcao-data-quitacao-ddmmyyyy.md`](../../painelcs-docs/fixes/correcao-data-quitacao-ddmmyyyy.md).
+> No Financeiro o erro não chegou a acontecer porque a amostra veio antes do parser.
+> **Regra pra todo pipe novo: campo `date` do Pipefy não vem em ISO.**
+
+**Confirmado ao vivo no banco (31/jul), depois da migration aplicada:**
+
+| chamada | resultado |
+|---|---|
+| `fin_parse_date('10/07/2026')` | `2026-07-10` |
+| `fin_parse_date('08/04/2026')` | `2026-04-08` (sem troca dia/mês) |
+| `fin_parse_money('1.500,00')` | `1500.00` |
+| `fin_entry_sign('Desconto - Devolução')` | `-1` |
+| `fin_entry_sign('Pagamento - Distrato')` | `1` |
 
 ## Achados que mudaram o plano do Sprint 1
 

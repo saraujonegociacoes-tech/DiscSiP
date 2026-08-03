@@ -8,4 +8,5 @@
 export { CeoTabNav, type CeoTab } from './components/CeoTabNav'
 export { CeoTabPlaceholder } from './components/CeoTabPlaceholder'
 export { CeoFinanceiro } from './components/CeoFinanceiro'
+export { CeoProjecoes } from './components/CeoProjecoes'
 export { CeoPeriodPicker, type CeoPeriodMode } from './components/CeoPeriodPicker'

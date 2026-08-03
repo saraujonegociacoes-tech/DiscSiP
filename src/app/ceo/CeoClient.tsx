@@ -6,7 +6,7 @@ import { Wallet, CalendarClock, Activity, Users } from 'lucide-react'
 import { AppShell } from '@/components/bluedesk/AppShell'
 import { PageHeader } from '@/components/bluedesk/PageHeader'
 import { Tabs, TabsContent } from '@/components/ui/tabs'
-import { CeoTabNav, CeoTabPlaceholder, CeoFinanceiro, type CeoTab } from '@/features/ceo'
+import { CeoTabNav, CeoTabPlaceholder, CeoFinanceiro, CeoProjecoes, type CeoTab } from '@/features/ceo'
 
 // Painel do CEO — camada de leitura/agregação por cima das verticais isoladas (ver
 // docs/projetopainelceo-docs/updates/painel-ceo-sprints.md). Painel de 4 abas, uma por
@@ -74,15 +74,13 @@ export function CeoClient() {
             <CeoFinanceiro />
           </TabsContent>
 
-          {/* 2 · Projeções (Sprint 2) — fase "Aguardando Pagamento" de dois pipes: CS (já
-              ingerido, só falta a RPC de leitura) e Negociação (o único a integrar do zero
-              nessa parte). */}
+          {/* 2 · Projeções (Sprint 2) — CONSTRUÍDA: lê get_ceo_projecoes, que junta
+              `neg_cards` (pipe 3.0 Negociação, vertical nova) com o plano de pagamento do
+              CS. Snapshot, não série — o recorte é a janela de VENCIMENTO, então esta aba
+              não tem PeriodPicker. Só dinheiro NÃO recebido: o realizado das duas fontes
+              já virou card no pipe do Financeiro e está contado na aba 1. */}
           <TabsContent value="projecoes" className="mt-6">
-            <CeoTabPlaceholder
-              icon={CalendarClock}
-              title="Projeções de pagamento em preparação"
-              description="Quando e quanto os clientes vão pagar, somando as fases de Aguardando Pagamento de CS e de Negociação, com totais por janela de vencimento."
-            />
+            <CeoProjecoes />
           </TabsContent>
 
           {/* 3 · Saúde da Empresa (Sprint 3) — compõe domínios que já existem. Risco
