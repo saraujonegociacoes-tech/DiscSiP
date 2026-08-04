@@ -8,13 +8,10 @@ import { PageHeader } from '@/components/bluedesk/PageHeader'
 import { Tabs, TabsContent } from '@/components/ui/tabs'
 import { getMinutas } from '@/app/actions/minutas'
 import type { ProcMinutasData } from '@/lib/types/database'
-import {
-  MinutasTabNav,
-  MinutasVisaoGeral,
-  MinutasCalendario,
-  MinutasLista,
-  type MinutaTab,
-} from '@/features/minutas'
+import { MinutasTabNav, MinutasLista, type MinutaTab } from '@/features/minutas'
+// Visão Geral (Recharts) e Calendário (date-fns) só baixam quando a aba é aberta —
+// ver features/minutas/lazy.tsx.
+import { MinutasVisaoGeral, MinutasCalendario } from '@/features/minutas/lazy'
 
 // Painel de Minutas Processuais (Jurídico) — 3 abas, sincronizadas com ?aba= (mesmo esqueleto
 // do CsClient/CeoClient). É app-native/CRUD: o `data` vive no estado do cliente e `refresh`

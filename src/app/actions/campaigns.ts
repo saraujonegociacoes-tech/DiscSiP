@@ -105,16 +105,53 @@ export async function unarchiveCampaign(id: string): Promise<{ error?: string }>
 
 type SupabaseClient = Awaited<ReturnType<typeof createServerClient>>
 
-async function findPending(supabase: SupabaseClient, campaignId: string) {
+interface PendingRow {
+  id: string
+  attempts: number
+}
+
+// Os `limit` contatos pendentes mais antigos da campanha. Uma leitura só — quem garante a
+// exclusividade entre agentes é o claim (UPDATE ... WHERE status='pending'), não esta busca.
+async function findPendingBatch(
+  supabase: SupabaseClient,
+  campaignId: string,
+  limit: number
+): Promise<PendingRow[]> {
   const { data } = await supabase
     .from('campaign_contacts')
     .select('id, attempts')
     .eq('campaign_id', campaignId)
     .eq('status', 'pending')
     .order('created_at', { ascending: true })
-    .limit(1)
+    .limit(limit)
+  return (data ?? []) as PendingRow[]
+}
+
+async function findPending(supabase: SupabaseClient, campaignId: string) {
+  const [row] = await findPendingBatch(supabase, campaignId, 1)
+  return row ?? null
+}
+
+// Claim ATÔMICO de um contato: só vence se ele ainda estiver 'pending'. Devolve null quando
+// outro agente levou a linha primeiro (a corrida é resolvida pelo Postgres, não aqui).
+async function claimContact(
+  supabase: SupabaseClient,
+  pending: PendingRow,
+  agentId: string
+): Promise<CampaignContact | null> {
+  const { data } = await supabase
+    .from('campaign_contacts')
+    .update({
+      status: 'dialing',
+      assigned_agent_id: agentId,
+      dialed_at: new Date().toISOString(),
+      attempts: pending.attempts + 1,
+    })
+    .eq('id', pending.id)
+    .eq('status', 'pending')
+    .select()
     .single()
-  return data as { id: string; attempts: number } | null
+  return (data as CampaignContact | null) ?? null
 }
 
 // Reciclagem: por lista com reciclagem ligada, esgota quem atingiu o limite de
@@ -166,62 +203,60 @@ export async function getNextContact(
   if (!pending) return null
 
   // Claim atômico: só atualiza se ainda estiver 'pending' (evita race condition entre agentes)
-  const { data: claimed } = await supabase
-    .from('campaign_contacts')
-    .update({
-      status: 'dialing',
-      assigned_agent_id: agentId,
-      dialed_at: new Date().toISOString(),
-      attempts: pending.attempts + 1,
-    })
-    .eq('id', pending.id)
-    .eq('status', 'pending')
-    .select()
-    .single()
-
-  return claimed as CampaignContact | null
+  return claimContact(supabase, pending, agentId)
 }
 
-// Reserva ATÔMICA de até N contatos pendentes para discagem paralela. Faz o claim um a um
-// (cada UPDATE ... WHERE status='pending' garante exclusividade entre agentes). Resolve o bug
-// anotado no doc: distingue "perdi a corrida" (claim volta null, mas ainda há pendentes) de
-// "acabaram os pendentes" — só para quando findPending não acha mais nada. Recicla uma vez se
-// a fila zerar no meio. Retorna de 0 a N contatos já marcados como 'dialing'.
+// Quantas rodadas de (buscar candidatos → tentar claim) antes de desistir. Cada rodada só
+// acontece se a anterior perdeu corrida para outro agente; com a fila cheia, UMA basta.
+const CLAIM_ROUNDS = 3
+
+// Reserva ATÔMICA de até N contatos pendentes para discagem paralela.
+//
+// Cada contato continua sendo reservado por um UPDATE ... WHERE status='pending' individual —
+// é ele que garante exclusividade entre agentes, e isso NÃO mudou. O que mudou é o formato do
+// laço: antes era estritamente sequencial (1 SELECT + 1 UPDATE por contato, um de cada vez),
+// então N=10 linhas paralelas custavam até 20 idas e voltas ENFILEIRADAS ao Supabase antes de
+// a primeira discagem sair — com ~80 ms de RTT, ~1,6 s de agente parado olhando a tela.
+//
+// Agora: 1 SELECT traz os N candidatos mais antigos de uma vez e os claims saem em PARALELO
+// (Promise.all). O custo vira ~2 RTTs em vez de 2N. Se algum claim perder a corrida, repete a
+// rodada com os candidatos restantes (até CLAIM_ROUNDS) — a distinção entre "perdi a corrida"
+// e "acabaram os pendentes" continua sendo feita pela busca, não pelo claim. Recicla uma vez
+// se a fila zerar no meio, igual antes. Retorna de 0 a N contatos já marcados como 'dialing'.
 export async function getNextContacts(
   campaignId: string,
   agentId: string,
   n: number
 ): Promise<CampaignContact[]> {
   const supabase = await createServerClient()
+  const want = Math.max(1, n)
   const claimed: CampaignContact[] = []
+  const tried = new Set<string>()
   let recycled = false
 
-  while (claimed.length < Math.max(1, n)) {
-    let pending = await findPending(supabase, campaignId)
-    if (!pending) {
+  for (let round = 0; round < CLAIM_ROUNDS && claimed.length < want; round++) {
+    const missing = want - claimed.length
+    // Busca com folga: alguns candidatos podem ter sido levados por outro agente entre o
+    // SELECT e o UPDATE, e os já tentados nesta chamada precisam ser pulados.
+    let candidates = (await findPendingBatch(supabase, campaignId, missing + tried.size)).filter(
+      (c) => !tried.has(c.id)
+    )
+
+    if (candidates.length === 0) {
       if (recycled) break
       await recycleCampaign(supabase, campaignId)
       recycled = true
-      pending = await findPending(supabase, campaignId)
-      if (!pending) break
+      candidates = (await findPendingBatch(supabase, campaignId, missing + tried.size)).filter(
+        (c) => !tried.has(c.id)
+      )
+      if (candidates.length === 0) break
     }
 
-    const { data: claimedRow } = await supabase
-      .from('campaign_contacts')
-      .update({
-        status: 'dialing',
-        assigned_agent_id: agentId,
-        dialed_at: new Date().toISOString(),
-        attempts: pending.attempts + 1,
-      })
-      .eq('id', pending.id)
-      .eq('status', 'pending')
-      .select()
-      .single()
+    const batch = candidates.slice(0, missing)
+    for (const c of batch) tried.add(c.id)
 
-    if (claimedRow) claimed.push(claimedRow as CampaignContact)
-    // claimedRow null = outro agente levou esse id (virou 'dialing'); o próximo findPending
-    // já retorna outro, então o loop avança sem travar.
+    const results = await Promise.all(batch.map((c) => claimContact(supabase, c, agentId)))
+    for (const row of results) if (row) claimed.push(row)
   }
 
   return claimed

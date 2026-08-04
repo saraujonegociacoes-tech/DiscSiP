@@ -6,7 +6,6 @@ import { formatDistanceToNow, parseISO } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import { Bell, Volume2, VolumeX } from 'lucide-react'
 import { toast } from 'sonner'
-import { createClient } from '@/lib/supabase/client'
 import { initials } from '@/lib/monday/domain'
 import { useSoftphoneStore } from '@/store/softphoneStore'
 import {
@@ -89,59 +88,78 @@ export function NotificationBell() {
   }, [agentId, load, syncPerm, supportsNotifications])
 
   // Realtime: novas notificacoes do proprio usuario.
+  //
+  // O cliente de browser do Supabase (@supabase/ssr → realtime-js + gotrue) e' importado
+  // DINAMICAMENTE aqui dentro, nao no topo do arquivo. Este sino mora no AppShell, ou seja,
+  // em toda tela interna: com import estatico o chunk do Realtime (~180 KB nao-comprimidos)
+  // entrava no First Load JS ate' de paginas que so' renderizam uma tabela (/negociacao,
+  // /projects/daily). Como a assinatura so' pode existir depois da montagem, adiar para o
+  // efeito nao muda comportamento — apenas tira o peso do caminho critico de render.
   useEffect(() => {
     if (!agentId) return
-    const supabase = createClient()
-    const channel = supabase
-      .channel(`notifications:${agentId}`)
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'notifications',
-          filter: `user_id=eq.${agentId}`,
-        },
-        (payload) => {
-          const n = payload.new as AppNotification
-          setItems((cur) => (cur.some((x) => x.id === n.id) ? cur : [n, ...cur]))
-          playNotificationSound()
+    let cancelled = false
+    let cleanup: (() => void) | null = null
 
-          // Card in-app (sonner), clicavel.
-          toast(mentionTitle(n), {
-            description: n.preview ?? undefined,
-            action: { label: 'Abrir', onClick: () => routerRef.current.push(notificationHref(n)) },
-          })
+    import('@/lib/supabase/client').then(({ createClient }) => {
+      if (cancelled) return
+      const supabase = createClient()
+      const channel = supabase
+        .channel(`notifications:${agentId}`)
+        .on(
+          'postgres_changes',
+          {
+            event: 'INSERT',
+            schema: 'public',
+            table: 'notifications',
+            filter: `user_id=eq.${agentId}`,
+          },
+          (payload) => {
+            const n = payload.new as AppNotification
+            setItems((cur) => (cur.some((x) => x.id === n.id) ? cur : [n, ...cur]))
+            playNotificationSound()
 
-          // Notificacao do sistema operacional (o aviso sonoro confiavel quando a pessoa
-          // nao esta olhando a Blue Desk — o Windows toca o som dele junto). Dispara sempre
-          // que a pagina nao tem foco: outra aba, janela minimizada OU outro app na frente.
-          const unfocused =
-            typeof document !== 'undefined' &&
-            (document.hidden || (typeof document.hasFocus === 'function' && !document.hasFocus()))
-          if (
-            typeof window !== 'undefined' &&
-            'Notification' in window &&
-            Notification.permission === 'granted' &&
-            unfocused
-          ) {
-            // silent: false pede explicitamente o som padrao do sistema.
-            const osn = new Notification(mentionTitle(n), {
-              body: n.preview ?? '',
-              tag: n.id,
-              silent: false,
+            // Card in-app (sonner), clicavel.
+            toast(mentionTitle(n), {
+              description: n.preview ?? undefined,
+              action: { label: 'Abrir', onClick: () => routerRef.current.push(notificationHref(n)) },
             })
-            osn.onclick = () => {
-              window.focus()
-              routerRef.current.push(notificationHref(n))
-              osn.close()
+
+            // Notificacao do sistema operacional (o aviso sonoro confiavel quando a pessoa
+            // nao esta olhando a Blue Desk — o Windows toca o som dele junto). Dispara sempre
+            // que a pagina nao tem foco: outra aba, janela minimizada OU outro app na frente.
+            const unfocused =
+              typeof document !== 'undefined' &&
+              (document.hidden || (typeof document.hasFocus === 'function' && !document.hasFocus()))
+            if (
+              typeof window !== 'undefined' &&
+              'Notification' in window &&
+              Notification.permission === 'granted' &&
+              unfocused
+            ) {
+              // silent: false pede explicitamente o som padrao do sistema.
+              const osn = new Notification(mentionTitle(n), {
+                body: n.preview ?? '',
+                tag: n.id,
+                silent: false,
+              })
+              osn.onclick = () => {
+                window.focus()
+                routerRef.current.push(notificationHref(n))
+                osn.close()
+              }
             }
-          }
-        },
-      )
-      .subscribe()
+          },
+        )
+        .subscribe()
+
+      cleanup = () => {
+        supabase.removeChannel(channel)
+      }
+    })
+
     return () => {
-      supabase.removeChannel(channel)
+      cancelled = true
+      cleanup?.()
     }
   }, [agentId])
 

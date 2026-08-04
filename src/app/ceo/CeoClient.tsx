@@ -6,7 +6,9 @@ import { Wallet, CalendarClock, Activity, Users } from 'lucide-react'
 import { AppShell } from '@/components/bluedesk/AppShell'
 import { PageHeader } from '@/components/bluedesk/PageHeader'
 import { Tabs, TabsContent } from '@/components/ui/tabs'
-import { CeoTabNav, CeoTabPlaceholder, CeoFinanceiro, CeoProjecoes, type CeoTab } from '@/features/ceo'
+import { CeoTabNav, CeoTabPlaceholder, type CeoTab } from '@/features/ceo'
+// Abas com gráfico (Recharts) sob demanda — ver features/ceo/lazy.tsx.
+import { CeoFinanceiro, CeoProjecoes } from '@/features/ceo/lazy'
 
 // Painel do CEO — camada de leitura/agregação por cima das verticais isoladas (ver
 // docs/projetopainelceo-docs/updates/painel-ceo-sprints.md). Painel de 4 abas, uma por

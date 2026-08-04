@@ -16,7 +16,7 @@ import type { CeoFinanceiroData, CeoProjecaoData } from '@/lib/types/database'
 //
 //  2. GUARDA NO BANCO, não só na rota. As RPCs são SECURITY DEFINER com
 //       IF public.ceo_current_role() NOT IN ('ceo','admin') THEN RETURN; END IF;
-//     (helper criado em supabase/migrations/20260729_ceo_role.sql). É o que permite ao CEO
+//     (helper criado em supabase/migrations/Migrations_projetopainelceo/20260729_ceo_role.sql). É o que permite ao CEO
 //     ⚠️ Esse idioma SÓ é seguro porque `ceo_current_role()` nunca devolve NULL — se
 //        devolvesse, `NULL NOT IN (...)` seria NULL, o `IF` não entraria e a guarda
 //        LIBERARIA. Foi um bug real, corrigido no helper em 20260731c_ceo_guard_null_safe.sql

@@ -1,7 +1,6 @@
 'use client'
 
 import { useEffect, useRef } from 'react'
-import { createClient } from '@/lib/supabase/client'
 
 // Realtime do dashboard de leads (S4) — OPT-IN, desligado por padrão. Assina as gravações do
 // Make em public.leads e dispara um refetch (debounced) para a tela se atualizar sem F5.
@@ -26,8 +25,9 @@ export function useLeadsRealtime(onChange: () => void, enabled: boolean = LEADS_
 
   useEffect(() => {
     if (!enabled) return
-    const supabase = createClient()
     let timer: ReturnType<typeof setTimeout> | null = null
+    let cancelled = false
+    let cleanup: (() => void) | null = null
 
     // Debounce: o Make grava a rajada de cards do Iterator em sequência; junta tudo num
     // único refetch em vez de um por linha.
@@ -36,14 +36,26 @@ export function useLeadsRealtime(onChange: () => void, enabled: boolean = LEADS_
       timer = setTimeout(() => cb.current(), 1500)
     }
 
-    const channel = supabase
-      .channel('leads-dashboard')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'leads' }, fire)
-      .subscribe()
+    // Import DINÂMICO do cliente de browser: com import estático, o chunk do Realtime entrava
+    // no First Load JS do /leads mesmo com o hook DESLIGADO (o flag de env só evita abrir o
+    // socket, não evita o bundle). Assim o custo é zero de verdade enquanto a flag não subir.
+    import('@/lib/supabase/client').then(({ createClient }) => {
+      if (cancelled) return
+      const supabase = createClient()
+      const channel = supabase
+        .channel('leads-dashboard')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'leads' }, fire)
+        .subscribe()
+
+      cleanup = () => {
+        supabase.removeChannel(channel)
+      }
+    })
 
     return () => {
+      cancelled = true
       if (timer) clearTimeout(timer)
-      supabase.removeChannel(channel)
+      cleanup?.()
     }
   }, [enabled])
 }

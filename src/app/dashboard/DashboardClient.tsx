@@ -7,9 +7,18 @@ import { AppShell } from '@/components/bluedesk/AppShell'
 import { PageHeader } from '@/components/bluedesk/PageHeader'
 import { StatusBadge, type CallStatus } from '@/components/bluedesk/StatusBadge'
 import { Button } from '@/components/ui/button'
+import dynamic from 'next/dynamic'
 import { MetricCard } from './MetricCard'
-import { CallsChart } from './CallsChart'
 import { AgentList } from './AgentList'
+import { ChartSkeleton } from '@/components/bluedesk/ChartSkeleton'
+
+// Único gráfico da tela e o mais pesado dela: puxa o Recharts inteiro. Sob demanda, os cartões
+// de métrica e a lista de agentes (o que o supervisor olha primeiro) hidratam sem esperar por
+// ele. `bodyHeight` casa com o `h-56` do CallsChart para não haver salto de layout.
+const CallsChart = dynamic(() => import('./CallsChart').then((m) => m.CallsChart), {
+  ssr: false,
+  loading: () => <ChartSkeleton title="Chamadas por hora" bodyHeight="h-56" />,
+})
 import { getAgentActivity } from '@/app/actions/supervisor'
 import type {
   DashboardStats,
