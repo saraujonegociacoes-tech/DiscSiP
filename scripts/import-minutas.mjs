@@ -163,10 +163,18 @@ function parseDate(raw) {
 }
 
 // "Parcela 02/03" → { num: 2, total: 3 }. null se não achar.
+// ⚠️ ANCORADO na palavra "parcela" (aceita "Parcela - 01/04", "parcela 01/ 02"). Sem a âncora,
+// qualquer "N/M" solto nas observações virava número de parcela — e as observações desta
+// planilha são um campo livre cheio de barras: CNPJ ("07.440.348/0001-49" → parcela 348) e
+// datas ("Data: 24/04/2026" → parcela 24). Como o banco tem unique (acordo_id, num), esses
+// números falsos colidiam e as parcelas se sobrescreviam.
 function parseParcela(obs) {
-  const m = String(obs || '').match(/(\d+)\s*\/\s*(\d+)/)
+  const m = String(obs || '').match(/parcela\s*[-–—:]?\s*(\d{1,2})\s*\/\s*(\d{1,2})\b/i)
   if (!m) return null
-  return { num: Number(m[1]), total: Number(m[2]) }
+  const num = Number(m[1])
+  const total = Number(m[2])
+  if (!num || !total || num > total) return null
+  return { num, total }
 }
 
 // A planilha não tem coluna de cliente: o nome está no título ("Minuta Acordo - Fulano").
@@ -267,8 +275,24 @@ async function main() {
   const nodes = []
   for (const g of grupos.values()) {
     g.parcelas.sort((a, b) => ((a.vencimento || '9999') < (b.vencimento || '9999') ? -1 : 1))
-    let seq = 0
-    for (const p of g.parcelas) { seq++; if (p.num == null) p.num = seq }
+    // Numeração ÚNICA por acordo. O upsert é por (acordo_id, num): dois números iguais =
+    // uma parcela sobrescreve a outra e some da carga. 1º passe: quem declarou "Parcela N/M"
+    // fica com o N (o primeiro a reivindicar, na ordem de vencimento). 2º passe: quem não
+    // declarou — ou colidiu — recebe o menor número livre. A planilha tem colisões legítimas
+    // (ex.: duas linhas "Parcela 01/10", uma por favorecido); o rótulo original continua
+    // visível nas observações da parcela.
+    const usados = new Set()
+    for (const p of g.parcelas) {
+      if (p.num != null && !usados.has(p.num)) usados.add(p.num)
+      else p.num = null
+    }
+    let livre = 1
+    for (const p of g.parcelas) {
+      if (p.num != null) continue
+      while (usados.has(livre)) livre++
+      p.num = livre
+      usados.add(livre)
+    }
     const declarado = g.parcelas.reduce((m, p) => Math.max(m, p.total || 0), 0)
     g.parcela_total = Math.max(g.parcelas.length, declarado)
     if (!g.recorrencia) g.recorrencia = g.parcela_total > 1 ? 'mensal' : 'avulsa'

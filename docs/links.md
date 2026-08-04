@@ -125,8 +125,12 @@ CS** (aba dentro de `/cs`, tabelas `cs_*`) — não confundir.
 ## `updates/`
 - [`painel-minutas-processuais.md`](minutas-docs/updates/painel-minutas-processuais.md) — a área,
   modelo de dados (`proc_acordos` + `proc_parcelas`), acesso/RLS, as 3 abas (Visão Geral /
-  Calendário / Minutas) e o script de carga da planilha (CSV/xlsx). Migration
-  `20260731b_minutas_processuais.sql` **aplicada** + carga rodada (23 acordos / 87 parcelas, 03/ago).
+  Calendário / Minutas — esta com ordenação por coluna e filtro de período) e o script de carga da
+  planilha (CSV/xlsx). Migration `20260731b_minutas_processuais.sql` **aplicada** + carga rodada
+  (23 acordos / 87 parcelas, R$ 161.064,62 — 03/ago).
+  ⚠️ **Pendente:** `Migrations_minutas/20260803b_proc_can_access_tester.sql` — inclui o papel
+  `tester` no `proc_can_access()`. Sem ela o tester passa no gate da página mas a RLS devolve zero
+  linhas, e o `/minutas` abre **vazio**.
 
 ---
 
