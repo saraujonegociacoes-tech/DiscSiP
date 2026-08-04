@@ -538,7 +538,7 @@ export interface CeoProjecaoData {
 }
 
 // ── Aquecimento de números WhatsApp — domínio SEPARADO ──────────────────────
-// Espelham as tabelas de supabase/migrations/20260719_warmup_schema.sql. Módulo
+// Espelham as tabelas de supabase/migrations/Migrations_warmup/20260719_warmup_schema.sql. Módulo
 // sensível: só manager/admin leem/configuram (RLS). As tabelas de execução
 // (conversations/messages) só são escritas pelo tick/callback via service_role.
 

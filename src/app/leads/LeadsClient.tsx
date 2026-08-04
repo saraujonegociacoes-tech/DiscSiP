@@ -17,28 +17,32 @@ import { PeriodPicker } from '@/components/bluedesk/PeriodPicker'
 import { Tabs, TabsContent } from '@/components/ui/tabs'
 import {
   LeadKpiRow,
-  Funnel,
-  PhaseDistribution,
-  FunnelActivity,
-  PhaseDistributionActivity,
-  DeadReasonsDonut,
-  DeathByAttempt,
   LeadsTable,
   AgentRanking,
   DuplicateAlert,
   ForgottenLeads,
   ChannelBreakdown,
   OrphanLeads,
-  EvolutionChart,
   AlertsPanel,
-  PerformancePanel,
-  StepDwellTime,
-  StepConversion,
   LeadsTabNav,
   TabPlaceholder,
   type LeadTab,
   type AlertItem,
 } from '@/features/leads'
+// Gráficos (Recharts) vêm do módulo lazy: cada um é um chunk próprio, buscado quando a aba
+// que o usa aparece. Ver o cabeçalho de features/leads/lazy.tsx.
+import {
+  Funnel,
+  PhaseDistribution,
+  FunnelActivity,
+  PhaseDistributionActivity,
+  DeadReasonsDonut,
+  DeathByAttempt,
+  EvolutionChart,
+  PerformancePanel,
+  StepDwellTime,
+  StepConversion,
+} from '@/features/leads/lazy'
 import { useLeadsRealtime, LEADS_REALTIME_ENABLED } from '@/features/leads/useLeadsRealtime'
 import {
   getLeadsData,

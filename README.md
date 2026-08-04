@@ -396,7 +396,8 @@ src/
 
 scripts/                       import-leads.mjs / import-cs-cards.mjs (carga histórica Pipefy),
                                 backup:leads, sync-helper.mjs (publica o helper no build)
-supabase/migrations/           SQL idempotente, rodado manualmente no Supabase (Discador + Leads + CS + Aquecimento)
+supabase/migrations/           SQL idempotente, rodado manualmente no Supabase — uma subpasta
+                                Migrations_<projeto>/ por domínio (índice em supabase/migrations/README.md)
 local-helper/                  Helper Node.js + scripts de instalação (Windows) — só Discador
 docs/                          Documentação técnica (índice em docs/links.md, por domínio)
 .github/workflows/             Keep-alive do Supabase (a cada 3 dias) + tick do Aquecimento (a cada ~10 min)
@@ -460,7 +461,11 @@ pelo tick/callback via `service_role`).
 | `warmup_conversations` | Thread por par normalizado; `last_sender_id` (turno), `status`; único parcial `WHERE status='active'` |
 | `warmup_messages` | Histórico e **fonte de verdade da janela de 24h**: `message_type`, `dispatch_mode` (live/dry_run), resultado do callback |
 
-As migrações ficam em `supabase/migrations/` (prefixo `YYYYMMDD_`, idempotentes, rodadas manualmente no SQL Editor do Supabase). Cobrem Discador, Leads, CS e Projetos juntas (mesmo projeto Supabase):
+As migrações ficam em `supabase/migrations/` (prefixo `YYYYMMDD_`, idempotentes, rodadas manualmente
+no SQL Editor do Supabase). Todos os domínios dividem o MESMO projeto Supabase, mas os arquivos são
+organizados numa subpasta `Migrations_<projeto>/` por domínio — espelhando os nomes de `docs/`. O
+índice das pastas, com a regra de ordem de execução, está em
+[`supabase/migrations/README.md`](supabase/migrations/README.md).
 
 | Migração | Conteúdo |
 |----------|----------|

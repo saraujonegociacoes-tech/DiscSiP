@@ -1,25 +1,20 @@
 // Peças apresentacionais do dashboard de leads. A composição vive no
 // app/leads/LeadsClient.tsx (dentro do AppShell), como no dashboard do discador.
 // PeriodPicker mudou para @/components/bluedesk/PeriodPicker (compartilhado com a discadora).
+//
+// ⚠️ Os componentes de GRÁFICO não são exportados aqui — eles vivem em `./lazy` (carga sob
+// demanda). Não é organização: um barrel é um único módulo, então bastava ele RE-EXPORTAR o
+// Recharts para o bundler puxar a biblioteca inteira para o First Load JS da rota, mesmo que
+// nenhum importador usasse aquela exportação. Era exatamente o que acontecia. Ao adicionar um
+// gráfico novo, registre-o em `./lazy.tsx`, não aqui.
 export { LeadKpiRow } from './components/LeadKpiRow'
-export { Funnel } from './components/Funnel'
-export { PhaseDistribution } from './components/PhaseDistribution'
-export { FunnelActivity } from './components/FunnelActivity'
-export { PhaseDistributionActivity } from './components/PhaseDistributionActivity'
 export { ResponsibleBreakdown } from './components/ResponsibleBreakdown'
-export { DeadReasonsDonut } from './components/DeadReasonsDonut'
-export { DeathByAttempt } from './components/DeathByAttempt'
 export { LeadsTable } from './components/LeadsTable'
 export { AgentRanking } from './components/AgentRanking'
 export { DuplicateAlert } from './components/DuplicateAlert'
 export { ForgottenLeads } from './components/ForgottenLeads'
 export { ChannelBreakdown } from './components/ChannelBreakdown'
 export { OrphanLeads } from './components/OrphanLeads'
-export { EvolutionChart } from './components/EvolutionChart'
-export { TrendChart } from './components/TrendChart'
-export { PerformancePanel } from './components/PerformancePanel'
-export { StepDwellTime } from './components/StepDwellTime'
-export { StepConversion } from './components/StepConversion'
 export { AlertsPanel, type AlertItem } from './components/AlertsPanel'
 export { LeadsTabNav, type LeadTab } from './components/LeadsTabNav'
 export { TabPlaceholder } from './components/TabPlaceholder'

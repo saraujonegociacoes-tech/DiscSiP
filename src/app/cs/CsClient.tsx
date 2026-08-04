@@ -6,7 +6,9 @@ import { LayoutDashboard, Users, FileText, Wallet } from 'lucide-react'
 import { AppShell } from '@/components/bluedesk/AppShell'
 import { PageHeader } from '@/components/bluedesk/PageHeader'
 import { Tabs, TabsContent } from '@/components/ui/tabs'
-import { CsTabNav, CsMatrix, CsTeam, CsMinutas, CsPagamento, type CsTab } from '@/features/cs'
+import { CsTabNav, CsMatrix, type CsTab } from '@/features/cs'
+// Abas 2–4 sob demanda (elas já buscavam o próprio dado só ao montar) — ver features/cs/lazy.tsx.
+import { CsTeam, CsMinutas, CsPagamento } from '@/features/cs/lazy'
 import type { CsMatrixData } from '@/lib/types/database'
 
 // Painel de Sucesso do Cliente (CS) reformulado — domínio SEPARADO do dashboard de

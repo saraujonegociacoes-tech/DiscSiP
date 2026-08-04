@@ -15,6 +15,7 @@ manter o padrão. O README do projeto fica na raiz do repo (`../README.md`).
 | Minutas Processuais (Jurídico) | `minutas-docs/` | [`updates/painel-minutas-processuais.md`](minutas-docs/updates/painel-minutas-processuais.md) |
 | RBAC / Acessos (transversal) | `rbac-docs/` | [`updates/acessos-e-papel-tester.md`](rbac-docs/updates/acessos-e-papel-tester.md) |
 | Painel do CEO (executivo) | `projetopainelceo-docs/` | [`updates/painel-ceo-indice.md`](projetopainelceo-docs/updates/painel-ceo-indice.md) |
+| Performance / Bundle (transversal) | `performance-docs/` | [`updates/auditoria-performance-2026-08.md`](performance-docs/updates/auditoria-performance-2026-08.md) |
 
 Os cinco primeiros são **domínios de produto separados** (código, dados e RLS isolados entre si);
 só a documentação vive junta aqui, por projeto. O **Painel do CEO** é diferente: uma **camada de
@@ -165,3 +166,24 @@ completo em [`updates/painel-ceo-indice.md`](projetopainelceo-docs/updates/paine
 
 ## `fixes/`
 - [`correcao-guarda-ceo-null.md`](projetopainelceo-docs/fixes/correcao-guarda-ceo-null.md) — a guarda das RPCs do CEO **não bloqueava** quando `ceo_current_role()` devolvia NULL: `NULL NOT IN (...)` é NULL, não TRUE, e `IF NULL THEN` não entra. Afetava as 4 RPCs do painel, inclusive a do Financeiro em produção. Corrigido na origem (o helper nunca mais devolve NULL) — migration `20260731c_ceo_guard_null_safe.sql`
+
+---
+
+# Performance / Bundle (transversal) · `performance-docs/`
+
+Auditoria técnica e otimizações que atravessam todos os domínios (bundle, round-trips ao Supabase,
+índices). Transversal — toca `AppShell`, os barrels de feature, as server actions de auth/campanhas
+e o schema do Discador.
+
+## `updates/`
+- [`auditoria-performance-2026-08.md`](performance-docs/updates/auditoria-performance-2026-08.md) —
+  auditoria de ago/2026: First Load JS **−24% a −48% por rota** (Supabase client e Recharts fora do
+  caminho crítico) + `getNextContacts` de 2N idas sequenciais para 2 ondas paralelas. Traz o **plano
+  de commit em 3 partes**, o **checklist de validação manual** (3 caminhos ficaram sem teste por
+  falta de sessão) e o que foi **recomendado mas não implementado** (claim de papel no JWT).
+  ⚠️ Documenta a armadilha do **barrel**: `export` de componente com Recharts em `features/*/index.ts`
+  arrasta a biblioteca inteira para a rota, mesmo sem ninguém usar a exportação — foi o que fez a
+  primeira rodada de `next/dynamic` não surtir efeito.
+
+> Índice das migrations por projeto (`supabase/migrations/Migrations_<projeto>/`):
+> [`supabase/migrations/README.md`](../supabase/migrations/README.md).
