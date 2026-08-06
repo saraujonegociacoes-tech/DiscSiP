@@ -22,6 +22,7 @@ import {
   type MinutaRow,
 } from '../shared'
 import { MinutaForm } from './MinutaForm'
+import { BrDateInput } from '@/components/bluedesk/BrDateInput'
 
 // PÁGINA 3 — controle/CRUD das minutas. Uma linha por PARCELA (achatado de acordo×parcela),
 // com filtro por situação, filtro por período, ordenação por coluna, marcação de pagamento,
@@ -297,21 +298,18 @@ export function MinutasLista({ data, onChanged }: { data: ProcMinutasData; onCha
 
           {custom && (
             <>
-              <input
-                type="date"
+              {/* BrDateInput: o <input type="date"> nativo formata no locale do SISTEMA. */}
+              <BrDateInput
                 value={ini}
                 max={fim || undefined}
-                onChange={(e) => setIni(e.target.value)}
-                className={inputCls}
+                onChange={setIni}
                 aria-label="Data inicial"
               />
               <span className="text-xs text-muted-foreground">até</span>
-              <input
-                type="date"
+              <BrDateInput
                 value={fim}
                 min={ini || undefined}
-                onChange={(e) => setFim(e.target.value)}
-                className={inputCls}
+                onChange={setFim}
                 aria-label="Data final"
               />
               <button

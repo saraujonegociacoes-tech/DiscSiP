@@ -2,39 +2,54 @@
 
 import { useCallback, useMemo } from 'react'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
-import { Wallet, CalendarClock, Activity, Users } from 'lucide-react'
+import { Wallet, CalendarClock, Users } from 'lucide-react'
 import { AppShell } from '@/components/bluedesk/AppShell'
 import { PageHeader } from '@/components/bluedesk/PageHeader'
 import { Tabs, TabsContent } from '@/components/ui/tabs'
-import { CeoTabNav, CeoTabPlaceholder, type CeoTab } from '@/features/ceo'
+import { CeoTabNav, type CeoTab } from '@/features/ceo'
 // Abas com gráfico (Recharts) sob demanda — ver features/ceo/lazy.tsx.
-import { CeoFinanceiro, CeoProjecoes } from '@/features/ceo/lazy'
+import { CeoFinanceiro, CeoProjecoes, CeoSaudeEquipe } from '@/features/ceo/lazy'
 
 // Painel do CEO — camada de leitura/agregação por cima das verticais isoladas (ver
-// docs/projetopainelceo-docs/updates/painel-ceo-sprints.md). Painel de 4 abas, uma por
-// sprint, na ordem de entrega:
-//   1. Financeiro (Sprint 1) — entradas do mês, do pipe Financeiro novo. Carro-chefe.
-//   2. Projeções (Sprint 2) — "quando/quanto vão pagar", somando CS (reusado) + Negociação.
-//   3. Saúde da Empresa (Sprint 3) — scorecard compondo Financeiro + Leads + CS + Monday + Discador.
-//   4. Saúde da Equipe (Sprint 4) — saúde por pessoa; carrega o trabalho de unificar identidade.
+// docs/projetopainelceo-docs/updates/painel-ceo-sprints.md). TRÊS abas:
+//   1. Financeiro (Sprint 1) — entradas do período, do pipe Financeiro. Carro-chefe.
+//   2. Projeções (Sprint 2) — "quando/quanto vão pagar", somando CS + Negociação.
+//   3. Saúde da Equipe (Sprints 3+4, fundidas) — receita × custo × margem por departamento
+//      e por pessoa.
 //
-// Sprint 1: a aba Financeiro está construída; as outras 3 seguem placeholder. A casca
-// (Radix Tabs + ?aba= + AppShell/PageHeader) é réplica local do padrão de
-// app/cs/CsClient.tsx — domínio separado, réplica e não componente compartilhado, mesma
-// decisão que CS tomou em relação a Leads.
+// ⚠️ ERAM QUATRO ABAS. A Sprint 3 nasceu como "Saúde da Empresa" (scorecard de 5 domínios)
+// e a Sprint 4 seria "Saúde da Equipe" (por pessoa). Ao reformular a Sprint 3 para receita
+// e custo POR PESSOA, ela virou o que a Sprint 4 seria — o dono constatou isso em 06/ago e
+// mandou fundir: a aba placeholder saiu e a que ficou herdou o nome "Saúde da Equipe".
 //
-// Sem PeriodPicker aqui: cada aba decide o próprio recorte (Financeiro/Saúde usam janela de
-// tempo; Projeções é snapshot). O Financeiro usa o CeoPeriodPicker, que oferece OS DOIS
-// recortes — mês civil (default) e ciclo 11→10 — porque foi o que o dono pediu.
+// ⚠️ A RPC continua se chamando `get_ceo_saude_empresa`, desalinhada do rótulo de
+// propósito: renomear exigiria mais uma migration mexendo em objeto já aplicado, e este
+// projeto já se queimou com troca de definição de função entre migrations.
+//
+// O que a Sprint 4 previa e NÃO entrou: atividade por pessoa vinda de Leads/CS/Monday/
+// Discador. Medido em 06/ago, só 9 das 30 pessoas do Financeiro cruzam com aqueles
+// cadastros (Leads 4, CS 5, profiles 2) — são papéis diferentes, não cadastro ruim.
+// Entraria como coluna vazia em 2 de cada 3 linhas. Decisão do dono: fica de fora até a
+// identidade ser unificada.
+//
+// A casca (Radix Tabs + ?aba= + AppShell/PageHeader) é réplica local do padrão de
+// app/cs/CsClient.tsx — domínio separado, réplica e não componente compartilhado.
+//
+// Sem PeriodPicker aqui: cada aba tem o seu, porque cada uma recorta uma coisa diferente
+// (entrada, vencimento, receita do período). As três usam o CeoPeriodPicker, que oferece
+// mês civil (default) e ciclo 11→10.
 
-type TabSlug = 'financeiro' | 'projecoes' | 'saude-empresa' | 'saude-equipe'
+type TabSlug = 'financeiro' | 'projecoes' | 'saude-equipe'
 
 const TABS: Array<CeoTab & { slug: TabSlug }> = [
   { slug: 'financeiro', label: 'Financeiro', icon: Wallet },
   { slug: 'projecoes', label: 'Projeções', icon: CalendarClock },
-  { slug: 'saude-empresa', label: 'Saúde da Empresa', icon: Activity },
   { slug: 'saude-equipe', label: 'Saúde da Equipe', icon: Users },
 ]
+
+// Link antigo (?aba=saude-empresa) continua abrindo a aba certa em vez de cair no
+// Financeiro em silêncio — a aba mudou de nome, não sumiu.
+const SLUG_ANTIGO: Record<string, TabSlug> = { 'saude-empresa': 'saude-equipe' }
 
 export function CeoClient() {
   const router = useRouter()
@@ -43,10 +58,10 @@ export function CeoClient() {
 
   // Aba ativa sincronizada com ?aba=; deep-link inválido cai na primeira (financeiro).
   const requestedTab = searchParams.get('aba')
-  const activeTab = useMemo<TabSlug>(
-    () => (TABS.some((t) => t.slug === requestedTab) ? (requestedTab as TabSlug) : TABS[0].slug),
-    [requestedTab],
-  )
+  const activeTab = useMemo<TabSlug>(() => {
+    const slug = SLUG_ANTIGO[requestedTab ?? ''] ?? requestedTab
+    return TABS.some((t) => t.slug === slug) ? (slug as TabSlug) : TABS[0].slug
+  }, [requestedTab])
 
   const handleTabChange = useCallback(
     (slug: string) => {
@@ -76,36 +91,26 @@ export function CeoClient() {
             <CeoFinanceiro />
           </TabsContent>
 
-          {/* 2 · Projeções (Sprint 2) — CONSTRUÍDA: lê get_ceo_projecoes, que junta
-              `neg_cards` (pipe 3.0 Negociação, vertical nova) com o plano de pagamento do
-              CS. Snapshot, não série — o recorte é a janela de VENCIMENTO, então esta aba
-              não tem PeriodPicker. Só dinheiro NÃO recebido: o realizado das duas fontes
-              já virou card no pipe do Financeiro e está contado na aba 1. */}
+          {/* 2 · Projeções (Sprint 2) — lê get_ceo_projecoes(p_start, p_end), que junta
+              `neg_cards` (pipe 3.0 Negociação) com o plano de pagamento do CS.
+              ⚠️ Só dinheiro NÃO recebido: o realizado das duas fontes já virou card no pipe
+              do Financeiro e está contado na aba 1 — somar as duas abas contaria o mesmo
+              dinheiro duas vezes.
+              O período filtra por VENCIMENTO; as faixas (vencida/≤30d/…) seguem relativas a
+              HOJE, não ao início do período — "isso já atrasou?" é pergunta sobre hoje. */}
           <TabsContent value="projecoes" className="mt-6">
             <CeoProjecoes />
           </TabsContent>
 
-          {/* 3 · Saúde da Empresa (Sprint 3) — compõe domínios que já existem. Risco
-              conhecido: as tabelas/RPCs base de Leads não estão versionadas no repo (só na
-              base ao vivo) — extrair antes de depender delas. */}
-          <TabsContent value="saude-empresa" className="mt-6">
-            <CeoTabPlaceholder
-              icon={Activity}
-              title="Saúde da empresa em preparação"
-              description="Scorecard executivo cruzando entradas, conversão comercial, carteira de CS, ritmo de entrega de TI e volume de operação."
-            />
+          {/* 3 · Saúde da Equipe (Sprints 3+4 fundidas) — receita × custo × margem por
+              departamento e por pessoa. A pessoa é o campo "Vendedor" do pipe Financeiro.
+              A RPC é SECURITY DEFINER lendo as tabelas BASE, não as RPCs de cada domínio:
+              aquelas são SECURITY INVOKER e o papel `ceo` não está no RLS delas, então
+              devolveriam zero — não erro, zero. */}
+          <TabsContent value="saude-equipe" className="mt-6">
+            <CeoSaudeEquipe />
           </TabsContent>
 
-          {/* 4 · Saúde da Equipe (Sprint 4) — último de propósito: maior esforço e menor
-              prontidão de dados. Carrega o bloqueador de identidade não unificada entre
-              domínios (lead_agents/cs_agents por pipefy_user_id vs. profiles). */}
-          <TabsContent value="saude-equipe" className="mt-6">
-            <CeoTabPlaceholder
-              icon={Users}
-              title="Saúde da equipe em preparação"
-              description="Indicadores por pessoa reunindo CS, Leads, Projetos e Discador. Depende de unificar a identidade dos colaboradores entre os domínios."
-            />
-          </TabsContent>
         </div>
       </Tabs>
     </AppShell>

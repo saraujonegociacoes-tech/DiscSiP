@@ -23,6 +23,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { BrDateInput } from '@/components/bluedesk/BrDateInput'
 
 const SPRINT_STATUS_ORDER: MondaySprintStatus[] = ['planned', 'active', 'completed']
 
@@ -132,16 +133,11 @@ export function SprintDialog({ open, onOpenChange, projectId, sprint }: Props) {
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-2">
               <Label htmlFor="s-start">Início</Label>
-              <Input
-                id="s-start"
-                type="date"
-                value={start}
-                onChange={(e) => setStart(e.target.value)}
-              />
+              <BrDateInput id="s-start" value={start} onChange={setStart} className="w-full" />
             </div>
             <div className="space-y-2">
               <Label htmlFor="s-end">Fim</Label>
-              <Input id="s-end" type="date" value={end} onChange={(e) => setEnd(e.target.value)} />
+              <BrDateInput id="s-end" value={end} onChange={setEnd} className="w-full" />
             </div>
           </div>
         </div>

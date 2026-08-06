@@ -47,8 +47,13 @@ travadas, e [`../links.md`](../../links.md) (índice geral por domínio).
 | 0 | **Fundação & trava** — papel `ceo`, rota `/ceo` (esqueleto multi-abas), helper `ceo_current_role()`, docs | — | ✅ **fechada** (30/jul) · trava testada pelo dono em 31/jul |
 | 1 | **Financeiro — entradas do mês** (carro-chefe) — pipe Financeiro novo (vertical isolada), KPIs + série mensal | `fin_cards` + `fin_entries` (pipe `304386356`) | ✅ **fechada** (31/jul) — no ar, conferida e testada na tela |
 | 2 | **Projeções de pagamento** — CS reusado + pipe Negociação novo (fase "Aguardando pagamento") | `neg_cards` (pipe `304370275`) + plano do CS | ✅ **fechada** (03/ago) — no ar, conferida (3.343/3.343, 0 divergências) e concluída pelo dono |
-| 3 | **Saúde da empresa** — scorecard compondo Financeiro + Leads + CS + Monday + Discador | Agregação multi-domínio | ⏳ não iniciada |
-| 4 | **Saúde da equipe / colaboradores** — saúde por pessoa (CS + Leads + Monday + Discador) | Agregação multi-domínio | ⏳ não iniciada |
+| 3+4 | **Saúde da Equipe** — receita × custo × margem por departamento e por pessoa | `fin_entries` + `fin_cards.metadata` (campo "Vendedor") + `ceo_pessoa_custo` | ✅ **no ar** (06/ago) — as Sprints 3 e 4 foram **fundidas numa aba só** |
+
+⚠️ **O painel tem 3 abas, não 4.** A Sprint 3 nasceu como "Saúde da Empresa" (scorecard de 5
+domínios) e a Sprint 4 seria "Saúde da Equipe" (por pessoa). Ao reformular a Sprint 3 para receita
+e custo **por pessoa** em 05/ago, ela virou o que a Sprint 4 seria — o dono constatou isso em
+06/ago, mandou apagar a aba placeholder e a construída herdou o nome. A RPC manteve o nome
+`get_ceo_saude_empresa` de propósito (ver o roadmap).
 
 ## Pipes envolvidos
 
@@ -270,10 +275,50 @@ uniforme desde 2024; o que muda por ano é só o quanto os campos são usados.
 recomendações: projeção das **duas** fases de espera · card já pago **fora** · 2ª parcela vencida
 **é** projeção (em janela própria) · RPC do CS **escrita** mesmo sem dado.
 
-**Próximo passo daqui: Sprint 3 (Saúde da empresa).** O risco conhecido dela continua de pé e é o
-primeiro bloqueio a atacar: as RPCs/tabelas base de **Leads não estão versionadas** no repo (só na
-base ao vivo, `supabase/manual/leads_dashboard_setup.sql` ausente em todos os worktrees) — extrair
-do Supabase antes de depender delas.
+**A Sprint 3 (Saúde da empresa) — CÓDIGO ENTREGUE em 04/ago.** Aba construída sobre
+[`20260804_saude_empresa.sql`](../../../supabase/migrations/Migrations_projetopainelceo/20260804_saude_empresa.sql)
+(`get_ceo_saude_empresa`), que compõe cinco domínios numa chamada só: Financeiro, Leads, CS,
+Monday (TI) e Discador. Sem ingestão nova e sem cenário Make — esta sprint só **lê** o que os
+outros domínios já gravam. **Falta o dono:** aplicar a migration e abrir a aba.
+
+~~**Bloqueio: Leads não versionado**~~ — **não existia.** O commit `bf62847` (10/jul) tinha
+apagado 23 arquivos de `supabase/`, e o commit que voltou a versionar a pasta (`51cc883`, 30/jul)
+restaurou só as migrations de 10/jul em diante. **As 23 estavam no histórico do git o tempo todo**
+— restauradas em 04/ago nas pastas dos seus domínios (10 de leads, 5 de RBAC, 5 do discador, 2 em
+[`supabase/manual/`](../../../supabase/manual/README.md)). Conferido ao vivo: as colunas que
+`20260702_leads_pipefy.sql` cria são exatamente as 15 que `leads` tem hoje.
+⚠️ São migrations **já aplicadas**, restauradas como registro — `20260612`/`20260613` dropam
+`agents` e `manual/leads_dashboard_setup.sql` recria o schema de leads do zero. Não reexecutar.
+**Isso destrava também a Sprint 4**, que carregava o mesmo bloqueio. A lição: "não está no repo" e
+"não está no git" não são a mesma coisa — o plano carregou esse bloqueio por 5 dias e
+`git log --all --diff-filter=D` respondia em segundos.
+
+⚠️ **Duas coisas que a conferência da Sprint 3 achou:**
+
+1. **A média de tempo até o 1º contato saía NEGATIVA** (−22,0 h) por causa de lead retroativo. O
+   painel de Leads já resolvera isso em 08/jul (`FILTER hours_to_first_contact >= 0`); a RPC nova
+   replicou o `AVG` sem o filtro. Corrigido antes de entregar (17,0 h). **Compor um painel novo por
+   cima de domínios antigos herda os dados, não as correções deles.**
+2. **R$ 8.000,00 na aba Financeiro, em produção, de um card que não existe mais no Pipefy** —
+   "RICARDO DOS SANTOS SILVA", lançado em 03/ago, 29,5% do mês corrente. É o risco "card apagado no
+   Pipefy não some do Supabase" virando caso real e material. ✅ **Limpo pelo dono em 05/ago** — as
+   duas conferências passaram a dar o mesmo número em julho, que é o atestado da limpeza. Registro
+   e a decisão de fundo em aberto em
+   [`cards-orfaos-financeiro.md`](../fixes/cards-orfaos-financeiro.md).
+
+⚠️ **O estado das cinco fontes muda de um dia para o outro, e é por isso que cada cartão carimba a
+última atividade.** Em 04/ago o discador estava mudo havia 12 dias e o Monday tinha 30 tarefas; em
+05/ago o discador **voltou** (19 chamadas na tarde de 04/ago, nenhuma atendida, campanhas ainda em
+`draft`) e nenhuma fonte aparecia parada. Sem o carimbo, "não aconteceu nada" e "a fonte parou"
+desenhariam a mesma tela. Para o estado de hoje: `npm run verify:saude-empresa`, seção FRESCOR DAS
+FONTES. **Não trate nenhuma medição destas como permanente.**
+
+**Próximo passo daqui: Sprint 4 (Saúde da equipe).** O bloqueio de schema caiu; o que sobra é o
+**bloqueador de identidade**, e ele foi medido ao vivo em 04/ago: `lead_agents` tem **6 de 9** com
+`profile_id` preenchido (faltam Acsa Vingren, Ana Carolina e Vitoria Meneses) e `cs_agents` tem
+**0 de 9** — a ponte do CS está inteiramente vazia. Monday e Discador chaveiam por `profiles` (12
+linhas). Os dois lados têm `email` do mesmo domínio corporativo, então o casamento por e-mail é
+viável; é o primeiro trabalho da Sprint 4.
 
 **Ponto menor em aberto:** se os campos de desconto de um pagamento normal
 (`informe_a_soma_total_dos_descontos_conforme_a_listagem_acima` + a checklist) deveriam afetar o

@@ -170,6 +170,7 @@ completo em [`updates/painel-ceo-indice.md`](projetopainelceo-docs/updates/paine
 
 ## `fixes/`
 - [`correcao-guarda-ceo-null.md`](projetopainelceo-docs/fixes/correcao-guarda-ceo-null.md) — a guarda das RPCs do CEO **não bloqueava** quando `ceo_current_role()` devolvia NULL: `NULL NOT IN (...)` é NULL, não TRUE, e `IF NULL THEN` não entra. Afetava as 4 RPCs do painel, inclusive a do Financeiro em produção. Corrigido na origem (o helper nunca mais devolve NULL) — migration `20260731c_ceo_guard_null_safe.sql`
+- [`cards-orfaos-financeiro.md`](projetopainelceo-docs/fixes/cards-orfaos-financeiro.md) — **R$ 8.000,00 na aba Financeiro, em produção, de um card apagado no Pipefy** (29,5% do mês corrente). Card apagado lá não some do Supabase: a ingestão é upsert e o poll só enxerga o que existe. Achado pela divergência entre `verify:financeiro` (lê o Pipefy) e `verify:saude-empresa` (lê o banco). Limpeza manual; a correção de fundo é uma decisão em aberto
 
 ---
 

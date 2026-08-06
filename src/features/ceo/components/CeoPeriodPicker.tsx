@@ -10,6 +10,7 @@ import {
   type LeadPeriod,
 } from '@/lib/period'
 import { cn } from '@/lib/utils'
+import { BrDateInput } from '@/components/bluedesk/BrDateInput'
 
 // Seletor de período do painel do CEO. Diferente do PeriodPicker compartilhado
 // (src/components/bluedesk/PeriodPicker.tsx), que só conhece o ciclo 11→10 da operação:
@@ -115,23 +116,21 @@ export function CeoPeriodPicker({
 
       {custom && (
         <>
-          <input
-            type="date"
+          {/* BrDateInput, não <input type="date">: o nativo renderiza no locale do
+              SISTEMA e num Windows em inglês vira MM/DD. Mesmo contrato (ISO). */}
+          <BrDateInput
             value={start}
             max={end}
-            onChange={(e) => setStart(e.target.value)}
+            onChange={setStart}
             disabled={disabled}
-            className={inputCls}
             aria-label="Data inicial"
           />
           <span className="text-xs text-muted-foreground">até</span>
-          <input
-            type="date"
+          <BrDateInput
             value={end}
             min={start}
-            onChange={(e) => setEnd(e.target.value)}
+            onChange={setEnd}
             disabled={disabled}
-            className={inputCls}
             aria-label="Data final"
           />
           <button

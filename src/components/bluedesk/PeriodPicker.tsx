@@ -8,6 +8,7 @@ import {
   periodBounds,
   type LeadPeriod,
 } from '@/lib/period'
+import { BrDateInput } from './BrDateInput'
 
 // Seletor de período genérico (ciclo de meta 11→10 + intervalo livre). Default = ciclo
 // corrente. Usado pelo dashboard de leads e pelo histórico da discadora.
@@ -64,23 +65,21 @@ export function PeriodPicker({
 
       {custom && (
         <>
-          <input
-            type="date"
+          {/* BrDateInput, não <input type="date">: o nativo renderiza no locale do
+              SISTEMA e num Windows em inglês vira MM/DD. Mesmo contrato (ISO). */}
+          <BrDateInput
             value={start}
             max={end}
-            onChange={(e) => setStart(e.target.value)}
+            onChange={setStart}
             disabled={disabled}
-            className={inputCls}
             aria-label="Data inicial"
           />
           <span className="text-xs text-muted-foreground">até</span>
-          <input
-            type="date"
+          <BrDateInput
             value={end}
             min={start}
-            onChange={(e) => setEnd(e.target.value)}
+            onChange={setEnd}
             disabled={disabled}
-            className={inputCls}
             aria-label="Data final"
           />
           <button

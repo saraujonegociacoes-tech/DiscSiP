@@ -10,5 +10,4 @@
 // re-exportá-las aqui trazia o Recharts inteiro para o First Load JS da rota. Ver o comentário
 // equivalente em features/leads/index.ts.
 export { CeoTabNav, type CeoTab } from './components/CeoTabNav'
-export { CeoTabPlaceholder } from './components/CeoTabPlaceholder'
 export { CeoPeriodPicker, type CeoPeriodMode } from './components/CeoPeriodPicker'

@@ -14,6 +14,7 @@
     "verify:financeiro": "node scripts/verify-financeiro.mjs",
     "import:negociacao": "node scripts/import-negociacao.mjs",
     "verify:negociacao": "node scripts/verify-negociacao.mjs",
+    "verify:saude-empresa": "node scripts/verify-saude-empresa.mjs",
     "import:minutas": "node scripts/import-minutas.mjs",
     "prebuild": "node scripts/sync-helper.mjs",
     "prebuild:cf": "node scripts/sync-helper.mjs",
