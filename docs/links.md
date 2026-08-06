@@ -161,8 +161,8 @@ completo em [`updates/painel-ceo-indice.md`](projetopainelceo-docs/updates/paine
 > **não funde** os schemas dos domínios — ele compõe por RPC de leitura.
 
 ## `updates/`
-- [`painel-ceo-indice.md`](projetopainelceo-docs/updates/painel-ceo-indice.md) — índice/estado do painel do CEO
-- [`painel-ceo-sprints.md`](projetopainelceo-docs/updates/painel-ceo-sprints.md) — roadmap em sprints (S0→S4: Fundação/trava · Financeiro · Projeções · Saúde da Empresa · Saúde da Equipe) + decisões travadas
+- [`painel-ceo-indice.md`](projetopainelceo-docs/updates/painel-ceo-indice.md) — índice/estado do painel do CEO. **✅ ENTREGUE em 06/ago/2026**, 3 abas no ar
+- [`painel-ceo-sprints.md`](projetopainelceo-docs/updates/painel-ceo-sprints.md) — roadmap em sprints (S0 Fundação/trava · S1 Financeiro · S2 Projeções · **S3+S4 Saúde da Equipe, fundidas numa aba só**) + decisões travadas + a conferência de conclusão da entrega
 - [`introspeccao-pipefy-financeiro.md`](projetopainelceo-docs/updates/introspeccao-pipefy-financeiro.md) — mapeamento do pipe Financeiro (field-ids, parsers, achados) + as queries de introspecção reutilizáveis
 - [`introspeccao-pipefy-negociacao.md`](projetopainelceo-docs/updates/introspeccao-pipefy-negociacao.md) — mapeamento do pipe Negociação `304370275` (Sprint 2): fase da projeção, field-ids, parsers e 8 achados. Dois deles mudam o desenho: o **realizado já cai no pipe do Financeiro** (risco de contagem dupla) e o **`datetime_value` vem em UTC** (8,2% dos cards no dia errado)
 - [`make-integracao-financeiro.md`](projetopainelceo-docs/updates/make-integracao-financeiro.md) — cenário Pipefy → Make → Supabase do Financeiro

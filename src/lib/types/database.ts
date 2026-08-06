@@ -537,7 +537,8 @@ export interface CeoProjecaoData {
   items: CeoProjecaoItem[]
 }
 
-// ABA 3 (Saúde da Empresa): get_ceo_saude_empresa(p_start, p_end), migrations
+// ABA 3 (Saúde da Equipe — a RPC guardou o nome antigo de propósito, ver actions/ceo.ts):
+// get_ceo_saude_empresa(p_start, p_end), migrations
 // 20260804_saude_empresa.sql (v1) e 20260805b_saude_custos.sql (v2, a que vale).
 //
 // A aba responde UMA pergunta: quanto cada departamento e cada pessoa coloca para

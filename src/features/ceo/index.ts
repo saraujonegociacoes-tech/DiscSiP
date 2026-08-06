@@ -1,4 +1,4 @@
-// Peças apresentacionais do Painel do CEO (painel de 4 abas — ver
+// Peças apresentacionais do Painel do CEO (painel de 3 abas — ver
 // docs/projetopainelceo-docs/updates/painel-ceo-sprints.md). A composição vive em
 // app/ceo/CeoClient.tsx (dentro do AppShell), como em CS e no dashboard de leads.
 //

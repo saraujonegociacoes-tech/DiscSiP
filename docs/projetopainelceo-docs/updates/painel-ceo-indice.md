@@ -7,6 +7,25 @@ RPCs/actions, **sem fundir os schemas**. Acesso restrito por um papel novo `ceo`
 [`painel-ceo-sprints.md`](painel-ceo-sprints.md) para o roadmap completo e as decisões
 travadas, e [`../links.md`](../../links.md) (índice geral por domínio).
 
+> # ✅ ESTADO: PAINEL ENTREGUE (06/ago/2026)
+>
+> **As 3 abas estão no ar com dado real** — `Financeiro` · `Projeções` · `Saúde da Equipe`. As **11
+> migrations** foram aplicadas, o código está commitado (`2fb09bf`) e `NEXT_PUBLIC_CEO_ENABLED`
+> está definida na Cloudflare Pages. A conferência de conclusão (banco ao vivo, 06/ago) está em
+> [`painel-ceo-sprints.md`](painel-ceo-sprints.md#-entrega-do-painel--conferência-de-conclusão-06ago2026):
+> assinaturas das RPCs conferidas por introspecção, guarda ativa nas 6 (inclusive as de escrita),
+> Financeiro batendo 4.572/4.572 cards e R$ 7.353.595,15 contra o Pipefy, `tsc`/lint/build verdes.
+>
+> **Duas ressalvas que a conferência registrou** (nenhuma é bug):
+> 1. **O custo ainda é R$ 0,00** — `ceo_custo_config` zerada e `ceo_pessoa_custo` vazia, então na
+>    Saúde da Equipe a margem é a própria receita. O campo espera o número do dono, na aba.
+> 2. **`NEXT_PUBLIC_*` é assada no BUILD.** Definir a variável na Cloudflare Pages não altera o
+>    deploy que já está no ar; se `/ceo` mostrar "Em breve", é preciso refazer o deploy.
+>
+> O histórico abaixo fica como registro do caminho — as datas explicam decisões, não o estado atual.
+>
+> ---
+>
 > **Estado (31/jul/2026): Sprint 0 entregue e commitada** (`f336c17`). Papel `ceo` (migrations
 > + RBAC no app), rota `/ceo` com as 4 abas em placeholder, helper `ceo_current_role()` e docs.
 > A flag `NEXT_PUBLIC_CEO_ENABLED` nasce **desligada** — a rota existe mas mostra "Em breve" até
@@ -47,7 +66,10 @@ travadas, e [`../links.md`](../../links.md) (índice geral por domínio).
 | 0 | **Fundação & trava** — papel `ceo`, rota `/ceo` (esqueleto multi-abas), helper `ceo_current_role()`, docs | — | ✅ **fechada** (30/jul) · trava testada pelo dono em 31/jul |
 | 1 | **Financeiro — entradas do mês** (carro-chefe) — pipe Financeiro novo (vertical isolada), KPIs + série mensal | `fin_cards` + `fin_entries` (pipe `304386356`) | ✅ **fechada** (31/jul) — no ar, conferida e testada na tela |
 | 2 | **Projeções de pagamento** — CS reusado + pipe Negociação novo (fase "Aguardando pagamento") | `neg_cards` (pipe `304370275`) + plano do CS | ✅ **fechada** (03/ago) — no ar, conferida (3.343/3.343, 0 divergências) e concluída pelo dono |
-| 3+4 | **Saúde da Equipe** — receita × custo × margem por departamento e por pessoa | `fin_entries` + `fin_cards.metadata` (campo "Vendedor") + `ceo_pessoa_custo` | ✅ **no ar** (06/ago) — as Sprints 3 e 4 foram **fundidas numa aba só** |
+| 3+4 | **Saúde da Equipe** — receita × custo × margem por departamento e por pessoa | `fin_entries` + `fin_cards.metadata` (campo "Vendedor") + `ceo_pessoa_custo` | ✅ **fechada** (06/ago) — as Sprints 3 e 4 foram **fundidas numa aba só**; falta só o dono cadastrar os custos |
+
+**Não há Sprint 5 planejada. O painel está entregue.** O que sobra é trabalho opcional, listado em
+"O que ficou em aberto" no fim deste documento.
 
 ⚠️ **O painel tem 3 abas, não 4.** A Sprint 3 nasceu como "Saúde da Empresa" (scorecard de 5
 domínios) e a Sprint 4 seria "Saúde da Equipe" (por pessoa). Ao reformular a Sprint 3 para receita
@@ -279,7 +301,13 @@ recomendações: projeção das **duas** fases de espera · card já pago **fora
 [`20260804_saude_empresa.sql`](../../../supabase/migrations/Migrations_projetopainelceo/20260804_saude_empresa.sql)
 (`get_ceo_saude_empresa`), que compõe cinco domínios numa chamada só: Financeiro, Leads, CS,
 Monday (TI) e Discador. Sem ingestão nova e sem cenário Make — esta sprint só **lê** o que os
-outros domínios já gravam. **Falta o dono:** aplicar a migration e abrir a aba.
+outros domínios já gravam.
+
+⚠️ **Esse desenho de cinco blocos NÃO é o que está no ar.** Em 05/ago o dono reformulou a aba: ela
+deixou de ser um scorecard de domínios e virou **receita × custo × margem por departamento e por
+pessoa** ([`20260805b_saude_custos.sql`](../../../supabase/migrations/Migrations_projetopainelceo/20260805b_saude_custos.sql)),
+sem os blocos de TI e de Discador — nenhum dos dois responde "quanto essa pessoa trouxe". ✅ Aplicada
+e fechada em 06/ago.
 
 ~~**Bloqueio: Leads não versionado**~~ — **não existia.** O commit `bf62847` (10/jul) tinha
 apagado 23 arquivos de `supabase/`, e o commit que voltou a versionar a pasta (`51cc883`, 30/jul)
@@ -313,17 +341,31 @@ restaurou só as migrations de 10/jul em diante. **As 23 estavam no histórico d
 desenhariam a mesma tela. Para o estado de hoje: `npm run verify:saude-empresa`, seção FRESCOR DAS
 FONTES. **Não trate nenhuma medição destas como permanente.**
 
-**Próximo passo daqui: Sprint 4 (Saúde da equipe).** O bloqueio de schema caiu; o que sobra é o
-**bloqueador de identidade**, e ele foi medido ao vivo em 04/ago: `lead_agents` tem **6 de 9** com
-`profile_id` preenchido (faltam Acsa Vingren, Ana Carolina e Vitoria Meneses) e `cs_agents` tem
-**0 de 9** — a ponte do CS está inteiramente vazia. Monday e Discador chaveiam por `profiles` (12
-linhas). Os dois lados têm `email` do mesmo domínio corporativo, então o casamento por e-mail é
-viável; é o primeiro trabalho da Sprint 4.
+~~**Próximo passo daqui: Sprint 4 (Saúde da equipe).**~~ — **a Sprint 4 não existe mais**: foi
+fundida na 3 em 06/ago. O bloqueador de identidade que ela carregava foi **medido, e o resultado
+matou o escopo**: dos 30 "Vendedores" do Financeiro, casam 4 com `lead_agents`, 5 com `cs_agents` e
+2 com `profiles` — no máximo 9 de 30 (30%). E **não é cadastro mal preenchido, são papéis
+diferentes**: quem fecha pagamento não é quem trabalha lead nem quem toca carteira. Unificar a
+identidade faria os nomes casarem, mas não faria a mesma pessoa ter as duas métricas. Detalhes na
+seção "Sprint 4" de [`painel-ceo-sprints.md`](painel-ceo-sprints.md).
 
-**Ponto menor em aberto:** se os campos de desconto de um pagamento normal
-(`informe_a_soma_total_dos_descontos_conforme_a_listagem_acima` + a checklist) deveriam afetar o
-sinal. Hoje só a **categoria** `Desconto - Devolução` entra negativa. Se mudar, é uma linha em
-`fin_entry_sign`.
+## O que ficou em aberto (nada bloqueia o painel)
+
+1. **Cadastrar os custos** — `ceo_custo_config` está em R$ 0,00 e `ceo_pessoa_custo` vazia, então a
+   margem da Saúde da Equipe é a própria receita. É trabalho do dono, na própria aba.
+2. **Ponte de identidade** `lead_agents.profile_id` (6/9) e `cs_agents.profile_id` (**0/9**), por
+   e-mail — pré-requisito preservado caso a atividade por pessoa volte à mesa. Ver acima por que
+   ela sozinha não resolveria.
+3. **Renomear `get_ceo_saude_empresa`** para casar com o rótulo "Saúde da Equipe". Deixado de
+   propósito: exigiria outra migration mexendo em objeto aplicado, e este projeto já se queimou
+   duas vezes com redefinição de função entre migrations. O desalinho está avisado no código.
+4. **Cards órfãos** (card apagado no Pipefy que continua no Supabase) — decisão de fundo em aberto
+   em [`cards-orfaos-financeiro.md`](../fixes/cards-orfaos-financeiro.md). Hoje só é detectado
+   quando as duas conferências divergem.
+5. **Ponto menor:** se os campos de desconto de um pagamento normal
+   (`informe_a_soma_total_dos_descontos_conforme_a_listagem_acima` + a checklist) deveriam afetar o
+   sinal. Hoje só a **categoria** `Desconto - Devolução` entra negativa. Se mudar, é uma linha em
+   `fin_entry_sign`.
 
 ~~**Também pendente:** o teste manual da trava (3 casos por papel)~~ — **feito pelo dono em 31/jul**.
 

@@ -344,18 +344,22 @@ porque lá um card guardava vários pagamentos **históricos já ocorridos** —
 
 ---
 
-## Sprint 3 — Saúde da empresa — ✅ CÓDIGO ENTREGUE (04/ago/2026)
+## Sprint 3 — Saúde da Equipe — ✅ FECHADA (06/ago/2026)
 
 > **O bloqueio caiu sem precisar extrair nada do banco.** Ver "O bloqueio de Leads" abaixo.
 >
 > **Arquivos entregues:** [`20260804_saude_empresa.sql`](../../../supabase/migrations/Migrations_projetopainelceo/20260804_saude_empresa.sql)
-> (`get_ceo_saude_empresa`) · `scripts/verify-saude-empresa.mjs` (`npm run verify:saude-empresa`) ·
-> `getCeoSaudeEmpresa` em `src/app/actions/ceo.ts` · tipos em `src/lib/types/database.ts` ·
-> `src/features/ceo/components/CeoSaudeEmpresa.tsx` · aba ligada em `src/app/ceo/CeoClient.tsx` ·
+> (`get_ceo_saude_empresa` v1) · [`20260805b_saude_custos.sql`](../../../supabase/migrations/Migrations_projetopainelceo/20260805b_saude_custos.sql)
+> (v2 — receita × custo por pessoa, `ceo_pessoa_custo` + `ceo_custo_config`) ·
+> `scripts/verify-saude-empresa.mjs` (`npm run verify:saude-empresa`) · `getCeoSaudeEquipe` em
+> `src/app/actions/ceo.ts` · tipos em `src/lib/types/database.ts` ·
+> `src/features/ceo/components/CeoSaudeEquipe.tsx` · aba ligada em `src/app/ceo/CeoClient.tsx` ·
 > 23 migrations base restauradas do git (ver abaixo).
 >
-> **Falta o dono:** aplicar a migration e abrir a aba. Não há ingestão nova nem cenário Make —
-> esta sprint só LÊ o que os outros domínios já gravam.
+> **Fechada em 06/ago:** o dono aplicou as migrations, commitou e ligou
+> `NEXT_PUBLIC_CEO_ENABLED` na Cloudflare Pages. Não houve ingestão nova nem cenário Make —
+> esta sprint só LÊ o que os outros domínios já gravam. A aba nasceu "Saúde da empresa" e
+> **herdou o nome da Sprint 4** ao ser fundida com ela; ver a seção da Sprint 4.
 
 `get_ceo_saude_empresa(p_start, p_end)` devolve 1 jsonb com cinco blocos, um por domínio:
 
@@ -665,6 +669,59 @@ trabalho descrito abaixo continua válido como pré-requisito.
 
 ---
 
+## ✅ Entrega do painel — conferência de conclusão (06/ago/2026)
+
+O dono aplicou **as 11 migrations**, commitou (`2fb09bf`) e definiu `NEXT_PUBLIC_CEO_ENABLED` na
+Cloudflare Pages. Esta seção registra a conferência feita **contra o banco ao vivo** no dia da
+entrega — não contra os arquivos `.sql`, que só provam o que foi *escrito*, não o que foi *aplicado*.
+
+**1. As RPCs no banco têm a assinatura das migrations** (introspecção OpenAPI do PostgREST):
+
+| RPC no banco | Migration que a define |
+|---|---|
+| `get_ceo_financeiro(p_start, p_end, p_modo)` | `20260805c` |
+| `get_ceo_projecoes(p_start, p_end)` | `20260806` |
+| `get_ceo_saude_empresa(p_start, p_end)` | `20260805b` |
+| `set_ceo_custo_geral(p_valor)` · `set_ceo_pessoa_custo(p_pessoa, p_valor)` | `20260805b` |
+| `neg_projection(p_metadata)` · `fin_vendedor(p_metadata)` | `20260805` · `20260805b` |
+
+**A armadilha do overload não se materializou:** `get_ceo_projecoes()` sem argumento responde
+(devolve NULL pela guarda) em vez de "could not choose the best candidate" — prova de que o
+`DROP FUNCTION` da versão de 0 argumentos rodou. Os nomes dos parâmetros também batem com o que
+`src/app/actions/ceo.ts` envia, que é onde um desalinho viraria **PGRST202 em runtime**, invisível
+para `tsc`.
+
+**2. A guarda protege as 6 RPCs, inclusive as de ESCRITA.** Chamadas como `service_role` (que não é
+`ceo` nem `admin`), todas devolveram `null` — e `ceo_custo_config.custo_geral` continuou `0` depois
+da tentativa de escrita. Uma `SECURITY DEFINER` de escrita sem guarda deixaria qualquer usuário
+autenticado mexer nos custos.
+
+**3. Os números batem com a fonte:**
+- `npm run verify:financeiro` — **4.572/4.572 cards**, 5.371 pagamentos, **0 divergências**,
+  33/33 meses, **R$ 7.353.595,15** idêntico ao Pipefy recomputado.
+- `npm run verify:saude-empresa` (ago/2026) — **R$ 42.123,11 em 8 pessoas / 3 departamentos**, e
+  **100% do valor com vendedor identificado** (nenhuma receita órfã na aba).
+- Negociação — **0 cards** com `proj_source='parcela2'` (a regra "só campos da fase" pegou de fato,
+  incluindo o re-cálculo), 8 cards na fase de espera, 5 já pagos, **3 projetam R$ 5.250,00**.
+
+**4. Código:** `tsc` limpo · `eslint src/` limpo · `npm run build` verde · `/ceo` em **7,18 kB**
+(208 kB First Load) — o lazy das abas com Recharts continua segurando o peso.
+
+### ⚠️ Entregue ≠ configurado: o custo ainda é R$ 0,00
+
+`ceo_custo_config.custo_geral = 0` e `ceo_pessoa_custo` está **vazia**. A aba funciona, mas
+**margem = receita (100%)** para as 8 pessoas. Não é bug — é o campo esperando o número do dono,
+na própria aba. Enquanto estiver assim, a coluna "margem" não informa nada.
+
+### ⚠️ `NEXT_PUBLIC_CEO_ENABLED` é assada no BUILD, não lida em runtime
+
+Vale para toda `NEXT_PUBLIC_*`. Definir a variável no painel da Cloudflare Pages **não muda o
+deploy que já está no ar** — só o próximo build a enxerga. Se `/ceo` mostrar "Em breve" com a
+variável definida, o diagnóstico é esse, não o papel do usuário nem a guarda: refazer o deploy.
+(A flag controla só o **lançamento**; quem barra o acesso é o middleware + `ceo_current_role()`.)
+
+---
+
 ## Riscos & dependências (resumo)
 - ~~**Financeiro**: pipe ID + field-ids~~ — resolvido em 31/jul
   ([`introspeccao-pipefy-financeiro.md`](introspeccao-pipefy-financeiro.md)).
@@ -716,6 +773,11 @@ trabalho descrito abaixo continua válido como pré-requisito.
 ---
 
 ## Verificação (por sprint)
+
+> Os números abaixo são **do dia de cada sprint** e envelhecem com a operação (o pipe recebe cards
+> todo dia). Para o estado mais recente, ver "Entrega do painel — conferência de conclusão
+> (06/ago)" acima; para o de hoje, rodar os próprios scripts.
+
 - **Build**: `npm run lint` + `tsc` verdes nos arquivos tocados (padrão do repo).
 - **Ingestão** (S1/S2): rodar o backfill (`npm run import:financeiro` / `import:negociacao`), conferir
   linhas no Supabase; teste do cenário Make retornando **200**.

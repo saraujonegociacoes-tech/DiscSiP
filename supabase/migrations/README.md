@@ -21,6 +21,17 @@ achar rápido "de quem é esta migration", espelhando os nomes de [`docs/`](../.
    estas subpastas — nesse dia, achatar de volta.
 5. **Ao criar migration nova**: coloque na pasta do domínio dela e registre em
    [`docs/links.md`](../../docs/links.md).
+6. ⚠️ **Ao mexer numa função que já existe, cuidado com as duas armadilhas que já morderam aqui.**
+   Ambas falham **em silêncio** — nada erra, o banco só passa a se comportar diferente do que o
+   arquivo mais recente diz:
+   - **Duas migrations com `CREATE OR REPLACE` da mesma função**: quem roda por último vence. Foi
+     o caso de `20260803_negociacao_fase_unica.sql`, desfeita ao reexecutar a `20260731b`.
+     Reaplicar um arquivo antigo pode **reverter** uma correção nova.
+   - **Acrescentar parâmetro com `DEFAULT` NÃO substitui a função — cria uma segunda.** As duas
+     passam a existir e a chamada sem argumento vira "function is not unique". Por isso
+     `20260805c` e `20260806` fazem `DROP FUNCTION` da assinatura antiga **antes** do `CREATE`.
+   Conferência que pega as duas: `SELECT pg_get_function_identity_arguments(oid) FROM pg_proc
+   WHERE proname = '<nome>';` — tem que voltar **uma** linha, com a assinatura esperada.
 
 ## Pastas
 
