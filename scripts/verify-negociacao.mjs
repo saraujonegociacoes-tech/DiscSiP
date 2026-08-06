@@ -101,23 +101,22 @@ const val = (node, id) => {
 }
 const rawField = (node, id) => (node.fields ?? []).find((x) => x.field?.id === id) ?? null
 
-// neg_projection: COALESCE por prioridade, NÃO soma. Ver o comentário na migration.
+// neg_projection: SÓ os campos da fase "Aguardando Pagamento". Espelha
+// 20260805_negociacao_so_campos_da_fase.sql.
+//
+// ⚠️ NÃO reintroduzir o fallback para a 2ª parcela da venda
+// (`valor_do_pagamento_da_2_parcela` + `data_do_pagamento_da_2_parcela`). Ele existiu
+// até 05/ago e saiu por REGRA do dono: campo de pré-venda não gera projeção da
+// Negociação, nem em card que esteja na fase certa. Duas razões, e a segunda é factual:
+//   1. é escopo do COMERCIAL — o mesmo erro que a 20260803 já tinha corrigido do lado
+//      do card (fase 338815768), corrigido pela metade;
+//   2. `data_do_pagamento_da_2_parcela` **não é data de parcela**: é carimbo de quando
+//      alguém preencheu o formulário. Conferido em 05/ago — três cards distintos com
+//      "10/06/2026 17:2x" e discordando do campo de data real do mesmo card.
 function projecao(node) {
-  const sinais = [
-    {
-      src: 'fase',
-      v: parseMoney(val(node, 'informe_o_valor_do_pagamento')),
-      d: parseDate(val(node, 'informe_a_data_agendada_para_o_pagamento_1')),
-    },
-    {
-      src: 'parcela2',
-      v: parseMoney(val(node, 'valor_do_pagamento_da_2_parcela')),
-      d:
-        parseDate(val(node, 'data_do_pagamento_da_2_parcela')) ??
-        parseDate(val(node, 'data_do_pagamento_da_parcela_2')),
-    },
-  ]
-  return sinais.find((s) => s.v != null && s.v !== 0 && s.d != null) ?? null
+  const v = parseMoney(val(node, 'informe_o_valor_do_pagamento'))
+  const d = parseDate(val(node, 'informe_a_data_agendada_para_o_pagamento_1'))
+  return v != null && v !== 0 && d != null ? { src: 'fase', v, d } : null
 }
 
 function recomputa(node) {

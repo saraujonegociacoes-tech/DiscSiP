@@ -14,6 +14,7 @@ import {
 import { createMinuta } from '@/app/actions/minutas'
 import type { CreateMinutaInput, Recorrencia } from '@/lib/types/database'
 import { RECORRENCIAS, brl } from '../shared'
+import { BrDateInput } from '@/components/bluedesk/BrDateInput'
 
 // Formulário "Nova minuta": cria o acordo e gera as parcelas (RPC proc_create_acordo). A
 // recorrência define o intervalo entre parcelas; 'avulsa' força 1 parcela; 'personalizada'
@@ -196,7 +197,7 @@ export function MinutaForm({ onCreated }: { onCreated: () => void }) {
             </div>
             <div>
               <label className={labelCls}>1º vencimento</label>
-              <input type="date" className={inputCls} value={primeiroVencimento} onChange={(e) => setPrimeiroVencimento(e.target.value)} />
+              <BrDateInput className={inputCls} value={primeiroVencimento} onChange={setPrimeiroVencimento} />
             </div>
           </div>
 

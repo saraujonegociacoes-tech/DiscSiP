@@ -24,6 +24,8 @@ import {
 import { KpiCard } from '@/components/bluedesk/KpiCard'
 import { useChartTheme } from '@/components/bluedesk/useChartTheme'
 import { getCeoProjecoes } from '@/app/actions/ceo'
+import { CeoPeriodPicker, type CeoPeriodMode } from './CeoPeriodPicker'
+import { currentCivilMonth, type LeadPeriod } from '@/lib/period'
 import { cn } from '@/lib/utils'
 import type {
   CeoProjecaoData,
@@ -80,6 +82,8 @@ function windowTone(key: CeoProjecaoWindow): string {
 }
 
 export function CeoProjecoes() {
+  const [mode, setMode] = useState<CeoPeriodMode>('mes')
+  const [period, setPeriod] = useState<LeadPeriod>(() => currentCivilMonth())
   const [data, setData] = useState<CeoProjecaoData | null>(null)
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState<CeoProjecaoWindow | 'todas'>('todas')
@@ -88,7 +92,7 @@ export function CeoProjecoes() {
   useEffect(() => {
     let cancelled = false
     setLoading(true)
-    getCeoProjecoes()
+    getCeoProjecoes(period)
       .then((d) => {
         if (!cancelled) setData(d)
       })
@@ -101,7 +105,7 @@ export function CeoProjecoes() {
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [period])
 
   const chartData = useMemo(
     () =>
@@ -129,7 +133,7 @@ export function CeoProjecoes() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-baseline justify-between gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 className="text-sm font-semibold text-foreground">Pagamentos a receber</h2>
           <p className="text-xs text-muted-foreground">
@@ -137,12 +141,28 @@ export function CeoProjecoes() {
             Negociação e CS. Quando o cliente paga, o valor sai daqui e aparece no Financeiro.
           </p>
         </div>
-        {data && (
-          <p className="text-xs text-muted-foreground">
-            Posição de <span className="tabular-nums text-foreground">{brDate(data.referenceDate)}</span>
-          </p>
-        )}
+        <CeoPeriodPicker
+          value={period}
+          mode={mode}
+          disabled={loading}
+          onChange={(p, m) => {
+            setMode(m)
+            setPeriod(p)
+          }}
+        />
       </div>
+
+      {/* Duas datas convivem nesta aba e confundir uma com a outra inverte a leitura:
+          o PERÍODO recorta por vencimento; as FAIXAS abaixo (vencidas / ≤30d / …) são
+          contadas contra HOJE. Por isso a posição fica escrita junto do filtro. */}
+      {data && (
+        <p className="-mt-3 text-xs text-muted-foreground">
+          Mostrando o que vence no período escolhido. As faixas abaixo são relativas a{' '}
+          <span className="tabular-nums text-foreground">{brDate(data.referenceDate)}</span>, não ao
+          início do período — por isso algo pode aparecer como <strong>vencido</strong> dentro de um
+          período futuro.
+        </p>
+      )}
 
       {loading && !data ? (
         <div className="flex items-center justify-center gap-2 rounded-2xl border border-border bg-gradient-card py-16 text-sm text-muted-foreground shadow-card">

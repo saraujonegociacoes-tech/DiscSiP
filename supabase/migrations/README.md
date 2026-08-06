@@ -43,14 +43,33 @@ achar rápido "de quem é esta migration", espelhando os nomes de [`docs/`](../.
 - **`20260728_notifications.sql` está em Projetos** porque o feed nasceu das @menções nos
   comentários de tarefa, embora o sino seja global (fica no `AppShell`).
 
-## Schemas que NÃO estão aqui
+## Os schemas base voltaram (04/ago/2026)
 
-Nem tudo que está no banco está versionado. Aplicados direto no Supabase ao vivo:
+Este README dizia até 03/ago que a base do **Discador** e a do **Painel de Leads** não
+estavam versionadas — que existiam só no Supabase ao vivo e teriam que ser extraídas de lá
+antes de qualquer coisa depender delas. Era o primeiro bloqueio da Sprint 3 do painel do CEO.
 
-- **Base do Discador** (`profiles`, `campaigns`, `campaign_contacts`, `lists`, `call_logs`) — as
-  migrations `20260610`–`20260619` citadas no README principal não estão neste repositório.
-- **Base do Painel de Leads** (`v_lead_progress`, `lead_agents`, `get_leads_dashboard` e RPCs).
+**Elas nunca precisaram ser extraídas: estavam no próprio git.** O commit `bf62847`
+(10/jul/2026, "chore: remover supabase/ do repo; schema mantido no Supabase") apagou 23
+arquivos, e o commit seguinte que voltou a versionar `supabase/` (`51cc883`, 30/jul)
+restaurou só as migrations de 10/jul em diante. As 23 anteriores ficaram no histórico.
 
-Consequência prática: **não dá para auditar índices e RLS dessas tabelas a partir do repo.** É por
-isso que `20260803b_dialer_queue_indexes.sql` usa `IF NOT EXISTS` — não havia como saber daqui o
-que já existia na base.
+Todas voltaram em 04/ago, cada uma na pasta do seu domínio:
+
+| Restaurados | Onde | O que cobrem |
+|---|---|---|
+| `20260610`–`20260625` (4) + `20260706_dashboard_aggregations` | `Migrations_discadora/` | `campaigns`, `lists`, `campaign_contacts`, `agent_presence`, discagem paralela, views do dashboard |
+| `20260611`–`20260615` (5) | `Migrations_rbac/` | `profiles`, `departments`, cutover de identidade `agents`→`profiles`, **todo o RLS por papel** |
+| `20260702`–`20260710` (10) | `Migrations_painelleads/` | `leads`, `lead_events`, `lead_phases`, `lead_agents`, `v_lead_progress`, SLA, `get_leads_dashboard` e as RPCs de drill-down/série |
+| `leads_dashboard_setup.sql`, `ingest_lead_card.sql` | [`../manual/`](../manual/README.md) | setup consolidado de leads (⚠️ **destrutivo**, ver o README de lá) |
+
+Conferido contra o banco ao vivo em 04/ago: as colunas que `20260702_leads_pipefy.sql` cria
+são exatamente as 15 que `leads` tem hoje. O arquivo do histórico é fiel.
+
+⚠️ **São migrations JÁ APLICADAS, restauradas como registro.** Não reexecute nenhuma sem ler.
+As `20260612`/`20260613` são o cutover destrutivo de identidade (dropam a tabela `agents`) e
+`../manual/leads_dashboard_setup.sql` recria o schema de leads do zero.
+
+**A lição:** "não está no repo" e "não está no git" não são a mesma coisa. Antes de extrair
+schema de um banco ao vivo, procure no histórico —
+`git log --all --diff-filter=D --name-only -- 'supabase/*'` teria respondido em segundos.

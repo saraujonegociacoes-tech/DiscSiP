@@ -344,31 +344,324 @@ porque lá um card guardava vários pagamentos **históricos já ocorridos** —
 
 ---
 
-## Sprint 3 — Saúde da empresa
+## Sprint 3 — Saúde da empresa — ✅ CÓDIGO ENTREGUE (04/ago/2026)
 
-Compor indicadores nível-empresa a partir de dados já existentes, via RPCs de leitura (guarda
-`ceo`/`admin`), consolidados em `get_ceo_saude_empresa(p_start,p_end)`:
-- Entradas (Financeiro), conversão comercial (Leads), carteira/negociação e movimento (CS), ritmo de
-  entrega de TI (Monday: sprints/tarefas concluídas), volume de operação (Discador).
-- **Frontend — aba "Saúde da Empresa":** scorecard de KPIs + mini-tendências (sparklines/`KpiCard` com
-  delta).
+> **O bloqueio caiu sem precisar extrair nada do banco.** Ver "O bloqueio de Leads" abaixo.
+>
+> **Arquivos entregues:** [`20260804_saude_empresa.sql`](../../../supabase/migrations/Migrations_projetopainelceo/20260804_saude_empresa.sql)
+> (`get_ceo_saude_empresa`) · `scripts/verify-saude-empresa.mjs` (`npm run verify:saude-empresa`) ·
+> `getCeoSaudeEmpresa` em `src/app/actions/ceo.ts` · tipos em `src/lib/types/database.ts` ·
+> `src/features/ceo/components/CeoSaudeEmpresa.tsx` · aba ligada em `src/app/ceo/CeoClient.tsx` ·
+> 23 migrations base restauradas do git (ver abaixo).
+>
+> **Falta o dono:** aplicar a migration e abrir a aba. Não há ingestão nova nem cenário Make —
+> esta sprint só LÊ o que os outros domínios já gravam.
 
-⚠️ **Risco:** as RPCs/tabelas base de **Leads não estão versionadas no repo** (só na base ao vivo —
-`supabase/manual/leads_dashboard_setup.sql` ausente). Antes de depender delas, extrair do Supabase ao
-vivo.
+`get_ceo_saude_empresa(p_start, p_end)` devolve 1 jsonb com cinco blocos, um por domínio:
+
+| Bloco | Fonte | Números |
+|---|---|---|
+| `financeiro` | `fin_entries` | total, pagamentos, janela anterior |
+| `comercial` | `v_lead_progress` | recebidos, ganhos, mortos, abertos, parados por SLA, 1º contato médio |
+| `cs` | `cs_cards`/`cs_card_events`/`cs_negotiation_snapshots` | carteira ativa, movidos, negociados, quitados, distratos |
+| `ti` | `monday_tasks`/`monday_sprints` | concluídas, pontos, em aberto, atrasadas, sprints |
+| `operacao` | `call_logs` | chamadas, atendidas, minutos falados |
+
+Todos com a janela anterior de mesmo tamanho (delta), série diária BRT zero-preenchida
+(sparkline) e `lastActivityAt`.
+
+**Três decisões de desenho:**
+
+1. **O bloco financeiro DELEGA para `get_ceo_financeiro`** em vez de repetir a regra. A regra do
+   dinheiro tem três partes que já morderam (sinal por categoria, fase de cancelado fora, uma
+   linha por pagamento e não por card); copiá-la criaria duas fontes de verdade, e o sintoma
+   seria a aba Saúde discordando da aba Financeiro **do mesmo painel**.
+2. **SECURITY DEFINER lendo as tabelas base, nunca as RPCs de cada domínio.**
+   `get_leads_dashboard`, `get_cs_team` e afins são SECURITY INVOKER, e o papel `ceo` não está em
+   nenhuma policy de leads/cs/monday (decisão da Sprint 0). Chamá-las como CEO devolveria **zero —
+   não erro, zero**, que é o pior modo de falhar.
+3. **Todo bloco devolve `lastActivityAt`,** e a aba mostra isso no rodapé de cada cartão. Dois dos
+   cinco domínios estão parados hoje, e "não aconteceu nada no período" e "a fonte parou de mandar
+   dado" desenham a mesma tela. É a generalização da lição da Sprint 2 (mostrar o total por origem
+   para o zero do CS aparecer como causa).
+
+⚠️ **Foto das cinco fontes — leia a data junto, é medição pontual e não característica do sistema:**
+
+| Fonte | Volume (04/ago) | Estado |
+|---|---|---|
+| financeiro | 5.359 entradas, a última no dia | saudável |
+| comercial | 5.209 leads, 882 criados em 30d | saudável |
+| cs | 1.492 cards, 834 eventos em 30d | saudável |
+| ti | **30 tarefas no total** (24 concluídas) | **baixo volume** — é o backlog do próprio Blue Desk, nascido em 27/jul. Serve pra ritmo, não pra tendência |
+| operacao | **0 chamadas em 7 dias**; última em 23/jul; 12 campanhas em `draft` | fonte muda |
+
+**E essa foto durou menos de um dia.** Em 05/ago o discador **voltou**: 19 chamadas, todas na tarde
+de 04/ago, nenhuma atendida, com as campanhas ainda em `draft`. A conferência da véspera acusava
+"parado há 12 dias"; a do dia seguinte não acusou fonte muda nenhuma.
+
+**É exatamente o argumento da decisão (3), agora demonstrado:** o estado das fontes muda de um dia
+para o outro e nenhuma delas avisa. Por isso o carimbo de frescor vale para as cinco o tempo todo,
+e não como remendo para a que estivesse fraca. **Não escreva "a fonte X está parada" em lugar
+nenhum como se fosse permanente** — quem responde isso é o `lastActivityAt` na hora da leitura, ou
+`npm run verify:saude-empresa` (seção FRESCOR DAS FONTES) para o estado de hoje.
+
+**Um bug de contabilização, achado pela conferência e corrigido antes de entregar:** a média de
+tempo até o 1º contato saía **negativa** (−22,0 h em agosto). Causa legítima: lead retroativo — a
+vendedora cria hoje o card de um lead antigo e preenche o 1º contato com a data real, anterior à
+criação. **O painel de Leads já tinha resolvido isso em 08/jul** (`FILTER hours_to_first_contact >= 0`
+em [`20260708_leads_dashboard_fixes.sql`](../../../supabase/migrations/Migrations_painelleads/20260708_leads_dashboard_fixes.sql));
+a RPC nova replicou o `AVG` sem o filtro. Com o filtro: 17,0 h. **A lição é sobre reuso: compor um
+painel novo por cima de domínios antigos herda os dados, não as correções deles.**
+
+### O bloqueio de Leads: estava no git, não no banco
+
+Este roadmap dizia desde a Sprint 0 que as tabelas/RPCs base de Leads "só existem na base ao vivo"
+e teriam que ser **extraídas do Supabase** antes de qualquer coisa depender delas. Era o primeiro
+bloqueio da Sprint 3.
+
+**Nunca precisou.** O commit `bf62847` (10/jul, "chore: remover supabase/ do repo") apagou **23
+arquivos**, e o commit que voltou a versionar `supabase/` (`51cc883`, 30/jul) restaurou só as
+migrations de 10/jul em diante. As 23 anteriores ficaram no histórico o tempo todo. Restauradas
+em 04/ago, cada uma na pasta do seu domínio:
+
+- **10** em `Migrations_painelleads/` (`20260702`–`20260710`): `leads`, `lead_events`, `lead_phases`,
+  `lead_agents`, `v_lead_progress`, SLA, `get_leads_dashboard`, drill-downs e séries.
+- **5** em `Migrations_rbac/` (`20260611`–`20260615`): `profiles`, `departments`, cutover de
+  identidade e **todo o RLS por papel**.
+- **5** em `Migrations_discadora/`: `campaigns`, `lists`, `campaign_contacts`, `agent_presence`,
+  discagem paralela, views do dashboard.
+- **2** em [`supabase/manual/`](../../../supabase/manual/README.md): o setup consolidado de leads e
+  `ingest_lead_card.sql`.
+
+Conferido contra o banco ao vivo: as colunas que `20260702_leads_pipefy.sql` cria são exatamente as
+15 que `leads` tem hoje — o arquivo do histórico é fiel. ⚠️ São migrations **já aplicadas**,
+restauradas como registro: `20260612`/`20260613` dropam a tabela `agents` e
+`manual/leads_dashboard_setup.sql` recria o schema de leads **do zero**. Não reexecutar.
+
+**A lição:** "não está no repo" e "não está no git" não são a mesma coisa.
+`git log --all --diff-filter=D --name-only -- 'supabase/*'` teria respondido em segundos, e o
+plano carregou esse bloqueio por 5 dias. Antes de extrair schema de um banco ao vivo, procure no
+histórico.
+
+⚠️ **Efeito colateral bom:** isso destrava também a **Sprint 4**, que tinha o mesmo bloqueio, e
+devolve ao repo o RLS do discador — que o README de migrations listava como não auditável.
+
+### ⚠️ A conferência achou R$ 8.000,00 de um card apagado, na aba Financeiro em produção — ✅ limpo em 05/ago
+
+`fin_cards` tem 4.560 cards; o pipe tem 4.558. Os dois excedentes não existem mais no Pipefy
+(`Acesso negado`), e **os dois contam** — a fase deles não é a de cancelado:
+
+- `1421643991` "teste filipe" — R$ 0,23
+- `1424109818` **"RICARDO DOS SANTOS SILVA" — R$ 8.000,00, lançado em 03/ago**
+
+No mês corrente isso era **29,5% do total** (R$ 27.132,00 com o órfão; R$ 19.132,00 sem). É a
+materialização do risco "card apagado no Pipefy não some do Supabase" que já estava listado aqui
+desde 03/ago — com nome de cliente real e valor material, numa aba que o CEO já usa. Negociação
+(3.344/3.344) e CS (1.492/1.492) batiam exatamente.
+
+✅ **O dono apagou os dois em 05/ago**, e a prova é as duas conferências passarem a dar o mesmo
+número em julho (R$ 185.404,52 / 161 dos dois lados; antes o banco dizia 185.404,75 / 162). Foi a
+divergência entre elas que revelou o problema e é o fim dela que o fecha. Detalhe e a decisão de
+fundo que continua em aberto (o backfill virar autoridade sobre exclusão) em
+[`cards-orfaos-financeiro.md`](../fixes/cards-orfaos-financeiro.md).
+
+⚠️ **Não confundir com o caso inverso, que é normal:** a rodada de 05/ago acusou `faltando no
+banco: 1` e terminou em ✗. Era um card criado no Pipefy **duas horas antes**, que o poll do Make
+ainda não tinha buscado. A regra: **banco > Pipefy = órfão (age)** · **Pipefy > banco = poll
+atrasado (espere)**.
 
 ---
 
-## Sprint 4 — Saúde da equipe / colaboradores
+### Revisão de 05/ago — a aba mudou de conceito, e a Negociação ganhou uma regra
 
-Compor saúde por pessoa a partir de: CS (movimento/negociação por responsável, `get_cs_team`), Leads
-(ranking/conversão/SLA/parados por agente), Monday (pontos/tarefas concluídas por assignee), Discador
-(chamadas/dia). RPC `get_ceo_saude_equipe(p_start,p_end)` + aba "Saúde da Equipe".
+Depois de abrir o painel, o dono redefiniu cinco coisas. Todas entregues em 05/ago.
 
-⚠️ **Bloqueador de identidade:** as identidades **não são unificadas** entre domínios (`lead_agents`/
-`cs_agents` por `pipefy_user_id`; Monday/Discador por `auth.users`/`profiles`; a ponte
-`lead_agents.profile_id` está vazia). Este sprint carrega o trabalho de **unificar identidade** (popular
-a ponte `profile_id` ou mapear por nome). Por isso é o último — maior esforço, menor prontidão de dados.
+> **Executado pelo dono em 05/ago:** ✅ [`20260805_negociacao_so_campos_da_fase.sql`](../../../supabase/migrations/Migrations_projetopainelceo/20260805_negociacao_so_campos_da_fase.sql)
+> · ✅ [`20260805b_saude_custos.sql`](../../../supabase/migrations/Migrations_projetopainelceo/20260805b_saude_custos.sql)
+> · ✅ [`20260805c_financeiro_serie_por_ciclo.sql`](../../../supabase/migrations/Migrations_projetopainelceo/20260805c_financeiro_serie_por_ciclo.sql)
+>
+> Confirmado ao vivo logo depois: `ceo_pessoa_custo` e `ceo_custo_config` criadas ·
+> `set_ceo_custo_geral`, `set_ceo_pessoa_custo` e `fin_vendedor` expostas ·
+> `get_ceo_financeiro` respondendo com 3 argumentos (a de 2 saiu, sem ambiguidade) ·
+> as RPCs devolvendo `NULL` para a `service_role` (guarda de pé).
+>
+> 🔴 **PENDENTE: o re-cálculo da PARTE 2 da `20260805`.** A conferência ao vivo achou
+> **285 cards ainda com `proj_source = 'parcela2'`** e **8 cards na aba em vez de 3**.
+> Não é falha da migration: a PARTE 2 está dentro de comentários `--`, então rodar o
+> arquivo **não** a executa — e `proj_*` é gravado na ingestão, então trocar a função não
+> reescreve as linhas antigas. Sem erro nenhum: a aba simplesmente continua com o número
+> velho. O comando está no fim daquele arquivo.
+> Conferência: `SELECT count(*) FROM neg_cards WHERE proj_source = 'parcela2';` → **0**.
+>
+> **Vale como padrão do repo, não como caso isolado:** toda migration que muda uma regra
+> **materializada na ingestão** (`fin_entries`, `neg_cards.proj_*`, `cs_card_payments`)
+> precisa de um passo de re-cálculo, e esse passo nunca roda junto. É o mesmo tipo de
+> falha silenciosa do `CREATE OR REPLACE` em duas migrations: nada quebra, só o número
+> fica velho.
+
+**1. A Saúde da Empresa deixou de ser scorecard de 5 domínios.** O conceito passa a ser
+**quanto cada departamento e cada colaborador coloca para dentro, contra quanto custam**.
+Saíram os cartões de **TI (Monday)** e de **Operação (Discador)** — nenhum dos dois responde
+"quanto essa pessoa trouxe" — e saíram as frases de insight dos cartões.
+[`20260805b_saude_custos.sql`](../../../supabase/migrations/Migrations_projetopainelceo/20260805b_saude_custos.sql)
+substitui o corpo de `get_ceo_saude_empresa` e cria `ceo_pessoa_custo` + `ceo_custo_config` +
+`set_ceo_pessoa_custo` + `set_ceo_custo_geral`.
+
+As 3 decisões do dono: custo **por pessoa com um geral padrão** para quem não tiver ·
+a pessoa é o **nome do Pipefy**, não o usuário do Blue Desk · o cartão mostra
+**receita, custo e margem** (não múltiplo).
+
+**A receita por pessoa já existia e ninguém tinha usado:** o campo
+`respons_vel_pelo_pagamento` do pipe Financeiro (rótulo "Vendedor"), que já está em
+`fin_cards.metadata`. **34 pessoas em 3 departamentos**, sem ingerir nada novo.
+
+⚠️ **Cobertura, medida ao vivo:** 94% do valor de 2026 e **100% de julho** têm vendedor —
+mas só **28% dos cards do histórico inteiro** (os antigos não usavam o campo). Em período
+antigo a soma das pessoas **não fecha** com o total do Financeiro, e por isso a RPC devolve
+`semVendedor` à parte: a diferença aparece nomeada na tela em vez de virar um total que não
+bate sem explicação.
+
+⚠️ **A mesma pessoa aparece em mais de um departamento** (Charles, Larissa, Leonardo,
+Gustavo) — o departamento é do **card**, não dela. A receita é a de cada um; o **custo é
+rateado entre eles na proporção da receita**, senão o mesmo salário entraria duas vezes e a
+margem da empresa sairia menor do que é.
+
+**2. Negociação: só a fase, e só os campos dela.** Regra do dono —
+[`20260805_negociacao_so_campos_da_fase.sql`](../../../supabase/migrations/Migrations_projetopainelceo/20260805_negociacao_so_campos_da_fase.sql).
+O filtro de **card** já era o certo desde a `20260803`; faltava o de **campo**:
+`neg_projection` tinha fallback para a 2ª parcela da venda quando os campos da fase estavam
+vazios. **Era escopo do Comercial entrando pela porta dos fundos** — o mesmo erro que a
+`20260803` corrigiu do lado do card, corrigido pela metade. A decisão #3 do Sprint 2
+("2ª parcela vencida É projeção") fica **revogada**.
+
+⚠️ **E o campo nem era data de pagamento.** Conferido card a card: o
+`data_do_pagamento_da_2_parcela`, lido primeiro pelo fallback, é **carimbo de quando alguém
+preencheu o formulário** — três cards distintos com "10/06/2026 17:2x" (edição em lote) e
+discordando do campo de data real do mesmo card. A aba vinha mostrando, nesses cards, uma
+data que nunca foi vencimento de nada. É a explicação da "data invertida" que o dono viu.
+
+Efeito: dos 14 cards da fase, 8 têm os campos dela e 6 não. A projeção cai de
+**R$ 10.000,00 em 8 cards** para **R$ 5.250,00 em 3** (conferido com `npm run verify:negociacao`).
+⚠️ A migration exige um **re-cálculo** depois (PARTE 2 do arquivo): `proj_*` é resolvido na
+ingestão e fica gravado — trocar a função não reescreve sozinha as 3.344 linhas.
+
+**3. A série de 12 períodos passou a seguir o toggle** —
+[`20260805c_financeiro_serie_por_ciclo.sql`](../../../supabase/migrations/Migrations_projetopainelceo/20260805c_financeiro_serie_por_ciclo.sql).
+Trocar para "Ciclo 11→10" mudava os KPIs e não o gráfico. Não era bug: era a decisão da
+Sprint 1 ("a série é sempre em meses civis, senão a barra de julho não seria julho"), que na
+prática fazia a tela **ignorar o filtro** — pior que o problema que evitava. Em ciclo, o
+rótulo vira o dia de início ("11 jul") para não se confundir com mês.
+⚠️ `get_ceo_financeiro` ganhou um 3º parâmetro e **a versão de 2 argumentos foi derrubada** —
+duas versões conviveriam e a chamada com 2 args daria "function is not unique".
+
+**4. Todos os campos de data em DD/MM/AAAA.** Regra do dono, para todos os painéis. A causa
+era o `<input type="date">` nativo: ele renderiza no locale do **sistema operacional**, não
+da página — num Windows em inglês, 6 de maio aparece como `05/06/2026`, e não há CSS,
+atributo nem `lang` que mude isso. Os **11 campos** em 6 arquivos (CEO, Leads/Discadora,
+Minutas ×2, Projetos ×2) passaram a usar
+[`BrDateInput`](../../../src/components/bluedesk/BrDateInput.tsx), que mantém o mesmo
+contrato ISO do nativo — trocar não mexeu em nenhuma lógica de período.
+
+⚠️ **O que foi descartado por medição, não por opinião:** os 4 parsers de data do banco
+(`cs_`/`fin_`/`neg_`/`proc_parse_date`) foram chamados ao vivo com data ambígua e **todos
+acertaram** (`06/05/2026` → `2026-05-06`); nos 14 cards da fase o `value` bate com o
+`datetime_value` em 100% quando lido como DD/MM; e toda a formatação do front já era
+`${dia}/${mês}/${ano}`. Não havia inversão em ingestão nem em exibição.
+
+**5. Cards de departamento separados + individual por pessoa.** O breakdown em barra
+lateral virou **um cartão por departamento** (receita, custo, margem, nº de pessoas),
+clicável, e **abaixo a tabela por pessoa** de cada um, com o custo editável na própria
+linha.
+
+### 06/ago — filtro de período nas Projeções
+
+[`20260806_projecoes_periodo.sql`](../../../supabase/migrations/Migrations_projetopainelceo/20260806_projecoes_periodo.sql).
+A aba ganhou o mesmo seletor das outras duas (mês civil × ciclo 11→10).
+
+⚠️ **Duas datas convivem, e confundi-las inverte a leitura:** o **período** recorta por data de
+**vencimento**; as **faixas** (vencida / ≤30d / 31–90d / >90d) continuam contadas **contra hoje** —
+decisão do dono. Escolhendo agosto, uma parcela vencida em 02/08 aparece como "vencida" mesmo
+dentro do período, porque ela venceu de verdade. "Isso já atrasou?" é pergunta sobre hoje; o
+período responde "que recorte eu quero ver". A aba escreve isso na tela, junto do filtro.
+
+**Ganho colateral de desenho:** `total`, `byWindow` e `byProduct` passaram a ser derivados dos
+**itens já filtrados**, em vez de virem prontos das duas sub-RPCs. Antes eram dois caminhos que
+podiam divergir; agora o total é, por construção, a soma do que está na lista.
+
+⚠️ Mesma armadilha de assinatura da `20260805c`: a versão de **0 argumentos foi derrubada** antes
+de criar a de 2 com DEFAULT — as duas conviveriam e `get_ceo_projecoes()` daria
+"function is not unique".
+
+### Verificação da Sprint 3
+
+`npm run verify:saude-empresa` ([`scripts/verify-saude-empresa.mjs`](../../../scripts/verify-saude-empresa.mjs))
+— mesmo molde dos outros dois: reimplementa em JS as regras da migration a partir das tabelas base
+e imprime o scorecard esperado, bloco a bloco, com a janela anterior e o frescor de cada fonte.
+Roda com período: `node scripts/verify-saude-empresa.mjs 2026-07-01 2026-08-01`.
+
+⚠️ **Ele NÃO chama a RPC**, e é limitação por construção, não descuido: a guarda
+`ceo_current_role()` devolve NULL para a `service_role` (correção `20260731c`), então a RPC
+responde NULL para qualquer script. O que ele entrega é o **número esperado** — dá pra rodar
+antes de aplicar a migration e conferir a tela contra o relatório depois. A comparação final
+"RPC × recomputação" é do dono, com a tela aberta.
+
+⚠️ **Ele pode divergir de `npm run verify:financeiro`, e não é erro de nenhum dos dois:** aquele
+varre o **Pipefy** e ignora card já apagado lá; este lê o **banco**, que é o que a aba mostra. Foi
+exatamente essa divergência (R$ 0,23 em julho) que descobriu os cards órfãos.
+
+Resultado em 04/ago, julho/2026 fechado: Financeiro R$ 185.404,75 (162) · Comercial 977 recebidos /
+42 ganhos / 4,3% / 1º contato 45,8 h · CS 742 movidos, 23 negociados, 17 quitados **contra 69
+distratos** · TI 17 tarefas, 17,5 pontos · Operação 1.354 chamadas, 17 atendidas (1,3%). Séries com
+31 pontos cada, uma fonte muda (`operacao`).
+
+**Segunda armadilha de reuso que a conferência pegou:** a regra de "movimento" do CS exclui as
+fases administrativas conferindo a origem do evento **por id E por nome**, e eu tinha replicado só
+o id. Não é redundância defensiva do `get_cs_team`: **1.506 dos 1.617 eventos (93%) têm
+`from_phase_id` NULL**, e 14 deles trazem só o `from_phase`. Sem a checagem por nome, julho dava
+752 movidos em vez de 742. Mesma lição do 1º contato negativo — **replicar uma regra pela metade
+não quebra nada, só devolve outro número.**
+
+---
+
+## Sprint 4 — FUNDIDA na Sprint 3 (06/ago/2026)
+
+**A Sprint 4 não vai existir como aba separada.** Ao reformular a Sprint 3 para receita e custo
+**por pessoa** (05/ago), ela virou o que a Sprint 4 seria. O dono constatou isso em 06/ago e
+decidiu: **a aba placeholder "Saúde da Equipe" sai, e a aba construída herda o nome**.
+
+O painel passa de 4 para **3 abas**: `Financeiro` · `Projeções` · `Saúde da Equipe`.
+
+⚠️ **A RPC continua se chamando `get_ceo_saude_empresa`**, desalinhada do rótulo **de propósito**:
+renomear exigiria mais uma migration mexendo em objeto já aplicado, e este projeto já se queimou
+com troca de definição de função entre migrations. O desalinho está avisado nos dois pontos
+(`src/app/actions/ceo.ts` e o componente). Link antigo `?aba=saude-empresa` continua abrindo a aba
+certa — ela mudou de nome, não sumiu.
+
+### O que a Sprint 4 previa e ficou de fora, e por quê
+
+O plano era compor atividade por pessoa de **CS** (`get_cs_team`), **Leads** (ranking/conversão/SLA),
+**Monday** (pontos por assignee) e **Discador** (chamadas/dia).
+
+**Medido ao vivo em 06/ago, o cruzamento de identidade não sustenta isso:**
+
+| Cadastro | Casam com os 30 "Vendedores" do Financeiro |
+|---|---|
+| `lead_agents` (Leads) | **4 de 30** |
+| `cs_agents` (CS) | **5 de 30** |
+| `profiles` (Monday/Discador) | **2 de 30** |
+
+E os conjuntos quase não se sobrepõem: **no máximo 9 das 30 pessoas** (30%) teriam qualquer métrica.
+
+⚠️ **E isso não é cadastro mal preenchido — são papéis diferentes.** Quem fecha pagamento no pipe
+do Financeiro em geral não é quem trabalha lead no Comercial nem quem toca carteira no CS. Unificar
+a identidade faria os nomes casarem, mas **não** faria a mesma pessoa ter as duas métricas.
+
+Decisão do dono: **não trazer nada por ora.** Entraria como coluna vazia em 2 de cada 3 linhas, e
+uma tela cheia de "—" parece quebrada. Fica para quando (e se) a identidade for unificada — o
+trabalho descrito abaixo continua válido como pré-requisito.
+
+**Pré-requisito preservado:** popular a ponte `lead_agents.profile_id` / `cs_agents.profile_id`
+(hoje 6/9 e **0/9**), casando por e-mail — os dois lados têm e-mail do mesmo domínio corporativo.
 
 ---
 

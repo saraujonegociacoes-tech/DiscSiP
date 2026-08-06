@@ -32,10 +32,12 @@ import type { CeoFinanceiroData, CeoFinanceiroBucket } from '@/lib/types/databas
 // — uma linha por PAGAMENTO, não por card. Ver
 // docs/projetopainelceo-docs/updates/introspeccao-pipefy-financeiro.md.
 //
-// Dois recortes convivem de propósito (decisão do dono):
-//   • os KPIs seguem a JANELA escolhida no toggle (mês civil ou ciclo 11→10);
-//   • a série é sempre em MESES CIVIS (12 meses), porque "série mensal" em ciclo 11→10
-//     não é mês — a barra de julho não seria julho.
+// O toggle (mês civil × ciclo 11→10) vale para TUDO na aba: os KPIs e os 12 baldes da
+// série. Até 05/ago a série era sempre em meses civis — decisão da Sprint 1, com a
+// intenção de proteger a leitura ("a barra de julho não seria julho"). O efeito prático
+// foi uma tela que ignorava o filtro, que é pior, e o dono mandou seguir o recorte.
+// Em ciclo, o rótulo passa a ser o dia de início ("11 jul") justamente para não se
+// confundir com mês.
 
 const brl = (n: number) =>
   n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 2 })
@@ -53,10 +55,14 @@ const pipefyUrl = (id: string) => `https://app.pipefy.com/open-cards/${id}`
 
 const MONTHS_PT = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez']
 
-// 'YYYY-MM' → 'jul/26'
-function monthLabel(month: string): string {
-  const [y, m] = month.split('-').map(Number)
-  if (!y || !m) return month
+// A RPC devolve a DATA DE INÍCIO do balde ('YYYY-MM-DD'); quem rotula é a tela, porque
+// só ela sabe o recorte escolhido:
+//   · mês civil → 'jul/26'
+//   · ciclo     → '11 jul' (o dia importa: é o que distingue um ciclo de um mês)
+function bucketLabel(bucket: string, modo: CeoPeriodMode): string {
+  const [y, m, d] = bucket.split('-').map(Number)
+  if (!y || !m) return bucket
+  if (modo === 'ciclo') return `${String(d).padStart(2, '0')} ${MONTHS_PT[m - 1]}`
   return `${MONTHS_PT[m - 1]}/${String(y).slice(2)}`
 }
 
@@ -137,7 +143,7 @@ export function CeoFinanceiro() {
   useEffect(() => {
     let cancelled = false
     setLoading(true)
-    getCeoFinanceiro(period)
+    getCeoFinanceiro(period, mode)
       .then((d) => {
         if (!cancelled) setData(d)
       })
@@ -150,11 +156,11 @@ export function CeoFinanceiro() {
     return () => {
       cancelled = true
     }
-  }, [period])
+  }, [period, mode])
 
   const chartData = useMemo(
-    () => (data?.monthly ?? []).map((m) => ({ ...m, label: monthLabel(m.month) })),
-    [data],
+    () => (data?.monthly ?? []).map((m) => ({ ...m, label: bucketLabel(m.month, mode) })),
+    [data, mode],
   )
 
   const total = data?.total ?? 0
@@ -210,12 +216,16 @@ export function CeoFinanceiro() {
             />
           </div>
 
-          {/* Série sempre em meses civis, independente do toggle — ver comentário do topo. */}
+          {/* A série segue o toggle: 12 meses civis ou 12 ciclos 11→10. */}
           <div className="relative overflow-hidden rounded-2xl border border-border bg-gradient-card p-5 shadow-elevated">
             <div className="pointer-events-none absolute -top-20 right-0 h-48 w-48 rounded-full bg-primary/15 blur-3xl" />
-            <h3 className="mb-1 text-sm font-semibold text-foreground">Últimos 12 meses</h3>
+            <h3 className="mb-1 text-sm font-semibold text-foreground">
+              {mode === 'ciclo' ? 'Últimos 12 ciclos' : 'Últimos 12 meses'}
+            </h3>
             <p className="mb-4 text-xs text-muted-foreground">
-              Série sempre em meses civis, mesmo com o recorte de ciclo selecionado acima.
+              {mode === 'ciclo'
+                ? 'Cada ponto é um ciclo 11→10, rotulado pelo dia em que começa.'
+                : 'Cada ponto é um mês civil, do dia 1 ao último.'}
             </p>
             <div className="h-64">
               <ResponsiveContainer width="100%" height="100%">

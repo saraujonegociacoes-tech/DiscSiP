@@ -2,7 +2,11 @@
 
 import { createServerClient } from '@/lib/supabase/server'
 import { sanitizePeriod, type LeadPeriod } from '@/lib/period'
-import type { CeoFinanceiroData, CeoProjecaoData } from '@/lib/types/database'
+import type {
+  CeoFinanceiroData,
+  CeoProjecaoData,
+  CeoSaudeEquipeData,
+} from '@/lib/types/database'
 
 // Server actions do Painel do CEO — camada de leitura/agregação por cima das verticais
 // isoladas (ver docs/projetopainelceo-docs/updates/painel-ceo-sprints.md).
@@ -44,14 +48,22 @@ const EMPTY_FINANCEIRO: Omit<CeoFinanceiroData, 'periodStart' | 'periodEnd'> = {
 // 2025 e cards antigos carregam até 4 pagamentos com datas em meses diferentes.
 //
 // Os valores chegam com o sinal já aplicado (desconto/devolução negativos) e sem a fase
-// "Pagamento cancelado". A janela segue o toggle do frontend (mês civil ou ciclo 11→10);
-// a série mensal é sempre em meses civis.
-export async function getCeoFinanceiro(period: LeadPeriod): Promise<CeoFinanceiroData> {
+// "Pagamento cancelado".
+//
+// `modo` vale para OS DOIS recortes agora: a janela dos KPIs e os 12 baldes da série.
+// Até 05/ago a série era sempre em meses civis mesmo com o toggle em ciclo — decisão da
+// Sprint 1 que na prática fazia a tela ignorar o filtro. O dono mandou seguir o recorte
+// (migration 20260805c_financeiro_serie_por_ciclo.sql).
+export async function getCeoFinanceiro(
+  period: LeadPeriod,
+  modo: 'mes' | 'ciclo' = 'mes',
+): Promise<CeoFinanceiroData> {
   const p = sanitizePeriod(period)
   const supabase = await createServerClient()
   const { data, error } = await supabase.rpc('get_ceo_financeiro', {
     p_start: p.start,
     p_end: p.end,
+    p_modo: modo,
   })
 
   // Degrada (não quebra) se a migration ainda não foi aplicada, se o papel não passar na
@@ -99,9 +111,14 @@ const EMPTY_PROJECOES: Omit<CeoProjecaoData, 'referenceDate'> = {
 // `neg_cards` (pipe 3.0 Negociação, vertical nova) e o plano de pagamento do CS
 // (`cs_cards.metadata` + `cs_card_payments`, que a P4 do CS já construiu).
 //
-// Sem período: é SNAPSHOT. A janela é de vencimento, calculada contra hoje em BRT
-// dentro da RPC — quem manda no corte do dia é o Postgres, não o Worker (que roda
-// em UTC no Cloudflare).
+// DUAS datas convivem aqui, e trocá-las inverte a leitura:
+//   · o PERÍODO recorta por data de VENCIMENTO — só aparece o que vence na janela;
+//   · as FAIXAS (vencida / ≤30d / 31–90d / >90d) são contadas contra HOJE, em BRT,
+//     dentro da RPC. "Isso já atrasou?" é pergunta sobre hoje, não sobre o recorte.
+// Consequência esperada: escolhendo um período futuro, um item pode aparecer como
+// "vencido" — ele venceu de verdade, e continua dentro da janela pedida.
+// Quem manda no corte do dia é o Postgres, não o Worker (que roda em UTC no Cloudflare).
+// Sem período (NULL/NULL na RPC) o comportamento antigo continua: snapshot completo.
 //
 // ⚠️ Só dinheiro NÃO recebido. O realizado das duas fontes vira card no pipe do
 // Financeiro (conectores "Lançar pagamento" e "Subir pagamento") e já está contado
@@ -111,9 +128,13 @@ const EMPTY_PROJECOES: Omit<CeoProjecaoData, 'referenceDate'> = {
 // Hoje o bloco `cs` volta zerado e isso é ESPERADO, não falha: a operação ainda não
 // usa a fase "Aguardando Pagamento" do CS. A aba mostra a origem de cada total pra
 // que isso apareça como causa, em vez de virar um número que "parece baixo".
-export async function getCeoProjecoes(): Promise<CeoProjecaoData> {
+export async function getCeoProjecoes(period?: LeadPeriod): Promise<CeoProjecaoData> {
+  const p = period ? sanitizePeriod(period) : null
   const supabase = await createServerClient()
-  const { data, error } = await supabase.rpc('get_ceo_projecoes')
+  const { data, error } = await supabase.rpc('get_ceo_projecoes', {
+    p_start: p?.start ?? null,
+    p_end: p?.end ?? null,
+  })
 
   // Mesma disciplina da aba Financeiro: degrada pra vazio, mas conta o motivo no
   // servidor — erro na RPC e "sem dado" produzem a mesma tela, e a guarda
@@ -143,4 +164,100 @@ export async function getCeoProjecoes(): Promise<CeoProjecaoData> {
     byWindow: d.byWindow ?? {},
     items: d.items ?? [],
   }
+}
+
+const EMPTY_SAUDE: Omit<CeoSaudeEquipeData, 'periodStart' | 'periodEnd' | 'referenceDate'> = {
+  fatorMes: 1,
+  custoGeral: 0,
+  totais: { receita: 0, custo: 0, pessoas: 0, semCusto: 0 },
+  departamentos: [],
+  semVendedor: { receita: 0, pagamentos: 0 },
+}
+
+// ABA 3 — Saúde da Equipe: receita × custo × margem, por DEPARTAMENTO e por PESSOA.
+// A pessoa é o campo "Vendedor" do pipe Financeiro — não o usuário do Blue Desk (a
+// maioria dessas pessoas não tem login: são 30 nomes contra 12 perfis).
+//
+// ⚠️ A RPC ainda se chama `get_ceo_saude_empresa` (migration 20260805b), e o nome está
+// DESALINHADO com a aba de propósito. A aba nasceu como "Saúde da Empresa" na Sprint 3
+// e, quando virou por pessoa, o dono fundiu Sprint 3 e 4 e renomeou a aba para "Saúde
+// da Equipe" (06/ago). Renomear a função exigiria mais uma migration mexendo em objeto
+// já aplicado, e este projeto já se queimou com troca de definição de função entre
+// migrations — o nome fica, o comentário avisa.
+//
+// A receita sai do MESMO `fin_entries` da aba Financeiro, com o mesmo sinal e o mesmo
+// filtro de fase cancelada. As duas abas não podem divergir sobre dinheiro.
+//
+// ⚠️ `semVendedor` não é sobra de arredondamento: é a receita cujo card não tem o campo
+// Vendedor preenchido (94% do valor de 2026 tem, mas só 28% dos cards do histórico
+// inteiro). Em período antigo a soma das pessoas não fecha com o total — e é essa linha
+// que explica a diferença. A aba mostra; não esconde.
+export async function getCeoSaudeEquipe(period: LeadPeriod): Promise<CeoSaudeEquipeData> {
+  const p = sanitizePeriod(period)
+  const supabase = await createServerClient()
+  const { data, error } = await supabase.rpc('get_ceo_saude_empresa', {
+    p_start: p.start,
+    p_end: p.end,
+  })
+
+  // Mesma disciplina das outras abas: degrada pra vazio, mas conta o motivo no
+  // servidor — erro na RPC e "sem dado" produzem a mesma tela.
+  if (error) {
+    console.error('[ceo] get_ceo_saude_empresa falhou:', error.message ?? error)
+  }
+  const hoje = new Date().toISOString().slice(0, 10)
+  if (error || !data) {
+    return {
+      periodStart: p.start.slice(0, 10),
+      periodEnd: p.end.slice(0, 10),
+      referenceDate: hoje,
+      ...EMPTY_SAUDE,
+    }
+  }
+
+  const d = data as unknown as Partial<CeoSaudeEquipeData>
+  return {
+    periodStart: d.periodStart ?? p.start.slice(0, 10),
+    periodEnd: d.periodEnd ?? p.end.slice(0, 10),
+    referenceDate: d.referenceDate ?? hoje,
+    fatorMes: Number(d.fatorMes ?? 1),
+    custoGeral: Number(d.custoGeral ?? 0),
+    totais: { ...EMPTY_SAUDE.totais, ...d.totais },
+    departamentos: d.departamentos ?? [],
+    semVendedor: { ...EMPTY_SAUDE.semVendedor, ...d.semVendedor },
+  }
+}
+
+// Gravação dos custos. As tabelas têm RLS sem policy — estas RPCs são a única porta,
+// e carregam a MESMA guarda ceo/admin das de leitura.
+//
+// `valor: null` em setCeoPessoaCusto APAGA o custo próprio: a pessoa volta a herdar o
+// custo geral. É o "desfazer" da tela.
+export async function setCeoCustoGeral(valor: number): Promise<{ ok: boolean; erro?: string }> {
+  const supabase = await createServerClient()
+  const { data, error } = await supabase.rpc('set_ceo_custo_geral', { p_valor: valor })
+  if (error) {
+    console.error('[ceo] set_ceo_custo_geral falhou:', error.message ?? error)
+    return { ok: false, erro: error.message }
+  }
+  // NULL = a guarda barrou. Não é erro de rede: é papel sem permissão.
+  if (!data) return { ok: false, erro: 'sem permissão' }
+  return data as { ok: boolean; erro?: string }
+}
+
+export async function setCeoPessoaCusto(
+  pessoa: string,
+  valor: number | null,
+): Promise<{ ok: boolean; erro?: string }> {
+  const supabase = await createServerClient()
+  const { data, error } = await supabase.rpc('set_ceo_pessoa_custo', {
+    p_pessoa: pessoa,
+    p_valor: valor,
+  })
+  if (error) {
+    console.error('[ceo] set_ceo_pessoa_custo falhou:', error.message ?? error)
+    return { ok: false, erro: error.message }
+  }
+  if (!data) return { ok: false, erro: 'sem permissão' }
+  return data as { ok: boolean; erro?: string }
 }

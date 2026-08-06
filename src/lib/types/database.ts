@@ -537,6 +537,68 @@ export interface CeoProjecaoData {
   items: CeoProjecaoItem[]
 }
 
+// ABA 3 (Saúde da Empresa): get_ceo_saude_empresa(p_start, p_end), migrations
+// 20260804_saude_empresa.sql (v1) e 20260805b_saude_custos.sql (v2, a que vale).
+//
+// A aba responde UMA pergunta: quanto cada departamento e cada pessoa coloca para
+// dentro, contra quanto custam. Por isso ela não tem mais bloco de TI nem de discador —
+// nenhum dos dois responde "quanto essa pessoa trouxe".
+//
+// Três coisas para ler junto com os números:
+//
+//  · A receita vem do MESMO `fin_entries` da aba Financeiro (mesmo sinal, mesma fase de
+//    cancelado fora), quebrada pelo campo "Vendedor" do pipe. As duas abas não podem
+//    divergir sobre dinheiro.
+//
+//  · `semVendedor` NÃO é resto: é a receita cujo card não tem Vendedor preenchido.
+//    Cobertura medida em 05/ago: 94% do valor em 2026, 100% em julho, mas só 28% dos
+//    cards em todo o histórico (os antigos não usavam o campo). Em período antigo a
+//    soma das pessoas não fecha com o total — e é `semVendedor` que explica a diferença,
+//    em vez de deixá-la como um total que "não bate".
+//
+//  · A MESMA pessoa aparece em mais de um departamento (o departamento é do card, não
+//    dela). A receita é a de cada departamento; o CUSTO é rateado entre eles na
+//    proporção da receita, senão o mesmo salário entraria duas vezes na conta.
+
+/** Uma pessoa dentro de um departamento. */
+export interface CeoSaudePessoa {
+  nome: string // nome do Vendedor no Pipefy, já sem colchete/aspas/espaço
+  receita: number
+  custo: number // já rateado pelo período e entre os departamentos da pessoa
+  margem: number
+  pagamentos: number
+  /** `false` = está herdando o custo geral, não tem custo próprio cadastrado. */
+  custoProprio: boolean
+}
+
+export interface CeoSaudeDepartamento {
+  nome: string
+  receita: number
+  custo: number
+  margem: number
+  pessoas: number
+  pagamentos: number
+  people: CeoSaudePessoa[]
+}
+
+export interface CeoSaudeEquipeData {
+  periodStart: string // ISO date (inclusivo)
+  periodEnd: string // ISO date (EXCLUSIVO)
+  referenceDate: string // ISO date — o "hoje" BRT
+  /** Quantos "meses" o período vale, para ratear o custo mensal. 1,0 num mês civil. */
+  fatorMes: number
+  custoGeral: number
+  totais: {
+    receita: number // inclui o semVendedor — é o total do Financeiro no período
+    custo: number
+    pessoas: number
+    semCusto: number // quantas pessoas estão herdando o custo geral
+  }
+  departamentos: CeoSaudeDepartamento[]
+  semVendedor: { receita: number; pagamentos: number }
+}
+
+
 // ── Aquecimento de números WhatsApp — domínio SEPARADO ──────────────────────
 // Espelham as tabelas de supabase/migrations/Migrations_warmup/20260719_warmup_schema.sql. Módulo
 // sensível: só manager/admin leem/configuram (RLS). As tabelas de execução

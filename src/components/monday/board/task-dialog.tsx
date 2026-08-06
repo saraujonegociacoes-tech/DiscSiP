@@ -24,6 +24,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { BrDateInput } from '@/components/bluedesk/BrDateInput'
 
 export type MemberOption = { id: string; label: string }
 
@@ -211,12 +212,7 @@ export function TaskDialog({
               </div>
               <div className="space-y-2">
                 <Label htmlFor="t-due">Prazo</Label>
-                <Input
-                  id="t-due"
-                  type="date"
-                  value={dueDate}
-                  onChange={(e) => setDueDate(e.target.value)}
-                />
+                <BrDateInput id="t-due" value={dueDate} onChange={setDueDate} className="w-full" />
               </div>
             </div>
           </div>
