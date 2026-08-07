@@ -1,4 +1,5 @@
 const express = require('express')
+const http = require('http')
 const { exec, spawn } = require('child_process')
 const fs = require('fs')
 const path = require('path')
@@ -8,7 +9,7 @@ const PORT = 3001
 
 // Versão do helper. É o que o Blue Desk compara para saber se está desatualizado e
 // oferecer o botão "Atualizar". Suba este número a cada correção no helper.
-const HELPER_VERSION = '1.7'
+const HELPER_VERSION = '1.14'
 
 // Código de seleção de operadora (CSP) para discagem interurbana. Sem ele o MicroSIP
 // não completa chamadas para outros estados. Resultado: DIAL_PREFIX + DDD + número.
@@ -55,9 +56,54 @@ function digitsOf(s) {
   return String(s || '').replace(/\D/g, '')
 }
 
+// Dois números são "o mesmo" se os dígitos batem, ou se um termina com os últimos 8 dígitos do
+// outro. O MicroSIP nem sempre devolve o número no formato em que foi discado (pode vir sem o
+// CSP, com o domínio SIP junto), e um evento que não casa é um evento perdido.
+function sameNumber(a, b) {
+  const x = digitsOf(a)
+  const y = digitsOf(b)
+  if (!x || !y) return false
+  if (x === y) return true
+  const tail = x.slice(-8)
+  return tail.length >= 8 && y.endsWith(tail)
+}
+
 // Timestamp curto para os logs do helper.
 function ts() {
   return new Date().toLocaleTimeString()
+}
+
+// ─── Log em arquivo ──────────────────────────────────────────────────────────────
+// O helper roda oculto (start-hidden.vbs), então o stdout ia para lugar nenhum: quando algo
+// dava errado em ligação real, não sobrava evidência — só o que estivesse na memória do
+// processo. Agora tudo que vai para o console também vai para helper.log, com timestamp em
+// MILISSEGUNDOS (o log de tela tem resolução de segundo, que não serve para investigar
+// corrida entre chamadas). Rotaciona simples: passou de 2 MB, vira helper.log.old.
+const LOG_PATH = path.join(__dirname, 'helper.log')
+let logStream = null
+function initFileLog() {
+  try {
+    if (fs.existsSync(LOG_PATH) && fs.statSync(LOG_PATH).size > 2 * 1024 * 1024) {
+      fs.renameSync(LOG_PATH, `${LOG_PATH}.old`)
+    }
+    logStream = fs.createWriteStream(LOG_PATH, { flags: 'a' })
+    const write = (nivel, args) => {
+      try {
+        logStream.write(`${new Date().toISOString()} ${nivel} ${args.join(' ')}\n`)
+      } catch {
+        // disco cheio/sem permissão não pode derrubar o helper
+      }
+    }
+    for (const nivel of ['log', 'error', 'warn']) {
+      const original = console[nivel].bind(console)
+      console[nivel] = (...args) => {
+        original(...args)
+        write(nivel.toUpperCase(), args)
+      }
+    }
+  } catch {
+    // sem log em arquivo — o helper continua funcionando normalmente
+  }
 }
 
 app.use(express.json())
@@ -94,6 +140,130 @@ function findMicroSIP() {
 
 const MICROSIP = findMicroSIP()
 
+// ─── microsip.ini: leitura e patch ───────────────────────────────────────────────
+// A discagem preditiva SÓ funciona com o MicroSIP em multi-call (`singleMode=0`). Com
+// `singleMode=1` (modo de chamada única) ele recusa/derruba a 2ª chamada, então o lote de N
+// vira uma ligação só — a preditiva "não funciona" mesmo com todo o resto certo. O instalador
+// nunca configurou essa chave, então em máquina nova ela fica no default e o modo paralelo
+// nasce quebrado. Aqui o helper lê e (sob demanda) corrige o ini.
+
+// Resolvido a cada uso, não fixado no start: numa máquina onde o MicroSIP ainda não rodou o
+// ini nem existe, e passa a existir depois — o helper precisa enxergar sem reiniciar.
+function microsipIniPath() {
+  if (process.env.MICROSIP_INI && fs.existsSync(process.env.MICROSIP_INI)) {
+    return process.env.MICROSIP_INI
+  }
+  const candidates = [
+    path.join(process.env.APPDATA || '', 'MicroSIP', 'microsip.ini'),
+    // instalação portátil: o ini fica ao lado do .exe
+    MICROSIP ? path.join(path.dirname(MICROSIP), 'microsip.ini') : null,
+  ]
+  return candidates.find((p) => p && fs.existsSync(p)) || null
+}
+
+// O ini do MicroSIP é UTF-16 LE com BOM. Lemos e regravamos na MESMA codificação — gravar em
+// UTF-8 faz o MicroSIP ler lixo e perder as configurações (inclusive a conta SIP).
+function readIni() {
+  const iniPath = microsipIniPath()
+  if (!iniPath) return null
+  try {
+    const buf = fs.readFileSync(iniPath)
+    const utf16 = buf.length >= 2 && buf[0] === 0xff && buf[1] === 0xfe
+    let text = buf.toString(utf16 ? 'utf16le' : 'utf8')
+    // O BOM vira um caractere no início da string e "gruda" na primeira linha, quebrando
+    // qualquer regex ancorada em ^ (era o que impedia achar o [Settings] e fazia o patch
+    // acrescentar uma segunda seção no fim do arquivo). Tira aqui, devolve na gravação.
+    const bom = text.charCodeAt(0) === 0xfeff
+    if (bom) text = text.slice(1)
+    return { text, utf16, bom }
+  } catch {
+    return null
+  }
+}
+
+function iniValue(text, key) {
+  const m = text.match(new RegExp(`^${key}=(.*)$`, 'm'))
+  return m ? m[1].trim().replace(/^"|"$/g, '') : null
+}
+
+// true = multi-call confirmado; false = single mode (preditiva não funciona);
+// null = não deu para ler o ini (não afirmamos nada). Chave ausente conta como NÃO confirmado,
+// porque o default varia por versão/instalação — melhor gravar o `0` explícito.
+function multiCallEnabled() {
+  const ini = readIni()
+  if (!ini) return null
+  return iniValue(ini.text, 'singleMode') === '0'
+}
+
+// Reescreve chaves do [Settings]. Faz backup (.bak) antes. Só deve ser chamado com o MicroSIP
+// FECHADO: ele reescreve o ini inteiro ao sair e apagaria a alteração.
+function patchIni(map) {
+  const iniPath = microsipIniPath()
+  const ini = readIni()
+  if (!ini || !iniPath) return { ok: false, error: 'microsip.ini nao encontrado ou ilegivel' }
+  let text = ini.text
+  for (const [k, v] of Object.entries(map)) {
+    const line = `${k}=${v}`
+    const re = new RegExp(`^${k}=.*$`, 'm')
+    // replacement como função: evita que `$` no valor seja interpretado pelo regex
+    if (re.test(text)) text = text.replace(re, () => line)
+    else if (/^\[Settings\].*$/m.test(text)) text = text.replace(/^\[Settings\].*$/m, (s) => `${s}\r\n${line}`)
+    else text = `${text.replace(/\s*$/, '')}\r\n[Settings]\r\n${line}\r\n`
+  }
+  try {
+    fs.copyFileSync(iniPath, `${iniPath}.bak`)
+    const out = (ini.bom ? String.fromCharCode(0xfeff) : '') + text
+    fs.writeFileSync(iniPath, Buffer.from(out, ini.utf16 ? 'utf16le' : 'utf8'))
+    return { ok: true }
+  } catch (err) {
+    return { ok: false, error: err.message }
+  }
+}
+
+function isMicrosipRunning() {
+  return new Promise((resolve) => {
+    exec('tasklist /FI "IMAGENAME eq microsip.exe" /NH', (err, stdout) => {
+      resolve(!err && /microsip\.exe/i.test(stdout || ''))
+    })
+  })
+}
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+
+// Liga o multi-call. Se o MicroSIP estiver aberto, fecha (/exit), espera sair, corrige o ini e
+// reabre — é a única ordem que sobrevive, porque ao sair ele regrava o ini por cima.
+async function enableMultiCall() {
+  if (!microsipIniPath()) return { ok: false, error: 'microsip.ini nao encontrado' }
+  if (parallelSession && !parallelSession.finished) {
+    return { ok: false, error: 'ha um lote de discagem em andamento' }
+  }
+  const running = await isMicrosipRunning()
+  if (running) {
+    runMsip('/exit')
+    const deadline = Date.now() + 8000
+    while (Date.now() < deadline) {
+      await sleep(400)
+      if (!(await isMicrosipRunning())) break
+    }
+    if (await isMicrosipRunning()) {
+      return { ok: false, error: 'nao foi possivel fechar o MicroSIP (feche manualmente e tente de novo)' }
+    }
+  }
+  const patched = patchIni({ singleMode: '0' })
+  if (!patched.ok) return patched
+  if (running && MICROSIP) {
+    try {
+      const child = spawn(MICROSIP, [], { detached: true, stdio: 'ignore' })
+      child.on('error', () => {})
+      child.unref()
+    } catch {
+      // reabrir falhou — o ini já está certo; o agente abre o MicroSIP na mão
+    }
+  }
+  console.log(`[${ts()}] MicroSIP: multi-call LIGADO (singleMode=0)${running ? ' + reiniciado' : ''}`)
+  return { ok: true, restarted: running }
+}
+
 // Último evento de chamada recebido do MicroSIP (via cmdCallStart/cmdCallEnd no microsip.ini).
 // O Blue Desk faz polling em /events para reagir (mostrar tabulação, cronômetro real).
 let lastEvent = { id: 0, type: 'idle', number: null, at: null }
@@ -107,18 +277,54 @@ function recordEvent(type, number) {
   console.log(`[${new Date().toLocaleTimeString()}] Evento: ${type}${number ? ' ' + number : ''}`)
 }
 
+// ─── Fila única de invocações do microsip.exe ────────────────────────────────────
+// TODA vez que falamos com o MicroSIP — discar ou mandar comando — nasce um microsip.exe
+// novo, que entrega a mensagem via WM_COPYDATA e sai. O problema: ao subir e sair, esse
+// processo TOCA no microsip.ini (histórico de discados), e a instância principal também
+// escreve lá. Dois processos escrevendo junto = modal "Failed to open file for writing
+// ...microsip.ini", que ainda CONGELA a fila de comandos do MicroSIP.
+//
+// Isso já era conhecido para a rajada de discagem (havia um stagger de 300ms só nos dials),
+// mas o mesmo estouro aparecia no ATENDIMENTO: ali saíam dois comandos no mesmo milissegundo
+// (speakunmute + hangupcalling) enquanto a instância principal gravava a chamada atendida.
+// Agora existe UMA fila global: nenhum microsip.exe nasce a menos de MSIP_MIN_GAP_MS do
+// anterior, valendo para discagens e comandos. Custo no pior caso: ~300ms de atraso no
+// /hangupcalling — desprezível perto dos 15-30s de toque.
+const MSIP_MIN_GAP_MS = Number(process.env.MSIP_MIN_GAP_MS) || 300
+let msipChain = Promise.resolve()
+let lastMsipAt = 0
+
+// `onSpawn` roda no instante REAL do disparo (não no enfileiramento) — é o que mantém o
+// tempo-até-atender honesto quando a linha esperou a vez na fila.
+function queueMsip(args, onSpawn) {
+  if (!MICROSIP) return false
+  msipChain = msipChain.then(async () => {
+    const wait = MSIP_MIN_GAP_MS - (Date.now() - lastMsipAt)
+    if (wait > 0) await sleep(wait)
+    const gap = lastMsipAt ? Date.now() - lastMsipAt : 0
+    lastMsipAt = Date.now()
+    // HELPER_DEBUG_MSIP=1 imprime o intervalo real entre lançamentos, em ms. É o que permite
+    // conferir que dois microsip.exe não nascem juntos (a causa do modal do .ini) — o log
+    // normal tem resolução de segundo, que não serve para isso.
+    if (process.env.HELPER_DEBUG_MSIP) {
+      console.log(`[msip] +${String(gap).padStart(4)}ms  ${args.join(' ')}`)
+    }
+    try {
+      if (onSpawn) onSpawn()
+      const child = spawn(MICROSIP, args, { detached: true, stdio: 'ignore' })
+      child.on('error', () => {})
+      child.unref()
+    } catch {
+      // um comando que falha não pode travar a fila dos próximos
+    }
+  })
+  return true
+}
+
 // Roda um comando de controle do MicroSIP (ex: "msip:hangupall"). A instância em execução
 // recebe via WM_COPYDATA e executa, sem trazer a janela para frente.
 function runMsip(arg) {
-  if (!MICROSIP) return false
-  try {
-    const child = spawn(MICROSIP, [arg], { detached: true, stdio: 'ignore' })
-    child.on('error', () => {})
-    child.unref()
-    return true
-  } catch {
-    return false
-  }
+  return queueMsip([arg])
 }
 
 // ─── Mute do ALTO-FALANTE no nível do Windows ────────────────────────────────────
@@ -223,11 +429,77 @@ Write-Output ("HIT:" + $n)
 
 // ─── Discagem paralela / preditiva ───────────────────────────────────────────────
 // Disca N números ao mesmo tempo, conecta o 1º que ATENDE e derruba os que ainda tocam
-// (/hangupcalling, que poupa a chamada já CONFIRMED). Enquanto disca, muta o alto-falante
-// (speakmute) para o agente não ouvir os N ringbacks misturados no "Wave mapper"; ao
-// atender, desmuta (speakunmute). A janela do MicroSIP — que em multi-call volta a
-// aparecer ao discar — é escondida à força via ShowWindow(SW_HIDE).
+// (/hangupcalling, que poupa a chamada já CONFIRMED). Todo disparo passa pela fila única
+// (queueMsip) para dois microsip.exe nunca nascerem juntos e brigarem pelo .ini.
+// A janela do MicroSIP volta a aparecer ao discar em multi-call; esconder isso é opcional e
+// está DESLIGADO por padrão (ver startMicrosipHider).
 let parallelSession = null
+
+// Teto de vida de um lote paralelo. Um toque real dura ~15-30s antes do "nao atende"; passado
+// isso com linha ainda 'calling', o evento se perdeu — ver o watchdog em /dial-parallel.
+// Configurável por env só para teste (o default é o que roda em produção).
+const PARALLEL_TIMEOUT_MS = Number(process.env.PARALLEL_TIMEOUT_MS) || 90000
+
+// ─── Corte de toque (anti caixa postal) ──────────────────────────────────────────
+// A caixa postal da operadora atende com 200 OK igual a um humano — para o SIP são
+// indistinguíveis, e sem AMD no PABX não há como saber. O que dá para fazer sem o PABX é
+// NÃO DEIXAR a chamada chegar até ela: a caixa entra tipicamente entre 25 e 30s de toque,
+// então derrubamos a linha antes disso.
+//
+// ATENÇÃO à diferença que justifica isto existir: NÃO é o `autoHangUpTime` do MicroSIP (aquele
+// é cego e mata conversa já atendida). Aqui só morre linha que ainda está TOCANDO — o comando
+// é `/hangupcalling`, que por definição poupa a chamada CONFIRMED. Nenhuma conversa em curso
+// pode cair por causa deste timer.
+//
+// O custo é perder quem demora mais que isto para atender; por isso esses contatos são
+// tabulados como 'abandoned' (derrubados por nós, não recusaram) e voltam pela reciclagem.
+const RING_CUTOFF_MS = Number(process.env.RING_CUTOFF_MS) || 20000
+
+// ─── Piso de atendimento (anti caixa postal INSTANTÂNEA) ─────────────────────────
+// O corte de toque cobre a caixa postal que entra DEPOIS do toque (~25-30s). Existe o caso
+// oposto, visto em teste real: número com bloqueio de spam, aparelho desligado ou fora de área
+// cai na caixa/anúncio da operadora em 1-3s, ANTES de o telefone tocar de verdade. Para o SIP
+// é um `200 OK` normal, então ele VENCE a corrida do lote e derruba as outras linhas — que
+// podiam ser gente. É o pior desfecho possível: queima o lote e entrega uma gravação ao agente.
+//
+// ⚠️ DESLIGADO POR PADRÃO (0). Nasceu da hipótese de que bloqueio de spam atende em 1-3s —
+// e a MEDIÇÃO em ligação real DESMENTIU isso: o caso observado atendeu em **8,9s**, tempo em
+// que um humano atende normalmente. Ou seja, tempo NÃO separa esse caso, e deixar o piso
+// armado só cria risco de descartar pessoa de verdade sem resolver o problema que motivou.
+//
+// O mecanismo continua aqui porque existe o caso genuinamente instantâneo (anúncio de "número
+// inexistente", por exemplo). Só que não deve ficar ligado por palpite: primeiro medir. Se o
+// `abaixoDoPiso` do /answer-times mostrar atendimentos instantâneos de verdade na operação,
+// ligue com MIN_ANSWER_MS=3000 (ou o valor que o dado indicar).
+const MIN_ANSWER_MS = Number(process.env.MIN_ANSWER_MS) || 0
+
+// Amostras de tempo-até-atender (ms), para calibrar o RING_CUTOFF_MS com dado real em vez de
+// chute: humano se espalha pela faixa toda, caixa postal se concentra num valor fixo. Só na
+// memória (nada de banco) e limitado — é material de ajuste, não histórico.
+const answerTimes = []
+const ANSWER_TIMES_MAX = 500
+
+function recordAnswerTime(ms) {
+  answerTimes.push(ms)
+  if (answerTimes.length > ANSWER_TIMES_MAX) answerTimes.shift()
+}
+
+// Última discagem AVULSA (/call: discagem manual e power dialer 1-a-1). Sem isto, só o modo
+// paralelo alimentava o /answer-times — e é justamente discando um número por vez que se
+// coleta a amostra mais limpa para calibrar o corte de toque.
+let lastSingleCall = null
+
+function handleSingleAnswer(evNumber) {
+  if (!lastSingleCall || lastSingleCall.answered) return
+  if (!sameNumber(evNumber, lastSingleCall.dial)) return
+  lastSingleCall.answered = true
+  const ms = Date.now() - lastSingleCall.at
+  recordAnswerTime(ms)
+  console.log(
+    `[${ts()}] ${lastSingleCall.dial} atendeu em ${(ms / 1000).toFixed(1)}s` +
+      `${ms >= RING_CUTOFF_MS ? ' (acima do corte de toque — provavel caixa postal)' : ''}`
+  )
+}
 
 // Hider PERSISTENTE da janela do MicroSIP. Em multi-call o MicroSIP REEXIBE a janela a cada
 // evento (discar / atender / derrubar) e durante a propria conversa, entao esconder em rajada
@@ -235,11 +507,15 @@ let parallelSession = null
 // PowerShell OCULTO fica em loop (~250ms) escondendo QUALQUER janela visivel do microsip
 // enquanto o helper estiver vivo. Usa ShowWindow(SW_HIDE) via Win32 — sem dependencia nativa,
 // so o powershell.exe que existe em todo Windows. O loop embute o PID do helper e termina
-// sozinho quando o helper morre (nao deixa processo orfao). HELPER_NO_HIDE=1 desliga (util
-// para depurar vendo o MicroSIP). Comando vai como -EncodedCommand (base64 UTF-16LE).
+// sozinho quando o helper morre (nao deixa processo orfao). Comando vai como -EncodedCommand
+// (base64 UTF-16LE).
+// ⚠️ DESLIGADO POR PADRÃO (v1.9). Enquanto o MicroSIP está sendo testado e configurado, esconder
+// a janela atrapalha mais do que ajuda — o agente/administrador precisa conseguir ABRIR o
+// softphone para mexer nas configurações. Passou a ser opt-in: só roda com HELPER_HIDE=1.
+// (Antes era o contrário: ligado por padrão, desligável com HELPER_NO_HIDE=1.)
 let hiderChild = null
 function startMicrosipHider() {
-  if (process.env.HELPER_NO_HIDE || !MICROSIP || hiderChild) return
+  if (!process.env.HELPER_HIDE || !MICROSIP || hiderChild) return
   const script = `
 $parentPid = ${process.pid}
 Add-Type @"
@@ -280,38 +556,74 @@ while($true){
   }
 }
 
-// Desmuta o alto-falante UMA vez por sessão (evita speakunmute duplicado).
-function parallelUnmute() {
-  if (parallelSession && parallelSession.muted) {
-    parallelSession.muted = false
-    runMsip('msip:speakunmute')
-  }
-}
+// NOTA: o `msip:speakmute`/`speakunmute` foi REMOVIDO do fluxo paralelo (v1.12).
+// Ele nunca cumpriu o papel que se esperava: no fonte do MicroSIP (lib/MSIP.cpp) só zera o RX
+// dos conf ports de chamadas JÁ CONECTADAS, ou seja, não cala o ringback do "discando N" —
+// exatamente o que se queria silenciar (achado registrado em
+// ../../docs/discadora-docs/fixes/correcoes-producao-2026-06.md, item #4).
+// Era, portanto, um comando inócuo que custava DOIS microsip.exe por lote, um deles disparado
+// no instante do atendimento — bem no meio da janela em que a instância principal grava o ini.
+// Foi essa colisão que produziu o modal "Failed to open file for writing microsip.ini".
+// Quem silencia o alto-falante de verdade é o mute no nível do Windows (setMicrosipSpeakerMuted,
+// endpoint /mute), acionado pelo agente no painel de áudio.
 
 // Acha, na sessão atual, o número discado que casa com o número do evento (por dígitos).
+// Igualdade exata primeiro; se falhar, casa pelo SUFIXO (últimos 8 dígitos). O MicroSIP nem
+// sempre devolve o número no mesmo formato em que foi discado (pode vir sem o CSP, com o
+// domínio SIP junto etc.) — e um evento que não casa deixaria a linha eternamente em
+// 'calling', travando o lote inteiro ("Discando 3…" para sempre).
 function matchParallelNumber(evNumber) {
   if (!parallelSession) return null
-  const d = digitsOf(evNumber)
-  return parallelSession.numbers.find((n) => digitsOf(n) === d) || null
+  return parallelSession.numbers.find((n) => sameNumber(evNumber, n)) || null
 }
 
-// 1º atendimento vence: registra o vencedor, desmuta e derruba as que ainda tocam.
+// 1º atendimento vence: registra o vencedor e derruba as que ainda tocam.
 // Dispara no instante do call-start (sub-100ms) — estreita a janela de abandono.
 function handleParallelAnswer(evNumber) {
   if (!parallelSession || parallelSession.resolved) return
   const num = matchParallelNumber(evNumber)
   if (!num) return
+
+  // Tempo do disparo DESTA linha até o atendimento (as linhas saem escalonadas, então não dá
+  // para medir a partir do início do lote). Alimenta o /answer-times.
+  const dialedAt = parallelSession.dialedAt[num]
+  const ms = dialedAt ? Date.now() - dialedAt : null
+  if (ms !== null) recordAnswerTime(ms)
+
+  // Atendimento instantâneo demais para ser gente: bloqueio de spam / aparelho desligado /
+  // caixa direta. Se deixarmos virar vencedor, ele derruba as outras linhas — que podiam ser
+  // pessoas — e entrega uma gravação ao agente. Em vez disso, descarta o lote INTEIRO e deixa
+  // a fila puxar um lote novo: o agente nem chega a ver.
+  // Aqui é `msip:hangupall` de propósito (e não `/hangupcalling`): a linha suspeita JÁ está
+  // atendida, então o hangupcalling não a derrubaria — e o lote todo está sendo descartado.
+  if (ms !== null && ms < MIN_ANSWER_MS) {
+    parallelSession.resolved = true
+    parallelSession.calls[num] = 'machine'
+    for (const k of Object.keys(parallelSession.calls)) {
+      if (parallelSession.calls[k] === 'calling') parallelSession.calls[k] = 'cut'
+    }
+    parallelSession.finished = true
+    parallelSession.instantAnswer = true
+    runMsip('msip:hangupall')
+    console.log(
+      `[${ts()}] PARALELO #${parallelSession.id}: ${num} atendeu em ${(ms / 1000).toFixed(1)}s ` +
+        `(abaixo do piso de ${MIN_ANSWER_MS / 1000}s = maquina) -> lote descartado`
+    )
+    return
+  }
+
   parallelSession.resolved = true
   parallelSession.winner = num
   parallelSession.answeredAt = new Date().toISOString()
   parallelSession.calls[num] = 'answered'
-  parallelUnmute()
   runMsip('/hangupcalling')
-  console.log(`[${ts()}] PARALELO #${parallelSession.id}: ${num} ATENDEU -> speakunmute + /hangupcalling`)
+  console.log(
+    `[${ts()}] PARALELO #${parallelSession.id}: ${num} ATENDEU` +
+      `${ms !== null ? ` em ${(ms / 1000).toFixed(1)}s` : ''} -> /hangupcalling`
+  )
 }
 
-// Marca o término de uma das linhas. Se ninguém atendeu e todas terminaram, desmuta —
-// senão o alto-falante ficaria mudo para o agente após a rajada.
+// Marca o término de uma das linhas e fecha o lote quando ninguém mais está tocando.
 function handleParallelEnd(evNumber, state) {
   if (!parallelSession) return
   const num = matchParallelNumber(evNumber)
@@ -319,19 +631,60 @@ function handleParallelEnd(evNumber, state) {
   // Atualiza o estado da linha INCLUSIVE o vencedor: quando o vencedor (que estava 'answered')
   // recebe seu call-end, vira 'ended' — é assim que a UI sabe que a conversa acabou e mostra a
   // disposição. O call-end dos derrubados afeta só a entrada deles (match por número).
-  parallelSession.calls[num] = state
+  // Linha já marcada como 'cut' (derrubada por NÓS no corte de toque) mantém a marca: o
+  // call-end que chega logo depois é consequência do nosso hangup, não do destino ter
+  // desistido. É o que diferencia 'abandoned' (nossa) de 'no_answer' (dele) na tabulação.
+  const previous = parallelSession.calls[num]
+  if (!(previous === 'cut' && state === 'ended')) parallelSession.calls[num] = state
   const aindaTocando = Object.values(parallelSession.calls).some((s) => s === 'calling')
+  // `finished` = lote encerrado de verdade: nenhuma linha tocando E nenhuma conversa em curso.
+  // É o que impede o "Preparar MicroSIP" de reiniciar o softphone no meio de um atendimento.
+  parallelSession.finished = !Object.values(parallelSession.calls).some(
+    (s) => s === 'calling' || s === 'answered'
+  )
   if (!parallelSession.resolved && !aindaTocando) {
-    parallelUnmute()
     parallelSession.endedNoAnswer = true
-    console.log(`[${ts()}] PARALELO #${parallelSession.id}: ninguem atendeu -> speakunmute`)
+    // `resolved` = "esta sessão já foi decidida". Sem marcar aqui, a sessão morta continuava
+    // aceitando um call-start posterior (de uma ligação 1-a-1 ou manual) e disparava
+    // /hangupcalling fora de hora — a "sessão fantasma" que derrubava chamadas alheias.
+    parallelSession.resolved = true
+    console.log(`[${ts()}] PARALELO #${parallelSession.id}: ninguem atendeu`)
   }
 }
 
 // ─── Auto-atualização ──────────────────────────────────────────────────────────
 // Baixa o código novo do Blue Desk, valida, faz backup e sobrescreve este próprio arquivo.
-// Quem reinicia no código novo é o start.bat: ao sairmos com código 42, ele reabre o node.
+// Quem reinicia no código novo é o PRÓPRIO helper (restartSelf): ele spawna uma cópia sua
+// desacoplada e sai. O código 42 continua existindo só como plano B para os agentes que ainda
+// estão com o `start.bat` antigo (o loop dele reagia a esse código).
 const UPDATE_EXIT_CODE = 42
+
+// Reabre o helper num processo novo, desacoplado deste (que vai morrer em seguida).
+// `detached` no Windows = DETACHED_PROCESS: nasce sem console, então não pisca janela preta.
+function restartSelf() {
+  try {
+    const child = spawn(process.execPath, [__filename], {
+      cwd: __dirname,
+      detached: true,
+      stdio: 'ignore',
+      windowsHide: true,
+    })
+    child.on('error', () => {})
+    child.unref()
+    return true
+  } catch {
+    return false
+  }
+}
+
+// Encerra para subir no código novo. Se o self-restart funcionou, sai com 0 — importante para
+// quem ainda usa o `start.bat`: com 42 o loop dele abriria um SEGUNDO helper. Se o self-restart
+// falhou, aí sim sai com 42 e deixa o launcher antigo (se existir) fazer o trabalho.
+function exitForUpdate() {
+  const respawned = restartSelf()
+  console.log(respawned ? 'Reiniciando no codigo novo...' : 'AVISO: nao consegui reiniciar sozinho.')
+  process.exit(respawned ? 0 : UPDATE_EXIT_CODE)
+}
 
 async function fetchLatest(base) {
   const url = `${base.replace(/\/$/, '')}/helper/index.js`
@@ -352,9 +705,33 @@ function applyUpdate(code) {
   fs.writeFileSync(__filename, code)
 }
 
-// Health check — usado pelo Blue Desk para saber se o helper está rodando e qual a versão
+// Health check — usado pelo Blue Desk para saber se o helper está rodando e qual a versão.
+// `multiCall` diz se o MicroSIP está em modo multi-chamada: sem isso a discagem preditiva
+// não sai do papel, e a UI avisa o agente em vez de discar 1 número achando que discou N.
 app.get('/ping', (req, res) => {
-  res.json({ ok: true, version: HELPER_VERSION, microsip: MICROSIP })
+  res.json({
+    ok: true,
+    version: HELPER_VERSION,
+    microsip: MICROSIP,
+    ini: microsipIniPath(),
+    multiCall: multiCallEnabled(),
+    // De QUAL pasta este helper está rodando. Com várias cópias do repo (worktrees), cada uma
+    // com seu local-helper, "o helper está no ar" não diz nada — o que importa é qual subiu.
+    dir: __dirname,
+    pid: process.pid,
+  })
+})
+
+// Liga o multi-call no MicroSIP (singleMode=0) — botão "Preparar MicroSIP" do Blue Desk.
+// Fecha e reabre o MicroSIP quando ele está rodando, então só deve ser chamado fora de ligação.
+app.post('/microsip-multicall', async (req, res) => {
+  if (multiCallEnabled() === true) return res.json({ ok: true, alreadyEnabled: true })
+  const r = await enableMultiCall()
+  if (!r.ok) {
+    console.error(`[${ts()}] ERRO ao ligar multi-call: ${r.error}`)
+    return res.status(500).json(r)
+  }
+  res.json({ ...r, multiCall: multiCallEnabled() })
 })
 
 // Atualiza o helper sob demanda (botão "Atualizar helper" no Blue Desk).
@@ -374,7 +751,7 @@ app.post('/update', async (req, res) => {
     console.log(`[${ts}] Atualizando ${HELPER_VERSION} -> ${version}. Reiniciando...`)
     res.json({ ok: true, updated: true, from: HELPER_VERSION, to: version })
     // dá tempo da resposta sair antes de reiniciar
-    setTimeout(() => process.exit(UPDATE_EXIT_CODE), 400)
+    setTimeout(exitForUpdate, 400)
   } catch (err) {
     console.error(`[${ts}] ERRO ao atualizar: ${err.message}`)
     res.status(500).json({ error: err.message })
@@ -389,6 +766,17 @@ app.post('/hangup', (req, res) => {
     return res.json({ ok: true })
   }
   console.error(`[${ts}] ERRO ao encerrar: MicroSIP nao encontrado`)
+  res.status(500).json({ error: 'MicroSIP nao encontrado' })
+})
+
+// Derruba SÓ as chamadas que ainda estão tocando, preservando uma que já foi atendida.
+// É o que o Blue Desk usa ao pausar um lote paralelo: se alguém atendeu no exato instante da
+// pausa, a conversa continua — com msip:hangupall ela cairia sem o agente entender o motivo.
+app.post('/hangup-calling', (req, res) => {
+  if (runMsip('/hangupcalling')) {
+    console.log(`[${ts()}] Derrubando chamadas que ainda tocam (/hangupcalling)`)
+    return res.json({ ok: true })
+  }
   res.status(500).json({ error: 'MicroSIP nao encontrado' })
 })
 
@@ -422,6 +810,7 @@ app.post('/mute', async (req, res) => {
 app.get('/event/call-start', (req, res) => {
   recordEvent('call-start', req.query.number)
   handleParallelAnswer(req.query.number)
+  handleSingleAnswer(req.query.number)
   res.json({ ok: true })
 })
 app.get('/event/call-end', (req, res) => {
@@ -440,15 +829,25 @@ app.get('/event/call-busy', (req, res) => {
 // O Blue Desk faz polling aqui para saber o último evento de chamada
 app.get('/events', (req, res) => res.json(lastEvent))
 
-// Aciona uma chamada no MicroSIP
+// Aciona uma chamada no MicroSIP.
+// `raw: true` disca os dígitos como vieram, sem o CSP (021) — é o que permite ligar para um
+// RAMAL interno (ex.: 5125) pela discagem manual; com o prefixo, "0215125" seria discado como
+// interurbano e falharia.
 app.post('/call', (req, res) => {
-  const { number } = req.body
+  const { number, raw } = req.body
   if (!number) return res.status(400).json({ error: 'number obrigatorio' })
 
-  if (!String(number).replace(/\D/g, '')) return res.status(400).json({ error: 'Numero invalido' })
+  const digits = String(number).replace(/\D/g, '')
+  if (!digits) return res.status(400).json({ error: 'Numero invalido' })
 
-  const dial = formatNumber(number)
+  const dial = raw ? digits : formatNumber(number)
   const ts = new Date().toLocaleTimeString()
+
+  // Encerra qualquer sessão paralela pendente: uma chamada avulsa (1-a-1 ou manual) não pode
+  // ser confundida com o lote anterior, senão o call-start dela dispararia /hangupcalling.
+  parallelSession = null
+  // Marca o instante da discagem para medir o tempo-até-atender desta chamada avulsa.
+  lastSingleCall = { dial, at: Date.now(), answered: false }
 
   // Caminho preferido: chamar o microsip.exe direto com o número (auto-disca).
   if (MICROSIP) {
@@ -479,9 +878,9 @@ app.post('/call', (req, res) => {
   })
 })
 
-// Discagem paralela: recebe { numbers: [...] }, muta o alto-falante, dispara as N em
-// rajada, esconde a janela do MicroSIP e arma um timeout de seguranca para desmutar
-// caso ninguem atenda. O 1o call-start (handleParallelAnswer) faz o resto.
+// Discagem paralela: recebe { numbers: [...] }, muta o alto-falante, dispara as N em rajada e
+// arma os timers do lote (corte de toque, desmute de seguranca, watchdog). O 1o call-start
+// (handleParallelAnswer) faz o resto.
 app.post('/dial-parallel', (req, res) => {
   const { numbers } = req.body || {}
   if (!Array.isArray(numbers) || numbers.length === 0) {
@@ -494,6 +893,17 @@ app.post('/dial-parallel', (req, res) => {
   if (dials.length === 0) return res.status(400).json({ error: 'nenhum numero valido' })
   if (!MICROSIP) return res.status(500).json({ error: 'MicroSIP nao encontrado' })
 
+  // Sem multi-call o MicroSIP recusa a 2ª chamada: sairia UMA ligação e o agente acharia que
+  // estava discando N. Melhor falhar alto e mandar o Blue Desk pedir a correção do ini.
+  if (multiCallEnabled() === false) {
+    console.error(`[${ts()}] PARALELO recusado: MicroSIP em modo de chamada unica (singleMode=1)`)
+    return res.status(409).json({
+      error: 'multicall-off',
+      message:
+        'O MicroSIP esta em modo de chamada unica — a discagem preditiva nao funciona assim. Use "Preparar MicroSIP" para ligar o modo multi-chamada.',
+    })
+  }
+
   parallelSession = {
     id: (parallelSession ? parallelSession.id : 0) + 1,
     startedAt: new Date().toISOString(),
@@ -502,37 +912,71 @@ app.post('/dial-parallel', (req, res) => {
     winner: null,
     answeredAt: null,
     resolved: false,
-    muted: true,
+    finished: false,
+    timedOut: false,
+    ringCutoff: false,
+    // instante em que CADA linha foi discada (elas saem escalonadas) — base do tempo-até-atender
+    dialedAt: {},
   }
   const sid = parallelSession.id
 
-  // 1) silencio durante o "discando N"
-  runMsip('msip:speakmute')
-  // 2) dispara as N ESCALONADAS (~300ms). Disparar tudo no mesmo instante faz varias
-  // instancias do microsip.exe disputarem a escrita do microsip.ini (historico de
-  // discados) ao mesmo tempo -> uma trava a outra -> modal "Failed to open file for
-  // writing ...ini", que ainda congela a fila de comandos do MicroSIP. O escalonamento
-  // serializa esse toque no .ini. 300ms x N e desprezivel perto dos ~15-30s de toque.
-  const STAGGER_MS = 300
-  dials.forEach((dial, i) => {
-    setTimeout(() => {
-      try {
-        const child = spawn(MICROSIP, [dial], { detached: true, stdio: 'ignore' })
-        child.on('error', () => {})
-        child.unref()
-      } catch {
-        // segue para os demais numeros
-      }
-    }, i * STAGGER_MS)
+  // Dispara as N discagens. O espaçamento entre os microsip.exe é responsabilidade da fila
+  // única (queueMsip) — a mesma que serializa os comandos de controle. O `onSpawn` grava o
+  // instante REAL do disparo desta linha, que é a base do tempo-até-atender.
+  dials.forEach((dial) => {
+    queueMsip([dial], () => {
+      if (parallelSession && parallelSession.id === sid) parallelSession.dialedAt[dial] = Date.now()
+    })
   })
   // Reaplica o mute manual do alto-falante (Windows) apos as N sessoes nascerem.
-  if (speakerMuted) setTimeout(() => setMicrosipSpeakerMuted(true), 800 + dials.length * STAGGER_MS)
-  console.log(`[${ts()}] PARALELO #${sid}: discando ${dials.length} -> ${dials.join(', ')} (speakmute, escalonado)`)
-  // A janela do MicroSIP fica escondida continuamente pelo hider persistente (startMicrosipHider).
-  // 4) seguranca: se ninguem atender, desmuta apos 45s para nao deixar o agente no mudo
+  if (speakerMuted) setTimeout(() => setMicrosipSpeakerMuted(true), 800 + dials.length * MSIP_MIN_GAP_MS)
+  console.log(`[${ts()}] PARALELO #${sid}: discando ${dials.length} -> ${dials.join(', ')}`)
+
+  // 3) CORTE DE TOQUE (anti caixa postal): passado o tempo de toque, o que ainda estiver
+  // TOCANDO é derrubado antes de a caixa postal atender. Um timer só para o lote, contado a
+  // partir da última linha disparada, porque /hangupcalling é global (não dá para derrubar
+  // uma linha específica) — e é justamente por ser global que ele não erra: chamada já
+  // atendida é preservada pelo próprio comando.
+  // Não marcamos `resolved` aqui de propósito: se alguém atendeu nos milissegundos anteriores
+  // ao hangup, o MicroSIP preserva a chamada e o call-start ainda vai chegar — deixando o
+  // caminho normal de vencedor funcionar em vez de descartar uma conversa viva.
   setTimeout(() => {
-    if (parallelSession && parallelSession.id === sid) parallelUnmute()
-  }, 45000)
+    if (!parallelSession || parallelSession.id !== sid || parallelSession.resolved) return
+    const ringing = Object.keys(parallelSession.calls).filter((k) => parallelSession.calls[k] === 'calling')
+    if (ringing.length === 0) return
+    runMsip('/hangupcalling')
+    ringing.forEach((k) => (parallelSession.calls[k] = 'cut'))
+    parallelSession.ringCutoff = true
+    parallelSession.finished = !Object.values(parallelSession.calls).some(
+      (s) => s === 'calling' || s === 'answered'
+    )
+    console.log(
+      `[${ts()}] PARALELO #${sid}: corte de toque em ${RING_CUTOFF_MS / 1000}s -> ` +
+        `${ringing.length} linha(s) derrubada(s) antes da caixa postal (viram 'abandoned')`
+    )
+    // O corte conta a partir da ÚLTIMA linha disparada: cada uma esperou sua vez na fila, então
+    // o teto de toque tem que valer para quem saiu por último também.
+  }, (dials.length - 1) * MSIP_MIN_GAP_MS + RING_CUTOFF_MS)
+
+  // 4) watchdog: se um call-start/call-end se perder (curl que nao rodou, numero que nao casou),
+  // a linha ficaria 'calling' para sempre e o lote NUNCA resolveria — o agente ve "Discando N…"
+  // eternamente e a fila para. Passado o teto de um toque real (~15-30s), encerra as linhas
+  // penduradas. Usa /hangupcalling (nao /hangupall) para jamais derrubar uma conversa em curso.
+  setTimeout(() => {
+    if (!parallelSession || parallelSession.id !== sid) return
+    const stuck = Object.keys(parallelSession.calls).filter((k) => parallelSession.calls[k] === 'calling')
+    if (stuck.length === 0) return
+    // 'cut' e não 'ended': a linha ficou pendurada por evento perdido, ou seja, quem encerrou
+    // fomos nós — o contato merece voltar pela reciclagem, não levar um "não atendeu".
+    stuck.forEach((k) => (parallelSession.calls[k] = 'cut'))
+    parallelSession.timedOut = true
+    parallelSession.finished = !Object.values(parallelSession.calls).some((s) => s === 'answered')
+    if (!parallelSession.resolved) {
+      parallelSession.resolved = true
+      runMsip('/hangupcalling')
+    }
+    console.log(`[${ts()}] PARALELO #${sid}: timeout, ${stuck.length} linha(s) pendurada(s) encerrada(s)`)
+  }, PARALLEL_TIMEOUT_MS)
 
   res.json({ ok: true, session: sid, dialed: dials })
 })
@@ -548,7 +992,40 @@ app.get('/parallel-status', (req, res) => {
     calls: parallelSession.calls,
     winner: parallelSession.winner,
     answeredAt: parallelSession.answeredAt,
-    muted: parallelSession.muted,
+    resolved: parallelSession.resolved,
+    finished: !!parallelSession.finished,
+    timedOut: !!parallelSession.timedOut,
+    ringCutoff: !!parallelSession.ringCutoff,
+    instantAnswer: !!parallelSession.instantAnswer,
+  })
+})
+
+// Distribuicao do tempo-ate-atender das ligacoes deste helper (memoria, some ao reiniciar).
+// Serve para calibrar o RING_CUTOFF_MS: humano se espalha pela faixa, caixa postal se
+// concentra num valor fixo. Abra http://localhost:3001/answer-times no navegador.
+app.get('/answer-times', (req, res) => {
+  const buckets = {}
+  for (const ms of answerTimes) {
+    const s = Math.floor(ms / 1000)
+    const key = s >= 30 ? '30+' : `${Math.floor(s / 2) * 2}-${Math.floor(s / 2) * 2 + 2}s`
+    buckets[key] = (buckets[key] || 0) + 1
+  }
+  const sorted = [...answerTimes].sort((a, b) => a - b)
+  res.json({
+    amostras: sorted.length,
+    corteAtualS: RING_CUTOFF_MS / 1000,
+    pisoAtendimentoS: MIN_ANSWER_MS / 1000,
+    // quantas atendidas o corte atual teria descartado (o custo real da regra, medido)
+    perdidasPeloCorte: sorted.filter((ms) => ms > RING_CUTOFF_MS).length,
+    // Quantos atenderam em até 3s. É a evidência que decide se vale LIGAR o piso
+    // (MIN_ANSWER_MS): se for sempre 0, atendimento instantâneo não existe nesta operação e o
+    // piso só criaria risco de descartar gente. Medido sempre, mesmo com o piso desligado.
+    atendimentosAte3s: sorted.filter((ms) => ms < 3000).length,
+    abaixoDoPiso: MIN_ANSWER_MS ? sorted.filter((ms) => ms < MIN_ANSWER_MS).length : null,
+    medianaS: sorted.length ? Number((sorted[Math.floor(sorted.length / 2)] / 1000).toFixed(1)) : null,
+    p90S: sorted.length ? Number((sorted[Math.floor(sorted.length * 0.9)] / 1000).toFixed(1)) : null,
+    maxS: sorted.length ? Number((sorted[sorted.length - 1] / 1000).toFixed(1)) : null,
+    buckets,
   })
 })
 
@@ -566,14 +1043,55 @@ async function maybeAutoUpdate() {
     if (version !== HELPER_VERSION) {
       console.log(`Versao nova encontrada (${HELPER_VERSION} -> ${version}). Atualizando...`)
       applyUpdate(code)
-      process.exit(UPDATE_EXIT_CODE)
+      exitForUpdate()
     }
   } catch {
     // sem rede / Blue Desk fora do ar / origem ainda não conhecida — segue com a versão atual
   }
 }
 
+// Correção silenciosa no boot: se o MicroSIP ainda NÃO está aberto, dá para acertar o ini sem
+// incomodar ninguém (o helper sobe com o Windows, normalmente antes do MicroSIP). Se já estiver
+// aberto, não mexemos — fechar o MicroSIP do nada seria pior que o problema; nesse caso o
+// Blue Desk mostra o aviso e o agente aciona o "Preparar MicroSIP" quando estiver fora de ligação.
+async function ensureMultiCallAtStartup() {
+  if (process.env.HELPER_NO_INI_FIX) return
+  if (multiCallEnabled() !== false) return
+  if (await isMicrosipRunning()) {
+    console.log(' MicroSIP aberto: use "Preparar MicroSIP" no Blue Desk para ligar o multi-chamada.')
+    return
+  }
+  const r = await enableMultiCall()
+  if (!r.ok) console.error(` Nao foi possivel ligar o multi-chamada: ${r.error}`)
+}
+
+// O helper escuta em 127.0.0.1 (IPv4) E em ::1 (IPv6) — as duas caras do "localhost".
+// Motivo real, visto em produção: um `next dev` que acha a 3000 ocupada PULA para a 3001 e
+// faz bind em `::`. Como o helper só ocupava o IPv4 e o Windows resolve `localhost` para IPv6
+// PRIMEIRO, o navegador passava a conversar com o Next em vez do helper — sem nenhum erro,
+// só "helper offline" e discagem morta. Ocupando as duas pilhas, esse sequestro não acontece.
+// Segue sendo só loopback: nada exposto para a rede.
+function listenOnIPv6() {
+  try {
+    const s6 = http.createServer(app)
+    s6.on('error', (err) => {
+      if (err.code === 'EADDRINUSE') {
+        console.error('')
+        console.error(` AVISO: algo JA ocupa [::1]:${PORT} (o "localhost" IPv6).`)
+        console.error(' O navegador pode conversar com esse outro processo em vez do helper.')
+        console.error(' Causa comum: um "npm run dev" que pulou da porta 3000 para a 3001.')
+        console.error('')
+      }
+      // IPv6 indisponível na máquina não é fatal: o IPv4 já está no ar.
+    })
+    s6.listen(PORT, '::1')
+  } catch {
+    // sem IPv6 — segue só com o IPv4
+  }
+}
+
 async function main() {
+  initFileLog()
   await maybeAutoUpdate()
 
   const server = app.listen(PORT, '127.0.0.1', () => {
@@ -588,9 +1106,22 @@ async function main() {
       console.log(' Se a discagem nao funcionar, defina MICROSIP_PATH apontando para o microsip.exe')
     }
     if (DIAL_PREFIX) console.log(` Prefixo de discagem (CSP): "${DIAL_PREFIX}" — disca ${DIAL_PREFIX} + DDD + numero`)
+    const mc = multiCallEnabled()
+    if (mc === true) console.log(' MicroSIP em multi-chamada (singleMode=0) — discagem preditiva liberada')
+    else if (mc === false) console.log(' AVISO: MicroSIP em modo de chamada UNICA — a discagem preditiva NAO vai funcionar')
+    else console.log(' microsip.ini nao encontrado — nao da para conferir o modo multi-chamada')
+    console.log(` Corte de toque: ${RING_CUTOFF_MS / 1000}s (linha que so toca e derrubada antes da caixa postal)`)
+    console.log(
+      process.env.HELPER_HIDE
+        ? ' Janela do MicroSIP: ESCONDIDA (HELPER_HIDE=1)'
+        : ' Janela do MicroSIP: visivel — abra pelo icone na bandeja (HELPER_HIDE=1 esconde)'
+    )
+    console.log(` Pasta: ${__dirname}`)
     console.log('Aguardando chamadas do Blue Desk...')
     console.log('')
+    listenOnIPv6()
     startMicrosipHider()
+    ensureMultiCallAtStartup()
   })
 
   // Porta ocupada = quase sempre OUTRA instância do helper já rodando. Em vez do

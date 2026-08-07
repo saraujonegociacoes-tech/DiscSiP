@@ -27,6 +27,7 @@ export function CallControls() {
     helperVersion,
     micMuted,
     speakerMuted,
+    manualActive,
     setMuted,
     setCallStatus,
   } = useSoftphoneStore()
@@ -70,8 +71,9 @@ export function CallControls() {
 
   // Só aparece com a discagem iniciada (rodando ou pausada). Pausar não derruba a chamada em
   // curso, então o painel continua à mão; some na seleção da campanha e quando a campanha conclui.
+  // Vale também para a discagem manual: mutar e desligar são os mesmos comandos do helper.
   const dialerActive = dialerStatus === 'running' || dialerStatus === 'paused'
-  if (!dialerActive) return null
+  if (!dialerActive && !manualActive) return null
 
   const btn =
     'inline-flex items-center justify-center gap-2 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50'

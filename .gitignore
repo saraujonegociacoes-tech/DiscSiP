@@ -55,6 +55,8 @@ next-env.d.ts
 # helper — arquivos gerados em runtime em cada máquina
 local-helper/index.bak
 local-helper/helper-config.json
+local-helper/helper.log
+local-helper/helper.log.old
 local-helper/node_modules/
 
 # helper publicado — gerado por scripts/sync-helper.mjs no (pre)build a partir de

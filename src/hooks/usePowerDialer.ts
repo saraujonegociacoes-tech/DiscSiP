@@ -3,7 +3,12 @@
 import { useCallback, useEffect, useRef } from 'react'
 import { useDialerStore } from '@/store/dialerStore'
 import { useSoftphoneStore } from '@/store/softphoneStore'
-import { getNextContact, getNextContacts, updateContactStatus } from '@/app/actions/campaigns'
+import {
+  getNextContact,
+  getNextContacts,
+  releaseContacts,
+  updateContactStatus,
+} from '@/app/actions/campaigns'
 import { saveCallLog } from '@/app/actions/dialer'
 import { sendDispositionNotification } from '@/app/actions/notifications'
 import type { ContactStatus } from '@/lib/types/database'
@@ -47,15 +52,25 @@ async function triggerMicroSIP(number: string): Promise<void> {
   }
 }
 
-async function triggerParallel(numbers: string[]): Promise<void> {
+// Dispara o lote no helper. Devolve o id da sessão (para a UI só aceitar o status DESTE lote)
+// ou uma mensagem de erro — antes o erro era engolido e o agente ficava olhando "Discando N…"
+// sem nunca ter saído chamada nenhuma (caso clássico: MicroSIP em modo de chamada única).
+async function triggerParallel(
+  numbers: string[]
+): Promise<{ sessionId: number | null; error?: string }> {
   try {
-    await helperFetch('/dial-parallel', {
+    const res = await helperFetch('/dial-parallel', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ numbers: numbers.map(onlyDigits) }),
     })
+    const data = await res.json().catch(() => null)
+    if (!res.ok) {
+      return { sessionId: null, error: data?.message ?? data?.error ?? 'O helper recusou a discagem.' }
+    }
+    return { sessionId: typeof data?.session === 'number' ? data.session : null }
   } catch {
-    // Helper offline
+    return { sessionId: null, error: 'Helper offline — a discagem não foi disparada.' }
   }
 }
 
@@ -90,10 +105,13 @@ export function usePowerDialer() {
     dialerStatus,
     pauseBetweenCalls,
     parallelBatch,
+    parallelSessionId,
     setCurrentContact,
     setDialerStatus,
     setPendingDisposition,
     setParallelBatch,
+    setParallelSessionId,
+    setDialerError,
   } = useDialerStore()
 
   const { agentId, agentName, extension, callStatus, callStartedAt, setCallStatus } =
@@ -119,6 +137,9 @@ export function usePowerDialer() {
   }, [campaign, agentId, setCurrentContact, setDialerStatus, setCallStatus])
 
   // ─── Modo paralelo (preditivo) ─────────────────────────────────────────────────
+  // O lote só vira estado da UI DEPOIS que o helper confirma o disparo. Assim (a) o agente
+  // nunca vê "Discando 3…" de uma discagem que não saiu, e (b) o polling de /parallel-status
+  // não chega a rodar antes de a sessão nova existir no helper (leria a do lote anterior).
   const dialNextBatch = useCallback(async () => {
     if (!campaign || !agentId) return
     const contacts = await getNextContacts(campaign.id, agentId, parallelLines)
@@ -126,15 +147,31 @@ export function usePowerDialer() {
       setDialerStatus('completed')
       return
     }
+
+    const { sessionId, error } = await triggerParallel(contacts.map((c) => c.phone_number))
+    if (error) {
+      // Nada foi discado: devolve os contatos à fila e pausa em vez de queimar o mailing.
+      await releaseContacts(contacts.map((c) => c.id))
+      setParallelBatch([])
+      setParallelSessionId(null)
+      setCallStatus('idle')
+      setDialerError(error)
+      setDialerStatus('paused')
+      return
+    }
+
+    setDialerError(null)
+    setParallelSessionId(sessionId)
     setParallelBatch(contacts)
     setCurrentContact(null)
     setCallStatus('calling') // "discando N" — ainda sem número específico
-    await triggerParallel(contacts.map((c) => c.phone_number))
   }, [
     campaign,
     agentId,
     parallelLines,
     setParallelBatch,
+    setParallelSessionId,
+    setDialerError,
     setCurrentContact,
     setCallStatus,
     setDialerStatus,
@@ -159,6 +196,10 @@ export function usePowerDialer() {
         const res = await helperFetch('/parallel-status', { signal: AbortSignal.timeout(2000) })
         const st = await res.json()
         if (done || !st.active) return
+        // Só aceita o status DESTE lote. Sem a trava, o resultado do lote anterior (que segue
+        // no helper, com vencedor definido) resolveria o lote novo e mandaria contatos que
+        // ainda estão tocando direto para 'abandoned'.
+        if (parallelSessionId !== null && st.id !== parallelSessionId) return
         const calls: Record<string, string> = st.calls || {}
         const values = Object.values(calls)
 
@@ -172,6 +213,7 @@ export function usePowerDialer() {
           // derrubados (tocaram, não atenderam a tempo) → 'abandoned' (recicláveis)
           await Promise.all(losers.map((c) => updateContactStatus(c.id, 'abandoned')))
           setParallelBatch([])
+          setParallelSessionId(null)
           if (winner) {
             setCurrentContact(winner)
             setCallStatus('answered', winner.phone_number)
@@ -192,11 +234,26 @@ export function usePowerDialer() {
               const key = Object.keys(calls).find((k) =>
                 onlyDigits(k).endsWith(normalizeForMatch(c.phone_number))
               )
-              const final: ContactStatus = key && calls[key] === 'busy' ? 'busy' : 'no_answer'
+              const state = key ? calls[key] : undefined
+              // 'cut'     = o helper derrubou a linha (corte de toque ou watchdog). Quem
+              //             desistiu fomos nós → 'abandoned', volta pela reciclagem.
+              // 'machine' = atendeu rápido demais para ser gente (bloqueio de spam, aparelho
+              //             desligado, caixa direta) → 'failed'. Não é "não atendeu": alguém
+              //             atendeu, só não era pessoa. Insistir tende a bater na mesma parede,
+              //             então fica separado no relatório e recicla só se a lista mandar.
+              const final: ContactStatus =
+                state === 'busy'
+                  ? 'busy'
+                  : state === 'cut'
+                    ? 'abandoned'
+                    : state === 'machine'
+                      ? 'failed'
+                      : 'no_answer'
               return updateContactStatus(c.id, final)
             })
           )
           setParallelBatch([])
+          setParallelSessionId(null)
           setCallStatus('idle')
           if (dialerStatus === 'running') {
             pauseTimerRef.current = setTimeout(
@@ -220,9 +277,11 @@ export function usePowerDialer() {
     isParallel,
     callStatus,
     parallelBatch,
+    parallelSessionId,
     dialerStatus,
     pauseBetweenCalls,
     setParallelBatch,
+    setParallelSessionId,
     setCurrentContact,
     setCallStatus,
   ])
@@ -251,8 +310,10 @@ export function usePowerDialer() {
   }, [isParallel, callStatus, setCallStatus])
 
   // ─── Modo 1-a-1: detecta o fim da chamada pelos eventos do MicroSIP ─────────────
+  // Escopado ao discador RODANDO: fora disso o `callStatus` pode ser de uma ligação manual
+  // (discagem avulsa), que tem o próprio controle de fim e tabulação.
   useEffect(() => {
-    if (isParallel || callStatus !== 'calling') return
+    if (isParallel || callStatus !== 'calling' || dialerStatus !== 'running') return
     let cancelled = false
     let baseline: number | null = null
     const poll = async () => {
@@ -277,7 +338,7 @@ export function usePowerDialer() {
       cancelled = true
       clearInterval(interval)
     }
-  }, [isParallel, callStatus, setCallStatus])
+  }, [isParallel, callStatus, dialerStatus, setCallStatus])
 
   // Quando a chamada termina (qualquer modo) com o discador rodando, pede disposição ao agente.
   useEffect(() => {
@@ -301,22 +362,41 @@ export function usePowerDialer() {
 
   const start = useCallback(async () => {
     if (!campaign) return
+    setDialerError(null)
     setDialerStatus('running')
     if (isParallel) await dialNextBatch()
     else await dialNext()
-  }, [campaign, isParallel, dialNext, dialNextBatch, setDialerStatus])
+  }, [campaign, isParallel, dialNext, dialNextBatch, setDialerStatus, setDialerError])
 
-  const pause = useCallback(() => {
+  // Pausar com um lote AINDA TOCANDO: derruba as linhas e devolve os contatos para a fila.
+  // Antes eles ficavam presos em 'dialing' — sumiam da campanha sem nunca terem falado com
+  // ninguém. Um lote já resolvido tem parallelBatch vazio, então uma conversa em curso não
+  // é afetada por este caminho.
+  const pause = useCallback(async () => {
     if (pauseTimerRef.current) clearTimeout(pauseTimerRef.current)
     setDialerStatus('paused')
-  }, [setDialerStatus])
+    const batch = useDialerStore.getState().parallelBatch
+    if (batch.length === 0) return
+    setParallelBatch([])
+    setParallelSessionId(null)
+    setCallStatus('idle')
+    try {
+      // /hangup-calling (helper >= 1.8) poupa uma linha que tenha acabado de ser atendida.
+      // Em helper antigo a rota não existe (404) e as linhas caem sozinhas por não-atendimento.
+      await helperFetch('/hangup-calling', { method: 'POST' })
+    } catch {
+      // helper offline — idem
+    }
+    await releaseContacts(batch.map((c) => c.id))
+  }, [setDialerStatus, setParallelBatch, setParallelSessionId, setCallStatus])
 
   const resume = useCallback(async () => {
     if (!campaign) return
+    setDialerError(null)
     setDialerStatus('running')
     if (isParallel) await dialNextBatch()
     else await dialNext()
-  }, [campaign, isParallel, dialNext, dialNextBatch, setDialerStatus])
+  }, [campaign, isParallel, dialNext, dialNextBatch, setDialerStatus, setDialerError])
 
   const submitDisposition = useCallback(
     async (status: ContactStatus, disposition?: string, label?: string) => {

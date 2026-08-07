@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import {
-  Play, Pause, Check, AlertTriangle, Clock, Phone, ChevronRight, ArrowLeft, PhoneCall,
+  Play, Pause, Check, AlertTriangle, Clock, Phone, ChevronRight, ArrowLeft, PhoneCall, Wrench,
 } from 'lucide-react'
 import { useDialerStore } from '@/store/dialerStore'
 import { usePowerDialer } from '@/hooks/usePowerDialer'
@@ -12,6 +12,7 @@ import { getListFieldLabels } from '@/app/actions/lists'
 import { DISPOSITIONS } from '@/lib/dispositions'
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
+import { helperFetch } from '@/lib/constants'
 import type { Campaign } from '@/lib/types/database'
 
 const STATUS_LABEL: Record<string, string> = {
@@ -49,10 +50,12 @@ export function DialerTab() {
     pendingDisposition,
     pauseBetweenCalls,
     parallelBatch,
+    dialerError,
     setCampaign,
     setPauseBetweenCalls,
   } = useDialerStore()
-  const { helperOnline, callStatus, callNumber, agentId, extension } = useSoftphoneStore()
+  const { helperOnline, helperVersion, multiCall, callStatus, callNumber, agentId, extension, setHelperOnline } =
+    useSoftphoneStore()
   const { start, pause, resume, submitDisposition, isParallel } = usePowerDialer()
 
   const [view, setView] = useState<View>('list')
@@ -61,6 +64,36 @@ export function DialerTab() {
   const [stats, setStats] = useState<Record<string, number> | null>(null)
   const [fieldLabels, setFieldLabels] = useState<Record<string, string>>({})
   const [withinHours, setWithinHours] = useState(true)
+  const [preparingMicrosip, setPreparingMicrosip] = useState(false)
+  const [prepareError, setPrepareError] = useState<string | null>(null)
+
+  // A preditiva depende do MicroSIP em modo multi-chamada. `multiCall === false` é o helper
+  // afirmando que está em chamada única — aí o lote de N vira uma ligação só. `null` = helper
+  // antigo (< 1.8) ou ini ilegível: não dá para afirmar nada, então não assustamos o agente.
+  const needsMultiCall = isParallel && helperOnline && multiCall === false
+
+  // Liga o multi-chamada pelo helper (fecha e reabre o MicroSIP). Só ofertado com a discagem
+  // parada — reiniciar o MicroSIP no meio de uma ligação derrubaria a conversa.
+  const handlePrepareMicrosip = async () => {
+    setPreparingMicrosip(true)
+    setPrepareError(null)
+    try {
+      const res = await helperFetch('/microsip-multicall', { method: 'POST' })
+      const data = await res.json().catch(() => null)
+      if (!res.ok) throw new Error(data?.error ?? 'falhou')
+      const ping = await helperFetch('/ping', { signal: AbortSignal.timeout(3000) })
+      const info = ping.ok ? await ping.json().catch(() => null) : null
+      setHelperOnline(true, info?.version ?? helperVersion, info?.multiCall ?? true)
+    } catch (err) {
+      setPrepareError(
+        err instanceof Error && err.message !== 'falhou'
+          ? err.message
+          : 'Não foi possível preparar o MicroSIP. Feche o MicroSIP e tente de novo.'
+      )
+    } finally {
+      setPreparingMicrosip(false)
+    }
+  }
 
   const loadCampaigns = useCallback(async () => {
     if (!agentId) return
@@ -94,7 +127,7 @@ export function DialerTab() {
   }
 
   const handleStart = async () => {
-    if (!campaign || !withinHours) return
+    if (!campaign || !withinHours || needsMultiCall) return
     await start()
   }
 
@@ -237,6 +270,10 @@ export function DialerTab() {
             <p className="mt-3 text-xs text-white/60">
               Pode fazer outra coisa — você é avisado (com som) quando alguém atender.
             </p>
+            <p className="mt-1 text-xs text-white/50">
+              Cada linha toca até 20s e é derrubada antes da caixa postal; esses contatos voltam
+              para a fila como abandonados.
+            </p>
           </div>
         )}
 
@@ -339,6 +376,42 @@ export function DialerTab() {
           </div>
         )}
 
+        {/* Banner: MicroSIP em chamada única — a preditiva não sai do papel assim */}
+        {needsMultiCall && (
+          <div className="mb-3 rounded-xl border border-warning/40 bg-warning/10 px-3 py-2.5 text-sm text-warning">
+            <div className="flex items-start gap-2">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+              <div className="flex-1">
+                <p>
+                  Esta campanha é <strong>preditiva ({campaign?.parallel_lines} linhas)</strong>, mas o
+                  MicroSIP está em <strong>modo de chamada única</strong> — só sairia uma ligação por
+                  vez. Prepare o MicroSIP para liberar a discagem paralela.
+                </p>
+                {prepareError && <p className="mt-1 text-xs text-destructive">{prepareError}</p>}
+              </div>
+            </div>
+            <button
+              onClick={handlePrepareMicrosip}
+              disabled={preparingMicrosip || dialerStatus === 'running'}
+              className="mt-2 inline-flex items-center gap-1.5 rounded-lg border border-warning/50 bg-warning/15 px-3 py-1.5 text-xs font-semibold transition-colors hover:bg-warning/25 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              <Wrench className={cn('h-3.5 w-3.5', preparingMicrosip && 'animate-spin')} />
+              {preparingMicrosip ? 'Preparando…' : 'Preparar MicroSIP'}
+            </button>
+            <p className="mt-1.5 text-xs text-warning/80">
+              O MicroSIP fecha e abre de novo (alguns segundos). Faça isso fora de ligação.
+            </p>
+          </div>
+        )}
+
+        {/* Banner: a última tentativa de discagem falhou */}
+        {dialerError && (
+          <div className="mb-3 flex items-start gap-2 rounded-xl border border-destructive/40 bg-destructive/10 px-3 py-2.5 text-sm text-destructive">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+            <span>{dialerError}</span>
+          </div>
+        )}
+
         {/* Banner: fora do horário da campanha */}
         {helperOnline && !withinHours && dialerStatus !== 'running' && (
           <div className="mb-3 flex items-start gap-2 rounded-xl border border-warning/40 bg-warning/10 px-3 py-2.5 text-sm text-warning">
@@ -365,7 +438,9 @@ export function DialerTab() {
           {dialerStatus === 'idle' && (
             <button
               onClick={handleStart}
-              disabled={!extension || !helperOnline || !withinHours || !stats || stats.pending === 0}
+              disabled={
+                !extension || !helperOnline || !withinHours || !stats || stats.pending === 0 || needsMultiCall
+              }
               className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-success py-3 text-sm font-semibold text-success-foreground transition-colors hover:bg-success/90 disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground"
             >
               <Play className="h-4 w-4" /> Iniciar discagem
@@ -382,7 +457,7 @@ export function DialerTab() {
           {dialerStatus === 'paused' && (
             <button
               onClick={resume}
-              disabled={!helperOnline || !withinHours}
+              disabled={!helperOnline || !withinHours || needsMultiCall}
               className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-success py-3 text-sm font-semibold text-success-foreground transition-colors hover:bg-success/90 disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground"
             >
               <Play className="h-4 w-4" /> Retomar

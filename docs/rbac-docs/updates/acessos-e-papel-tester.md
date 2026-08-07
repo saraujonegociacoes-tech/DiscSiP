@@ -55,3 +55,33 @@ O "supervisor comercial vê só o time dele" no **Painel da Discadora** e "campa
 as do departamento" é escopo de LINHAS — mora nas queries/RLS de
 [`supervisor.ts`](../../../src/app/actions/supervisor.ts) e das campanhas. **Não foi alterado** aqui
 (só menu + rota). Verificar/implementar como próxima etapa.
+
+---
+
+## Fix 07/ago/2026 — `tester` não passava na RLS (escrita bloqueada)
+
+**Sintoma:** logado como `tester`, subir um mailing devolvia
+`new row violates row-level security policy for table "lists" (inseridos: 0)`.
+
+**Causa:** [`20260803_tester_role.sql`](../../../supabase/migrations/Migrations_rbac/20260803_tester_role.sql)
+liberou `tester` apenas no `profiles_role_check`. As policies de
+[`20260614_rls_policies.sql`](../../../supabase/migrations/Migrations_rbac/20260614_rls_policies.sql)
+são anteriores e listam só `manager`/`admin`/`supervisor` — o gate de página no cliente deixava
+entrar e o banco recusava a gravação. Mesma falha que
+[`20260803b_proc_can_access_tester.sql`](../../../supabase/migrations/Migrations_minutas/20260803b_proc_can_access_tester.sql)
+corrigiu em `/minutas`; lá era **uma** função de gate, aqui são ~30 policies.
+
+**Correção:** [`20260807_tester_rls_effective_role.sql`](../../../supabase/migrations/Migrations_rbac/20260807_tester_rls_effective_role.sql)
+— `current_profile_role()` passa a devolver o papel **efetivo** (`tester` → `admin`), consertando
+todas as policies de uma vez; o papel cru fica em `current_profile_role_raw()`. Não afeta o
+"ver como" (estado do cliente, lê `profiles.role` direto).
+✅ **Aplicada no SQL Editor em 07/ago/2026.**
+
+> Ao conferir, não use `SELECT public.current_profile_role()` no SQL Editor: ali não há JWT, então
+> `auth.uid()` é `NULL` e a função devolve `NULL` — parece falha e não é. A verificação real é
+> subir um mailing pela tela de campanha logado como o `tester`.
+
+**Armadilha vizinha (não é bug, é configuração):** campanha com `department_id = NULL`
+(ex.: "Campanha Teste", "Campanha Rafael") **nunca** aceita escrita de supervisor — a policy compara
+`campaign_dept(campaign_id) = current_profile_dept()`, e `NULL = <uuid>` nunca é verdadeiro. Só
+manager/admin conseguem. Se um supervisor precisa operar a campanha, ela tem que ter departamento.
