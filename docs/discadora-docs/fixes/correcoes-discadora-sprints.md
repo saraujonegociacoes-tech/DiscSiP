@@ -61,7 +61,8 @@ por diagnóstico, não por patch às cegas.
 ### Solução
 **Fase A — Diagnóstico guiado (~10 min, sem alterar código):**
 1. Derrubar o helper oculto e subir com console:
-   `taskkill /IM node.exe /F` → `cd local-helper` → `set HELPER_NO_HIDE=1 && node index.js`
+   `taskkill /IM node.exe /F` → `cd local-helper` → `node index.js`
+   (desde a v1.9 o hider já vem desligado; para escondê-lo, `set HELPER_HIDE=1` antes)
    (softphone utilizado visível + log ao vivo).
 2. Rodar **uma campanha antiga** em 1-a-1 e observar:
    - O softphone utilizado estabelece áudio ou a chamada cai sozinha?
@@ -94,6 +95,13 @@ diagnóstico primeiro reduz o risco de "consertar o que não era".
 > **Restrições do usuário (firmes):** SEM botão manual de derrubar (nem 1-a-1 nem
 > paralelo) e SEM auto-hangup por tempo (um timeout cego pode matar ligação produtiva).
 > O alvo é classificação automática "pelas costas do agente", sobretudo no paralelo.
+
+> ✅ **Encaminhado em 2026-08-06 (helper 1.9):** sem resposta da Intelbras sobre o AMD, foi
+> implementado **corte de toque** — a linha que ainda está TOCANDO é derrubada em ~20s, antes
+> de a caixa postal atender, e o contato é auto-tabulado como `abandoned` (reciclável).
+> **Não viola a restrição acima:** o comando é `/hangupcalling`, que poupa a chamada já
+> atendida — nenhuma conversa em curso pode cair. Detalhes e calibragem em
+> `../updates/preditiva-real-e-discagem-manual.md` §6.
 
 ### Resultado da pesquisa na documentação (2026-06-24)
 **O softphone utilizado NÃO emite gatilho de caixa postal — e não pode emitir.** Verificado na

@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "predev": "node scripts/dev-guard.mjs",
     "dev": "next dev --turbopack",
     "sync:helper": "node scripts/sync-helper.mjs",
     "import:leads": "node scripts/import-leads.mjs",

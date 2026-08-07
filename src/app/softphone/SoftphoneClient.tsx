@@ -2,13 +2,14 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
-import { RefreshCw, LogOut, Wifi, WifiOff } from 'lucide-react'
+import { RefreshCw, LogOut, Wifi, WifiOff, Power } from 'lucide-react'
 import { useSoftphoneStore } from '@/store/softphoneStore'
 import { useDialerStore } from '@/store/dialerStore'
 import { getCurrentProfile, signOut } from '@/app/actions/auth'
 import { reportPresence } from '@/app/actions/presence'
 import { CallHistory } from './CallHistory'
 import { DialerTab } from './DialerTab'
+import { ManualDialTab } from './ManualDialTab'
 import { AgentPerformance } from './AgentPerformance'
 import { CallControls } from './CallControls'
 import { AppShell } from '@/components/bluedesk/AppShell'
@@ -16,10 +17,11 @@ import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { helperFetch } from '@/lib/constants'
 
-type Tab = 'dialer' | 'history' | 'performance'
+type Tab = 'dialer' | 'manual' | 'history' | 'performance'
 
 const TAB_LABEL: Record<Tab, string> = {
   dialer: 'Discador',
+  manual: 'Discagem manual',
   history: 'Histórico',
   performance: 'Meu desempenho',
 }
@@ -56,6 +58,11 @@ export default function SoftphoneClient() {
   // Versão mais nova do helper publicada pelo Blue Desk (public/helper/version.json)
   const [latestVersion, setLatestVersion] = useState<string | null>(null)
   const [updating, setUpdating] = useState(false)
+  // "Ligar helper": o navegador NÃO pode iniciar processo — quem inicia é o Windows, através do
+  // protocolo bluedesk-helper:// registrado pelo instalar.bat. Aqui só navegamos para a URL; a
+  // página não recebe retorno nenhum, então mostramos "abrindo…" e deixamos o polling de /ping
+  // (a cada 10s) confirmar sozinho quando o helper subir.
+  const [starting, setStarting] = useState(false)
   // Falha na atualização do helper (some sozinha em alguns segundos — ver efeito abaixo)
   const [updateError, setUpdateError] = useState(false)
   const helperOutdated =
@@ -94,7 +101,14 @@ export default function SoftphoneClient() {
           signal: AbortSignal.timeout(2000),
         })
         const data = res.ok ? await res.json().catch(() => null) : null
-        setHelperOnline(res.ok, data?.version ?? null)
+        // Um 200 NÃO basta: qualquer processo pode estar na 3001 e responder OK. Aconteceu de
+        // verdade — um segundo `next dev` achou a 3000 ocupada, pulou para a 3001 e passou a
+        // responder HTML ali; o app dizia "Helper online" (sem versão) e nada funcionava. Só
+        // contamos como helper se vier o payload dele.
+        const isHelper = res.ok && data?.ok === true
+        // `multiCall` só existe no helper >= 1.8; em helper antigo fica undefined e o store
+        // mantém o valor anterior (null = desconhecido), sem inventar um estado.
+        setHelperOnline(isHelper, data?.version ?? null, data?.multiCall)
       } catch {
         setHelperOnline(false)
       }
@@ -169,6 +183,20 @@ export default function SoftphoneClient() {
     }
   }
 
+  // Assim que o helper responder, o aviso de "abrindo" perde a razão de existir.
+  useEffect(() => {
+    if (helperOnline) setStarting(false)
+  }, [helperOnline])
+
+  // Aciona o protocolo registrado no Windows. Se ele não estiver registrado (instalador antigo
+  // ou nunca rodado), o navegador simplesmente não faz nada — por isso a dica abaixo do botão.
+  const handleStartHelper = () => {
+    setStarting(true)
+    window.location.href = 'bluedesk-helper://start'
+    // Se em ~25s o helper não respondeu, o aviso some e o agente tenta o caminho manual.
+    setTimeout(() => setStarting(false), 25000)
+  }
+
   // Cronômetro: conta a partir do momento que a chamada foi disparada
   useEffect(() => {
     if (callStatus !== 'calling') {
@@ -202,7 +230,7 @@ export default function SoftphoneClient() {
     <>
       {/* Abas */}
       <div className="flex items-center gap-1 rounded-lg border border-border bg-card/60 p-0.5 shadow-card">
-        {(['dialer', 'history', 'performance'] as Tab[]).map((tab) => (
+        {(['dialer', 'manual', 'history', 'performance'] as Tab[]).map((tab) => (
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
@@ -234,6 +262,27 @@ export default function SoftphoneClient() {
             <span className="opacity-70">v{helperVersion}</span>
           )}
         </span>
+
+        {!helperOnline && (
+          <div className="flex items-center gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={handleStartHelper}
+              disabled={starting}
+              title="Abre o helper nesta máquina (precisa do instalador ter sido executado)"
+              className="border-success/40 bg-success/10 text-success hover:bg-success/20"
+            >
+              <Power className={cn('mr-1.5 h-3.5 w-3.5', starting && 'animate-pulse')} />
+              {starting ? 'Abrindo…' : 'Ligar helper'}
+            </Button>
+            {starting && (
+              <span className="text-xs text-muted-foreground">
+                Confirme no aviso do navegador. Se não abrir, use o <strong>instalar.bat</strong>.
+              </span>
+            )}
+          </div>
+        )}
 
         {helperOutdated && (
           <div className="flex items-center gap-2">
@@ -284,6 +333,12 @@ export default function SoftphoneClient() {
       {/* Aba Discador — sempre montada para manter o hook ativo */}
       <div className={activeTab === 'dialer' ? 'block' : 'hidden'}>
         <DialerTab />
+      </div>
+
+      {/* Aba Discagem manual — também sempre montada: trocar de aba no meio de uma ligação
+          manual não pode matar o polling de eventos nem perder o registro no histórico */}
+      <div className={activeTab === 'manual' ? 'block' : 'hidden'}>
+        <ManualDialTab />
       </div>
 
       {/* Aba Histórico */}

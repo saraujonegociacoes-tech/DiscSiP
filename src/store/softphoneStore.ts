@@ -21,6 +21,13 @@ interface AgentState {
   callStartedAt: Date | null
   helperOnline: boolean
   helperVersion: string | null
+  // Modo multi-chamada do MicroSIP, reportado pelo /ping do helper (>= 1.8):
+  // true = liberado, false = modo de chamada única (preditiva NÃO funciona), null = desconhecido
+  // (helper antigo ou ini ilegível — nesse caso a UI não afirma nada).
+  multiCall: boolean | null
+  // Há uma ligação manual em curso (discagem avulsa, fora de campanha). Deixa o painel de
+  // áudio/Desligar visível também nesse fluxo, sem misturar com o estado do power dialer.
+  manualActive: boolean
   // Estado do painel de áudio. O painel fica sempre visível e é a fonte de verdade do mute
   // (o MicroSIP não devolve o estado real), então persiste entre chamadas até o agente trocar.
   micMuted: boolean
@@ -33,7 +40,8 @@ interface AgentState {
 
   setProfile: (profile: Profile) => void
   setCallStatus: (status: CallStatus, number?: string) => void
-  setHelperOnline: (online: boolean, version?: string | null) => void
+  setHelperOnline: (online: boolean, version?: string | null, multiCall?: boolean | null) => void
+  setManualActive: (active: boolean) => void
   setMuted: (device: 'mic' | 'speaker', muted: boolean) => void
   setViewAs: (role: Role | null, slug: string | null) => void
   resetCall: () => void
@@ -52,6 +60,8 @@ export const useSoftphoneStore = create<AgentState>((set) => ({
   callStartedAt: null,
   helperOnline: false,
   helperVersion: null,
+  multiCall: null,
+  manualActive: false,
   micMuted: false,
   speakerMuted: false,
   viewAsRole: null,
@@ -83,11 +93,14 @@ export const useSoftphoneStore = create<AgentState>((set) => ({
             : state.callStartedAt,
     })),
 
-  setHelperOnline: (online, version) =>
+  setHelperOnline: (online, version, multiCall) =>
     set((state) => ({
       helperOnline: online,
       helperVersion: online ? (version ?? state.helperVersion) : null,
+      multiCall: online ? (multiCall === undefined ? state.multiCall : multiCall) : null,
     })),
+
+  setManualActive: (active) => set({ manualActive: active }),
 
   setMuted: (device, muted) =>
     set(device === 'mic' ? { micMuted: muted } : { speakerMuted: muted }),
@@ -108,6 +121,8 @@ export const useSoftphoneStore = create<AgentState>((set) => ({
       callStartedAt: null,
       helperOnline: false,
       helperVersion: null,
+      multiCall: null,
+      manualActive: false,
       micMuted: false,
       speakerMuted: false,
       viewAsRole: null,

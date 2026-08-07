@@ -262,6 +262,24 @@ export async function getNextContacts(
   return claimed
 }
 
+// Devolve à fila contatos que foram reservados ('dialing') mas nunca chegaram a ser discados
+// de verdade — lote paralelo que o helper recusou, ou pausa do agente com as linhas ainda
+// tocando. Sem isso eles ficam presos em 'dialing' para sempre: a reciclagem só olha os
+// status configurados na lista e nenhum agente pega um contato que não está 'pending'.
+// O `attempts` NÃO é decrementado: o claim já contou a tentativa e mexer nisso abriria porta
+// para laço infinito num número problemático.
+export async function releaseContacts(contactIds: string[]): Promise<{ error?: string }> {
+  if (contactIds.length === 0) return {}
+  const supabase = await createServerClient()
+  const { error } = await supabase
+    .from('campaign_contacts')
+    .update({ status: 'pending', assigned_agent_id: null })
+    .in('id', contactIds)
+    .eq('status', 'dialing')
+  if (error) return { error: error.message }
+  return {}
+}
+
 export async function updateContactStatus(
   contactId: string,
   status: ContactStatus,

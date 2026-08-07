@@ -1,8 +1,8 @@
 'use client'
 
 import { useState } from 'react'
-import { Upload, Trash2, Plus } from 'lucide-react'
-import { createList, deleteList, getLists } from '@/app/actions/lists'
+import { Upload, Trash2, Plus, RefreshCw } from 'lucide-react'
+import { createList, deleteList, getLists, updateListRecycle } from '@/app/actions/lists'
 import { parseMailingFile, normalizePhone, slugify } from '@/lib/mailing'
 import { cn } from '@/lib/utils'
 import type { ContactStatus, List } from '@/lib/types/database'
@@ -11,6 +11,10 @@ const RECYCLE_OPTIONS: Array<{ value: ContactStatus; label: string }> = [
   { value: 'no_answer', label: 'Não atendeu' },
   { value: 'busy', label: 'Ocupado' },
   { value: 'failed', label: 'Falha' },
+  // 'abandoned' = a própria discadora derrubou a linha (outra atendeu primeiro, ou o corte de
+  // toque cortou antes da caixa postal). O contato nunca chegou a falar com ninguém, então é o
+  // status MAIS reciclável de todos — vem marcado por padrão.
+  { value: 'abandoned', label: 'Abandonada (derrubada pela discadora)' },
 ]
 
 const PHONE_HINT = /tel|fone|phone|celular|whats|contato|numero|número/i
@@ -53,12 +57,51 @@ export function ListsSection({ campaignId, lists, onListsChange }: Props) {
   const [extras, setExtras] = useState<ExtraField[]>([])
 
   const [recycleEnabled, setRecycleEnabled] = useState(false)
-  const [recycleStatuses, setRecycleStatuses] = useState<ContactStatus[]>(['no_answer', 'busy'])
+  const [recycleStatuses, setRecycleStatuses] = useState<ContactStatus[]>([
+    'no_answer',
+    'busy',
+    'abandoned',
+  ])
   const [afterHours, setAfterHours] = useState(24)
   const [maxAttempts, setMaxAttempts] = useState(3)
 
   const [importing, setImporting] = useState(false)
   const [result, setResult] = useState<ImportResult | null>(null)
+
+  // Edição da reciclagem de uma lista já existente (id da lista em edição + rascunho do form)
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [editDraft, setEditDraft] = useState<{
+    enabled: boolean
+    statuses: ContactStatus[]
+    hours: number
+    attempts: number
+  } | null>(null)
+  const [savingEdit, setSavingEdit] = useState(false)
+
+  const openEdit = (l: List) => {
+    setEditingId(l.id)
+    setEditDraft({
+      enabled: l.recycle_enabled,
+      statuses: l.recycle_statuses ?? [],
+      hours: l.recycle_after_hours,
+      attempts: l.recycle_max_attempts,
+    })
+  }
+
+  const saveEdit = async () => {
+    if (!editingId || !editDraft) return
+    setSavingEdit(true)
+    await updateListRecycle(editingId, {
+      recycle_enabled: editDraft.enabled,
+      recycle_statuses: editDraft.statuses,
+      recycle_after_hours: editDraft.hours,
+      recycle_max_attempts: editDraft.attempts,
+    })
+    onListsChange(await getLists(campaignId))
+    setSavingEdit(false)
+    setEditingId(null)
+    setEditDraft(null)
+  }
 
   const resetForm = () => {
     setHeaders([])
@@ -68,7 +111,7 @@ export function ListsSection({ campaignId, lists, onListsChange }: Props) {
     setPhoneCol('')
     setExtras([])
     setRecycleEnabled(false)
-    setRecycleStatuses(['no_answer', 'busy'])
+    setRecycleStatuses(['no_answer', 'busy', 'abandoned'])
     setAfterHours(24)
     setMaxAttempts(3)
     setResult(null)
@@ -433,25 +476,140 @@ export function ListsSection({ campaignId, lists, onListsChange }: Props) {
       ) : (
         <div className="space-y-2">
           {lists.map((l) => (
-            <div
-              key={l.id}
-              className="flex items-center justify-between rounded-xl border border-border bg-background/40 px-4 py-3"
-            >
-              <div className="min-w-0">
-                <p className="truncate text-sm font-medium text-foreground">{l.name}</p>
-                <p className="mt-0.5 text-xs text-muted-foreground">
-                  {l.recycle_enabled
-                    ? `Reciclagem: ${l.recycle_statuses.length} status · até ${l.recycle_max_attempts}x`
-                    : 'Sem reciclagem'}
-                </p>
+            <div key={l.id} className="rounded-xl border border-border bg-background/40 px-4 py-3">
+              <div className="flex items-center justify-between">
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-medium text-foreground">{l.name}</p>
+                  <p className="mt-0.5 text-xs text-muted-foreground">
+                    {l.recycle_enabled
+                      ? `Reciclagem: ${l.recycle_statuses.length} status · até ${l.recycle_max_attempts}x`
+                      : 'Sem reciclagem'}
+                  </p>
+                  {/* A discadora tabula sozinha como 'abandoned' (corte de toque / linha
+                      derrubada). Sem esse status na reciclagem, o contato fica parado. */}
+                  {l.recycle_enabled && !l.recycle_statuses.includes('abandoned') && (
+                    <p className="mt-1 text-xs text-warning">
+                      Não recicla <strong>abandonadas</strong> — contatos derrubados pela discadora
+                      não voltam para a fila.
+                    </p>
+                  )}
+                </div>
+                <div className="ml-3 flex shrink-0 items-center gap-1">
+                  <button
+                    onClick={() => (editingId === l.id ? setEditingId(null) : openEdit(l))}
+                    title="Editar reciclagem"
+                    className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-accent/60 hover:text-foreground"
+                  >
+                    <RefreshCw className="h-4 w-4" />
+                  </button>
+                  <button
+                    onClick={() => handleDelete(l.id)}
+                    title="Excluir lista"
+                    className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </div>
               </div>
-              <button
-                onClick={() => handleDelete(l.id)}
-                title="Excluir lista"
-                className="ml-3 shrink-0 rounded-lg p-2 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
-              >
-                <Trash2 className="h-4 w-4" />
-              </button>
+
+              {editingId === l.id && editDraft && (
+                <div className="mt-3 space-y-3 border-t border-border pt-3">
+                  <label className="flex cursor-pointer items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={editDraft.enabled}
+                      onChange={(e) => setEditDraft({ ...editDraft, enabled: e.target.checked })}
+                      className="h-4 w-4 accent-primary"
+                    />
+                    <span className="text-sm font-medium text-foreground">Reciclar contatos</span>
+                  </label>
+
+                  {editDraft.enabled && (
+                    <>
+                      <div>
+                        <p className="mb-1.5 text-xs text-muted-foreground">
+                          Reciclar quando o resultado for:
+                        </p>
+                        <div className="flex flex-wrap gap-2">
+                          {RECYCLE_OPTIONS.map((o) => {
+                            const on = editDraft.statuses.includes(o.value)
+                            return (
+                              <button
+                                key={o.value}
+                                onClick={() =>
+                                  setEditDraft({
+                                    ...editDraft,
+                                    statuses: on
+                                      ? editDraft.statuses.filter((x) => x !== o.value)
+                                      : [...editDraft.statuses, o.value],
+                                  })
+                                }
+                                className={cn(
+                                  'rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors',
+                                  on
+                                    ? 'border-primary bg-primary text-primary-foreground'
+                                    : 'border-border bg-background/40 text-muted-foreground hover:text-foreground'
+                                )}
+                              >
+                                {o.label}
+                              </button>
+                            )
+                          })}
+                        </div>
+                      </div>
+                      <div className="flex gap-3">
+                        <div className="flex-1">
+                          <label className="mb-1.5 block text-xs text-muted-foreground">
+                            Esperar (horas)
+                          </label>
+                          <input
+                            type="number"
+                            min={1}
+                            value={editDraft.hours}
+                            onChange={(e) =>
+                              setEditDraft({ ...editDraft, hours: Math.max(1, Number(e.target.value)) })
+                            }
+                            className={fieldClass}
+                          />
+                        </div>
+                        <div className="flex-1">
+                          <label className="mb-1.5 block text-xs text-muted-foreground">
+                            Máx. tentativas
+                          </label>
+                          <input
+                            type="number"
+                            min={1}
+                            value={editDraft.attempts}
+                            onChange={(e) =>
+                              setEditDraft({
+                                ...editDraft,
+                                attempts: Math.max(1, Number(e.target.value)),
+                              })
+                            }
+                            className={fieldClass}
+                          />
+                        </div>
+                      </div>
+                    </>
+                  )}
+
+                  <div className="flex gap-2">
+                    <button
+                      onClick={saveEdit}
+                      disabled={savingEdit}
+                      className="rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
+                    >
+                      {savingEdit ? 'Salvando…' : 'Salvar'}
+                    </button>
+                    <button
+                      onClick={() => { setEditingId(null); setEditDraft(null) }}
+                      className="rounded-lg border border-border px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
+                    >
+                      Cancelar
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           ))}
         </div>
