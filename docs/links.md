@@ -33,6 +33,7 @@ outros domínios), com trava por um papel novo `ceo`.
 - [`plan.md`](discadora-docs/reference/plan.md) — planejamento inicial
 
 ## `updates/` — features e mudanças de arquitetura
+- [`preditiva-real-e-discagem-manual.md`](discadora-docs/updates/preditiva-real-e-discagem-manual.md) — **⭐ estado atual do discador (ago/2026)**: preditiva funcionando em ligação real, corte de toque anti caixa postal, discagem manual, enxugamento do helper (v1.7→1.14) e as pendências em aberto. **Começar por aqui.**
 - [`discagem-paralela-preditiva.md`](discadora-docs/updates/discagem-paralela-preditiva.md) — discagem paralela/preditiva (estudo + testes + implementação)
 - [`discagem-em-background-dialer-engine.md`](discadora-docs/updates/discagem-em-background-dialer-engine.md) — **design** para discar fora da tela do discador (DialerEngine) · *não implementado*
 - [`discadora-status-historico-arquivamento.md`](discadora-docs/updates/discadora-status-historico-arquivamento.md) — status de campanha calculado, arquivamento reversível e histórico de chamadas com filtro de período

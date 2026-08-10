@@ -30,6 +30,18 @@ export async function getListFieldLabels(campaignId: string): Promise<Record<str
   return labels
 }
 
+// Traduz o erro cru do Postgres para algo acionável. O caso que mais custou tempo foi a RLS:
+// "new row violates row-level security policy" não diz que o problema é o PAPEL do usuário, e
+// a tela dá a entender que o arquivo está errado. Ver
+// supabase/migrations/Migrations_rbac/20260807_tester_rls_effective_role.sql.
+function explainError(error: { message: string } | null, acao: string): string {
+  const msg = error?.message ?? `Falha ao ${acao}`
+  if (/row-level security/i.test(msg)) {
+    return `Sem permissão para ${acao}. Seu usuário precisa ser admin/gerente, ou supervisor do mesmo departamento da campanha — confira também se a campanha tem departamento definido.`
+  }
+  return msg
+}
+
 interface ListConfig {
   name: string
   column_mapping: ColumnMapping
@@ -76,7 +88,7 @@ export async function createList(
     .single()
 
   if (listError || !list) {
-    return { inserted: 0, duplicates: 0, error: listError?.message ?? 'Falha ao criar lista' }
+    return { inserted: 0, duplicates: 0, error: explainError(listError, 'criar a lista') }
   }
 
   // Telefones já existentes na campanha (dedup em nível de campanha). Paginado: sem isto o
@@ -131,12 +143,39 @@ export async function createList(
         listId: list.id,
         inserted: i,
         duplicates,
-        error: error.message,
+        error: explainError(error, 'inserir os contatos'),
       }
     }
   }
 
   return { listId: list.id, inserted: toInsert.length, duplicates }
+}
+
+// Reciclagem de uma lista JÁ CRIADA. Sem isto, a única forma de mudar a regra de reciclagem
+// era apagar a lista e reimportar o mailing — inviável com campanha em produção. Virou
+// necessário quando a discadora passou a tabular sozinha como 'abandoned' (corte de toque):
+// listas antigas não têm esse status em recycle_statuses e os contatos ficariam parados.
+export async function updateListRecycle(
+  listId: string,
+  config: {
+    recycle_enabled: boolean
+    recycle_statuses: ContactStatus[]
+    recycle_after_hours: number
+    recycle_max_attempts: number
+  }
+): Promise<{ error?: string }> {
+  const supabase = await createServerClient()
+  const { error } = await supabase
+    .from('lists')
+    .update({
+      recycle_enabled: config.recycle_enabled,
+      recycle_statuses: config.recycle_enabled ? config.recycle_statuses : [],
+      recycle_after_hours: Math.max(1, Math.round(config.recycle_after_hours)),
+      recycle_max_attempts: Math.max(1, Math.round(config.recycle_max_attempts)),
+    })
+    .eq('id', listId)
+  if (error) return { error: error.message }
+  return {}
 }
 
 export async function deleteList(listId: string): Promise<{ error?: string }> {

@@ -93,6 +93,29 @@ derruba os demais (`microsip.exe /hangupcalling`, que poupa a chamada já atendi
 Os contatos discados-mas-derrubados viram `abandoned` (recicláveis). Detalhes e testes em
 [`docs/discadora-docs/updates/discagem-paralela-preditiva.md`](docs/discadora-docs/updates/discagem-paralela-preditiva.md).
 
+**Caixa postal (corte de toque).** Para o SIP, caixa postal atende igual a humano (`200 OK`) —
+e na preditiva ela vence a corrida e derruba as outras linhas. Sem AMD no PABX, a defesa é não
+deixar a chamada chegar lá: a linha que **ainda está tocando** é derrubada em **20s**
+(`RING_CUTOFF_MS` no helper), antes de a caixa atender, e o contato é auto-tabulado como
+`abandoned` — volta pela reciclagem, sem passar pela tela do agente. Não é auto-hangup cego: o
+comando é `/hangupcalling`, que poupa a chamada já atendida; **conversa em curso nunca cai**.
+Há também um **piso de atendimento** (`MIN_ANSWER_MS`) para descartar o lote quando alguém "atende" rápido demais para ser gente — **desligado por padrão**: a medição em ligação real mostrou bloqueio de spam atendendo em **8,9s**, tempo indistinguível de humano, então tempo não resolve esse caso. Para calibrar com dado real: `http://localhost:3001/answer-times`.
+
+> ⚠️ **Requisito:** o softphone precisa estar em **modo multi-chamada** (`singleMode=0` no
+> `microsip.ini`). Em modo de chamada única sai **uma** ligação por lote e a preditiva não
+> acontece. O helper (**v1.8+**) confere isso no `/ping` (`multiCall`), corrige sozinho quando o
+> softphone está fechado e oferece o botão **Preparar MicroSIP** no discador quando está aberto;
+> `/dial-parallel` recusa (409) em vez de discar 1 achando que discou N. Ver
+> [`preditiva-real-e-discagem-manual.md`](docs/discadora-docs/updates/preditiva-real-e-discagem-manual.md).
+
+### Discagem manual
+
+Aba **"Discagem manual"** no `/softphone`: o agente digita o número (teclado na tela ou
+teclado físico) e liga — **fora de campanha**, sem consumir mailing. Até 6 dígitos disca um
+**ramal interno** (sem o CSP); 10/11 dígitos discam fixo/celular com DDD, e a tela mostra o que
+vai ser discado antes de ligar. A ligação vai para o histórico (`call_logs` sem campanha) com
+tabulação **opcional**. Fica bloqueada enquanto a discagem por campanha está rodando/pausada.
+
 ### Painel de áudio do agente
 
 Ao **iniciar a discagem** (não ao só selecionar a campanha), o agente vê um painel com
@@ -265,15 +288,18 @@ PABX Intelbras WidevoiceX
 
 ## Helper local (máquinas dos agentes)
 
-App Express (`local-helper/index.js`, **v1.7**) em `http://localhost:3001`. Endpoints:
+App Express (`local-helper/index.js`, **v1.14**) em `http://localhost:3001`. Endpoints:
 
 | Método | Rota | Função |
 |--------|------|--------|
-| `GET` | `/ping` | Health check + versão do helper (status "Helper online/offline" no app) |
-| `POST` | `/call` | Recebe `{ number }`, normaliza e disca via `microsip.exe` (ou fallback `tel:`) |
-| `POST` | `/dial-parallel` | Recebe `{ numbers: [...] }`, disca N em paralelo (modo preditivo) |
+| `GET` | `/ping` | Health check: versão, `multiCall` (**v1.8+**), `dir` e `pid` — de qual pasta o helper subiu (**v1.11+**) |
+| `POST` | `/call` | Recebe `{ number, raw? }`, normaliza e disca via `microsip.exe` (ou fallback `tel:`). `raw: true` disca sem o CSP — ramal interno (**v1.8+**) |
+| `POST` | `/microsip-multicall` | Liga o modo multi-chamada no `microsip.ini` (fecha/reabre o softphone se preciso) — botão "Preparar MicroSIP" (**v1.8+**) |
+| `POST` | `/dial-parallel` | Recebe `{ numbers: [...] }`, disca N em paralelo (modo preditivo). Recusa com **409** se o softphone estiver em chamada única |
 | `GET` | `/parallel-status` | Estado agregado do lote paralelo (quem atendeu, derrubados) |
+| `GET` | `/answer-times` | Distribuição do tempo-até-atender, para calibrar o corte de toque (**v1.9+**) |
 | `POST` | `/hangup` | Encerra a chamada ativa (`msip:hangupall`) — botão "Desligar" |
+| `POST` | `/hangup-calling` | Derruba só as linhas que ainda tocam, poupando a atendida — usado ao pausar um lote paralelo (**v1.8+**) |
 | `POST` | `/mute` | `{ device:'mic'\|'speaker', muted }` — mic via `msip:micmute`; alto-falante via mute da sessão de áudio do `microsip.exe` no Windows (**v1.7+**) |
 | `GET` | `/events` | Último evento de chamada (o app faz polling aqui) |
 | `GET` | `/event/call-start` · `/event/call-end` · `/event/call-busy` | Recebem os eventos do softphone utilizado |
@@ -288,18 +314,18 @@ roda no `prebuild`, copiando `local-helper/index.js` e gravando `version.json`).
 versão publicada com a do helper (`/ping`) e, se houver nova, mostra **"Atualizar helper"**. Cada
 helper vira a versão nova **só quando o agente clica nesse botão** (`POST /update`) **ou quando a
 máquina/helper reinicia** (`maybeAutoUpdate` no start) — não há push. Logo, durante um rollout há
-versões convivendo; o app trata isso (ex.: o painel de mute exige helper ≥ 1.7). O `start.bat`
-reabre o `node` quando o helper sai com código 42 (após se atualizar).
+versões convivendo; o app trata isso (ex.: o painel de mute exige helper ≥ 1.7). Desde a
+**v1.11** quem reabre o `node` no código novo é o **próprio helper** (`restartSelf`): ele spawna
+a versão nova desacoplada e encerra, sem precisar de launcher externo. O código de saída 42
+continua existindo só como plano B para máquinas com o `start.bat` antigo.
 
 ### Arquivos do helper
 
 | Arquivo | Função |
 |---------|--------|
-| `instalar.bat` | Instalação completa (1× por máquina): `npm install` → configura hooks do softphone utilizado → cria atalho de startup oculto |
-| `atualizar.bat` | Atualizador manual: mata só o node do helper → `npm install` → sobe oculto (a atualização do código em si é via app, `/update`) |
-| `start.bat` | Inicia o helper manualmente com console (debug); reabre o node ao sair com código 42 (auto-update) |
-| `start-hidden.vbs` | Inicia o helper sem janela (usado no startup) |
-| `setup-hooks.ps1` | Copia os `on-call-*.bat` para `C:\Users\Public\bluedesk-helper` (caminho sem espaços) e grava os hooks `cmdCallStart/End/Busy` + `minimized=1` no `microsip.ini` |
+| `instalar.bat` | Instalação completa (1× por máquina): `npm install` → configura o softphone (hooks + multi-chamada) → atalho de startup oculto → registra o protocolo `bluedesk-helper://` → sobe o helper |
+| `start-hidden.vbs` | **Launcher único**: inicia o helper sem janela. Usado pelo atalho de startup, pelo protocolo (botão "Ligar helper") e no duplo-clique. Para ver o log, rode `node index.js` num terminal |
+| `setup-hooks.ps1` | Copia os `on-call-*.bat` para `C:\Users\Public\bluedesk-helper` (caminho sem espaços) e grava os hooks `cmdCallStart/End/Busy` + `minimized=1` + `singleMode=0` (multi-chamada) no `microsip.ini` |
 | `on-call-start/end/busy.bat` | Disparados pelo softphone utilizado; fazem `curl` para os endpoints `/event/*` do helper |
 
 **Instalação (uma vez por máquina, com o softphone utilizado fechado):**
@@ -350,9 +376,10 @@ src/
 │   │   ├── warmup.ts          Aquecimento: CRUD (números/settings/templates), stats, histórico, runWarmupTickManually
 │   │   └── warmup-notifications.ts  sendWarmupNotification (webhook Make do aquecimento; no-op em dry-run)
 │   ├── softphone/             (agente) discador
-│   │   ├── SoftphoneClient.tsx   Layout, painel de áudio, abas (Discador / Histórico / Meu desempenho)
-│   │   ├── DialerTab.tsx         Campanhas do agente, horário, extra_data, controles, disposição
-│   │   ├── CallControls.tsx      Painel: Desligar + mute Microfone/Som (só com discagem iniciada, helper ≥ 1.7)
+│   │   ├── SoftphoneClient.tsx   Layout, painel de áudio, abas (Discador / Discagem manual / Histórico / Meu desempenho)
+│   │   ├── DialerTab.tsx         Campanhas do agente, horário, extra_data, controles, disposição, aviso de multi-chamada
+│   │   ├── ManualDialTab.tsx     Discagem manual: teclado, ligar/desligar, tabulação opcional, log sem campanha
+│   │   ├── CallControls.tsx      Painel: Desligar + mute Microfone/Som (discagem iniciada ou ligação manual, helper ≥ 1.7)
 │   │   ├── AgentPerformance.tsx  Aba "Meu desempenho" (métricas do próprio agente, hoje)
 │   │   └── CallHistory.tsx       Histórico de chamadas (mostra a disposição tabulada)
 │   ├── campaigns/             (supervisor) gestão e configuração
@@ -383,8 +410,8 @@ src/
 ├── components/Sidebar.tsx     Nav condicional por papel + por vertical/departamento (department_slug)
 ├── hooks/usePowerDialer.ts    Motor da fila: 1-a-1 e paralelo/preditivo, start/pause/resume, submitDisposition
 ├── store/
-│   ├── softphoneStore.ts      Perfil da sessão + estado da chamada + mute (mic/alto-falante)
-│   └── dialerStore.ts         Campanha, contato atual, status do dialer, lote paralelo
+│   ├── softphoneStore.ts      Perfil da sessão + estado da chamada + mute + multiCall do softphone + ligação manual
+│   └── dialerStore.ts         Campanha, contato atual, status do dialer, lote paralelo (+ id da sessão) e erro de discagem
 └── lib/
     ├── constants.ts           HELPER_URL = http://localhost:3001 + helperFetch (Local Network Access)
     ├── dispositions.ts        DISPOSITIONS (compartilhado dialer + config + histórico)

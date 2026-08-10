@@ -31,13 +31,18 @@ $map = [ordered]@{
   cmdCallEnd   = "$dest\on-call-end.bat"
   cmdCallBusy  = "$dest\on-call-busy.bat"
 }
-# minimized=1 faz o MicroSIP nascer na bandeja (sem janela). Com singleMode=1 (ja ativo),
-# discar e msip:hangupall ja sao silenciosos — entao isso esconde a janela sem afetar o fluxo.
+# minimized=1 faz o MicroSIP nascer na bandeja (sem janela). A janela que o multi-call reexibe
+# ao discar/atender e escondida em runtime pelo hider do helper (startMicrosipHider).
 $map['minimized'] = '1'
 # bringToFrontOnIncoming=0: defensivo. So afeta chamadas recebidas/auto-atender; a discadora e
 # outbound, mas garante que nada traga a janela a frente.
 $map['bringToFrontOnIncoming'] = '0'
-$numericKeys = @('minimized', 'bringToFrontOnIncoming')
+# singleMode=0 = modo MULTI-CHAMADA. E requisito da discagem preditiva: com singleMode=1 o
+# MicroSIP so aceita uma chamada por vez, entao o lote de N numeros vira UMA ligacao e a
+# preditiva simplesmente nao acontece. O helper tambem confere/corrige isso em runtime
+# (/ping -> multiCall, POST /microsip-multicall), mas maquina nova ja nasce certa por aqui.
+$map['singleMode'] = '0'
+$numericKeys = @('minimized', 'bringToFrontOnIncoming', 'singleMode')
 
 foreach ($k in $map.Keys) {
   # Valores de caminho vao entre aspas; flags numericas vao cruas
@@ -53,5 +58,5 @@ foreach ($k in $map.Keys) {
 }
 # Regrava como UTF-16 LE (com BOM), igual o MicroSIP espera
 Set-Content -Path $ini -Value $content -Encoding Unicode -NoNewline
-Write-Host "ini atualizado: hooks -> $dest, minimized=1 (MicroSIP inicia na bandeja)"
+Write-Host "ini atualizado: hooks -> $dest, minimized=1 (bandeja), singleMode=0 (multi-chamada)"
 Write-Host "Reabra o MicroSIP para carregar as mudancas."

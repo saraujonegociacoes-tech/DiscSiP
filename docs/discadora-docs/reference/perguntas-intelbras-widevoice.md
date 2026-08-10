@@ -88,6 +88,26 @@ Confirmamos na doc oficial do softphone utilizado que **ele não tem como detect
 > resposta. Também não confirmaram o mecanismo de sinalização (cabeçalho/webhook/API) nem
 > se há detecção de bipe/mensagem de operadora.
 
+> 🔎 **Leitura técnica (2026-08-06) — dedução, não confirmação deles:** os oito parâmetros que
+> eles listaram são, um a um, os do **`AMD()` do Asterisk** (`total_analysis_time`, `greeting`,
+> `initial_silence`, `after_greeting_silence`, `between_words_silence`, `min_word_length`,
+> `maximum_number_of_words`, `silence_threshold`). Se for esse o motor:
+> - o `AMD()` **não derruba nada sozinho** — grava o veredito numa variável de canal
+>   (`AMDSTATUS` = MACHINE/HUMAN/NOTSURE); **quem derruba é o plano de discagem**. Ou seja,
+>   "derrubar" é **configuração do lado deles**, não desenvolvimento do nosso;
+> - a pergunta que decide a aplicabilidade deixa de ser "vocês têm AMD?" e passa a ser:
+>   **o módulo se aplica a chamadas originadas pelo RAMAL (rota de saída), ou só dentro do
+>   discador/campanha da plataforma de vocês?** Se for só no discador deles, usar AMD exigiria
+>   originar por API (Bloco 5) em vez do softphone — outra arquitetura;
+> - **falso positivo é inerente:** o AMD do Asterisk classifica como máquina quem atende com
+>   saudação longa. Com hangup automático, uma fração de leads reais cai em silêncio;
+> - **codec importa:** AMD analisa energia/silêncio do áudio. Eles dizem ter só **GSM/G729**
+>   habilitados (Bloco 8) — pedir **G.711** melhora a precisão da detecção.
+>
+> Enquanto isso não é confirmado, o Blue Desk trata caixa postal por **corte de toque**
+> (derruba a linha que só toca em ~20s, antes de a caixa atender) + auto-tabulação como
+> `abandoned`. Ver `../updates/preditiva-real-e-discagem-manual.md` §6.
+
 ---
 
 ## Bloco 3 — Limites de capacidade (crítico para preditiva) 🔴
@@ -280,6 +300,88 @@ Hoje discamos **`021` (CSP) + DDD + número** para todos.
    o padrão SIP/Q.850" sem tabela caso a caso; Bloco 10 — "formato configurável" sem
    confirmar o CSP `021` da conta) em vez de específico ao cenário real de vocês (26
    agentes × 3 linhas).
+
+---
+
+## Sondagem técnica direta (07/08/2026) — o que descobrimos sem perguntar
+
+Feita de forma **passiva**: DNS, TCP connect, handshake TLS e handshake WebSocket. **Nenhuma
+credencial usada, nenhum ramal registrado, nenhum SIP enviado.** Ponto de partida: os campos de
+servidor do `microsip.ini` da máquina do dono (`widevoice8.intelbras.com.br:7048`, `transport=udp`).
+
+### 🟢 O endpoint WebRTC existe e está no ar (responde o Bloco 6)
+
+```
+wss://widevoice8.intelbras.com.br:8089/ws   →   HTTP/1.1 101 Switching Protocols
+                                                Sec-WebSocket-Protocol: sip
+```
+
+**Teste de controle:** o mesmo handshake **sem** o subprotocolo `sip` devolve `400 Bad Request`.
+Isso descarta "WebSocket genérico que aceita qualquer coisa" — o servidor valida SIP over
+WebSocket (RFC 7118). É o endpoint certo.
+
+### 🟢 A plataforma é Asterisk
+
+O banner é `Server: Handphone/22.10.1`. O par de portas 8088 (sem TLS) + 8089 (com TLS), path
+`/ws` e subprotocolo `sip` é a assinatura do `res_http_websocket` do **Asterisk**, com o nome
+trocado; `22.10.1` bate com a linha do Asterisk 22. Confirmado de forma independente pelo portal:
+os tipos de "Grupos de Chamada" são tradução literal das estratégias do `app_queue`
+(Sequencial=`linear`, Simultâneo=`ringall`, Rotativo=`rrmemory`, Menos Recente=`leastrecent`,
+Menos Chamadas=`fewestcalls`), e "Redirecionamento" tem um checkbox **"Executar Atendimento
+(Answer)"** — a aplicação `Answer()` do dialplan aparecendo crua na interface.
+
+**Portas abertas:** 443 (TLS), 5061 (SIP-TLS), 7048 (SIP UDP — a porta do tenant), 8088 (HTTP),
+8089 (HTTPS/WSS). Certificado válido para `widevoice8.intelbras.com.br` até 11/set/2026.
+
+### 🔴 Achado de segurança: hoje o áudio trafega em texto claro
+
+A conta está em `transport=udp` com `SRTP` vazio — ou seja, **sinalização e mídia sem
+criptografia**. A porta **5061 (SIP-TLS) está aberta e com certificado válido**, então existe
+alternativa criptografada disponível, sem custo e sem depender do projeto WebRTC. Não foi alterado
+para não mexer no ambiente durante os testes da preditiva.
+
+### ⚠️ O que a sondagem **não** responde
+
+1. **Multi-linha por ramal via WebRTC** — segue sendo o risco #1. Sem isso a preditiva não existe
+   no navegador. Só um teste com credencial responde.
+2. **Se o ramal 5125 está provisionado para WebRTC.** Porta aberta é infraestrutura do tenant,
+   compartilhada. No Asterisk o endpoint precisa de `webrtc=yes` (que liga DTLS, ICE, AVPF e
+   rtcp-mux). Se não estiver, o sintoma é traiçoeiro: **registra normal, disca, e não sai áudio**,
+   porque o handshake DTLS não acontece. Conferir primeiro em **Sistema PABX → RAMAIS** — se for
+   um checkbox no portal, resolve sozinho; senão é ticket de uma linha.
+3. **Codec do endpoint WebRTC.** Navegador só fala Opus, G.711 (PCMU/PCMA) e G.722 — nunca GSM
+   nem G.729. Se valer literalmente o que diz o Bloco 8, o navegador não conecta. O log real do
+   MicroSIP mostrando **PCMA** é bom sinal, mas é sinal do tronco, não do endpoint WebRTC.
+
+### 🔎 O portal não tem discador
+
+Menu completo: Início · Call-Center (só *Calendários*) · Relatórios · Sistema PABX (Atendedor
+Digital, Grupos de Chamada, Música de Espera, Ramais, Redirecionar, Status Ramais) · Facilities
+(Usuários) · IA · Trocar senha.
+
+**Tudo é roteamento de entrada.** Não há campanha, discagem ativa nem API. Logo, **o portal não
+resolve o AMD na saída**, que é onde está o problema de caixa postal/bloqueio de spam.
+
+Vale notar que "Call-Center" existe como seção e contém **apenas "Calendários"** — cheiro de
+módulo licenciado que a conta não tem. Pergunta de uma linha que vale a pena: *"o que mais existe
+em Call-Center? discador/campanha está disponível para a nossa conta?"*
+
+### 🟡 "URA Script" é PHP
+
+Cada opção do Atendedor Digital tem um link **"Ura Script"** que abre um editor Ace em
+`ace/mode/php-inline` (confirmado via `session.$modeId` no console). O `-inline` indica PHP **sem**
+a tag `<?php` — a plataforma injeta o trecho num arquivo maior, ou seja, é execução de PHP no
+servidor, não uma DSL parecida.
+
+Se for PHP-AGI de verdade, `$agi->exec('AMD')` + `get_variable('AMDSTATUS')` resolveria o AMD sem
+WebRTC nenhum. **Mas roda em chamada recebida.** A única saída seria inverter quem origina — o
+agente disca para um número interno que cai num script, e o script faz a discagem de saída com
+`Dial(...,M(macro))` rodando o AMD no canal atendido. Quatro incógnitas empilhadas: existe objeto
+`$agi`? dá para chegar no script por ramal interno? `Dial()` para tronco externo é permitido
+(provedor sério bloqueia — é vetor de fraude de tarifa)? saída HTTP é liberada?
+
+> ⚠️ Se for testar: **nunca na `URA_1142408044`**, que é a URA de produção do número da empresa.
+> Criar um Atendedor Digital novo, sem DDR vinculado.
 
 ---
 
