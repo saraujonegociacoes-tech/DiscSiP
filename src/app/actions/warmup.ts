@@ -44,8 +44,10 @@ export async function upsertWarmupNumber(
   const row = {
     sender_id: input.sender_id.trim(),
     phone_number: input.phone_number.trim(),
-    display_name: input.display_name ?? null,
-    waba_id: input.waba_id ?? null,
+    // Campos opcionais só entram no update quando vieram no input — senão um toggle
+    // parcial (ex.: "participa") apagaria o apelido/WABA já cadastrados.
+    ...(input.display_name !== undefined && { display_name: input.display_name }),
+    ...(input.waba_id !== undefined && { waba_id: input.waba_id }),
     ...(input.status && { status: input.status }),
     ...(input.participating !== undefined && { participating: input.participating }),
     ...(input.quality_rating !== undefined && { quality_rating: input.quality_rating }),

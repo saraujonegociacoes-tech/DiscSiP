@@ -41,6 +41,7 @@ export function NumbersConfigSection({ numbers, stats, maxCap }: Props) {
   const [senderId, setSenderId] = useState('')
   const [phone, setPhone] = useState('')
   const [name, setName] = useState('')
+  const [wabaId, setWabaId] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [confirmId, setConfirmId] = useState<string | null>(null)
@@ -55,6 +56,7 @@ export function NumbersConfigSection({ numbers, stats, maxCap }: Props) {
       sender_id: senderId.trim(),
       phone_number: phone.trim(),
       display_name: name.trim() || null,
+      waba_id: wabaId.trim() || null,
     })
     setSaving(false)
     if (result.error) {
@@ -64,6 +66,7 @@ export function NumbersConfigSection({ numbers, stats, maxCap }: Props) {
     setSenderId('')
     setPhone('')
     setName('')
+    setWabaId('')
     router.refresh()
   }
 
@@ -95,7 +98,7 @@ export function NumbersConfigSection({ numbers, stats, maxCap }: Props) {
             {numbers.length}/{maxCap}
           </span>
         </div>
-        <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-[1fr_1fr_1fr_auto]">
+        <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-[1fr_1fr_1fr_1fr_auto]">
           <Input
             value={senderId}
             onChange={(e) => setSenderId(e.target.value)}
@@ -106,6 +109,12 @@ export function NumbersConfigSection({ numbers, stats, maxCap }: Props) {
             value={phone}
             onChange={(e) => setPhone(e.target.value)}
             placeholder="Número (E.164, +55...)"
+            disabled={atCap}
+          />
+          <Input
+            value={wabaId}
+            onChange={(e) => setWabaId(e.target.value)}
+            placeholder="waba_id (opcional)"
             disabled={atCap}
           />
           <Input
