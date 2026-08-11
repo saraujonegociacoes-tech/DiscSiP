@@ -71,6 +71,17 @@ Financeiro** via `child_relations` (relação "Subir pagamento") — 1 card cone
   + `ingest_cs_card` lendo `child_relations` + RPCs `get_cs_pagamento_projecao`/`_historico`; reusa
   `cs_parse_date` da `20260730`), tipos `CsPagamento*`, actions, `CsPagamento.tsx`, query do import
   com `child_relations`.
+- **Correção 11/ago — projeção só na fase (migration `20260811_cs_pagamento_projecao_so_na_fase.sql`,
+  ⏳ A APLICAR):** a coorte da `get_cs_pagamento_projecao` era por **campo** (`1_parcela_valor`
+  preenchido), e os campos do plano ficam no `metadata` mesmo depois que o card sai da fase — card
+  em "1° Mês"/"Quitados"/"Arquivado" seguia com previsto/em aberto/atrasado. Agora: **projeção só
+  dentro de "Aguardando Pagamento"** (`cs_is_pagamento_phase`, espelha o `neg_is_waiting_phase` do
+  CEO), **realizado conta em qualquer fase** (card que saiu fica na lista como "Fora da fase", só
+  com o pago). Sem backfill: o plano é resolvido na leitura. Detalhe em
+  [`../fixes/pagamento-projecao-so-na-fase-e-url-no-csv.md`](../fixes/pagamento-projecao-so-na-fase-e-url-no-csv.md).
+- **Exportação (mesmo pedido, já no código):** **URL do card em toda exportação** do painel
+  (Matriz, Minutas, Pagamento); CSV da Página 4 reescrito com cronograma parcela a parcela e botão
+  novo no Histórico de recebimento; formato do CSV centralizado em `src/lib/csv.ts`.
 - **PENDENTE do dono:** ~~aplicar `20260730b`~~ (✅ aplicada — RPCs respondem); ligar
   `child_relations` na query do Make **+ poll sem-delta do balde "Aguardando Pagamento"** (gatilho:
   pagamento no Financeiro pode não tocar o `updated_at` do card do SC); re-rodar

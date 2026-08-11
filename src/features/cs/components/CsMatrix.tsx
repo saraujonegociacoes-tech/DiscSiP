@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react'
 import { AlertCircle, Download, ExternalLink, X } from 'lucide-react'
 import { useTheme } from '@/components/bluedesk/theme'
 import { BRT_TZ } from '@/lib/timezone'
+import { downloadCsv, type CsvValue } from '@/lib/csv'
 import type { CsMatrixData, CsMatrixCard } from '@/lib/types/database'
 
 // PÁGINA 1 do painel de CS — MATRIZ Fase × Tempo na fase (heatmap). Linhas = fases (ordem do
@@ -212,34 +213,25 @@ export function CsMatrix({ data }: { data: CsMatrixData }) {
     return { phase: row.phase, label, cards: sorted }
   }, [selected, rows])
 
+  // URL do card na primeira coluna: a planilha é lista de trabalho, e sem o link ela não
+  // leva a lugar nenhum (regra do dono, 11/ago — vale pra toda exportação do painel).
   function exportCsv() {
-    const head = ['ID', 'Cliente', 'Responsável', 'Dias na fase', 'Idade (dias)', 'Fase', 'Janela (tempo na fase)', 'Situação']
-    const cell = (v: string | number) => {
-      const s = String(v)
-      return /[";\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
-    }
-    const lines = filtered.map((c) =>
-      [
-        c.pipefyCardId,
-        c.title ?? '',
-        c.agentName,
-        c.dwellDays,
-        c.ageDays,
-        c.phase,
-        windowLabel(windowOf(c.dwellDays)),
-        c.active ? 'Ativo' : 'Inativo',
-      ]
-        .map(cell)
-        .join(';'),
-    )
-    const csv = '﻿' + [head.map(cell).join(';'), ...lines].join('\n')
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `cs-cards-${fmtDate(data.referenceAt).replace(/\s/g, '')}.csv`
-    a.click()
-    URL.revokeObjectURL(url)
+    const head = [
+      'URL do card', 'ID', 'Cliente', 'Responsável', 'Dias na fase', 'Idade (dias)', 'Fase',
+      'Janela (tempo na fase)', 'Situação',
+    ]
+    const rows: CsvValue[][] = filtered.map((c) => [
+      pipefyUrl(c.pipefyCardId),
+      c.pipefyCardId,
+      c.title ?? '',
+      c.agentName,
+      c.dwellDays,
+      c.ageDays,
+      c.phase,
+      windowLabel(windowOf(c.dwellDays)),
+      c.active ? 'Ativo' : 'Inativo',
+    ])
+    downloadCsv(`cs-cards-${fmtDate(data.referenceAt).replace(/\s/g, '')}`, head, rows)
   }
 
   return (

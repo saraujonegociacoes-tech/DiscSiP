@@ -74,9 +74,27 @@ async function main() {
     const proj = await rpc('get_cs_pagamento_projecao')
     const cards = proj?.cards ?? []
     console.log(`cards em pagamento: ${cards.length}`)
+
+    // Regra da 20260811: projeção SÓ de card na fase "Aguardando Pagamento"; o realizado
+    // conta em qualquer fase. Quem está fora da fase tem que vir com `plano: []` — se vier
+    // com plano, a migration não foi aplicada (ou a 20260730b foi reexecutada por cima).
+    const naFase = cards.filter((x) => x.naFase === true).length
+    const foraComPlano = cards.filter((x) => x.naFase !== true && (x.plano ?? []).length > 0)
+    console.log(`  na fase: ${naFase} · fora da fase (só realizado): ${cards.length - naFase}`)
+    if (cards.length > 0 && naFase === 0 && cards.every((x) => x.naFase === undefined)) {
+      console.log('  ⚠ nenhum card traz `naFase` — a migration 20260811 não foi aplicada.')
+    } else if (foraComPlano.length > 0) {
+      console.log(`  ⚠ ${foraComPlano.length} card(s) FORA da fase ainda com plano — projeção vazando.`)
+    } else {
+      console.log('  ✓ nenhuma projeção de card fora da fase.')
+    }
+
     const c = cards[0]
     if (c) {
-      console.log(`  1º card ${c.pipefyCardId} · forma ${c.forma ?? '—'} · ${c.active ? 'ativo' : 'inativo'}`)
+      console.log(
+        `  1º card ${c.pipefyCardId} · forma ${c.forma ?? '—'} · ${c.active ? 'ativo' : 'inativo'}` +
+          ` · ${c.naFase ? 'na fase' : 'fora da fase'}`,
+      )
       console.log(`    plano (previsto): ${JSON.stringify(c.plano)}`)
       console.log(`    pagamentos (real): ${JSON.stringify((c.pagamentos ?? []).map((p) => ({ n: p.parcelaNum, v: p.valorPago, d: p.dataPagamento })))}`)
     }

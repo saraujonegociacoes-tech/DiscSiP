@@ -29,7 +29,13 @@ painel e o de Leads são os primeiros passos). Ver também
 | 1 | **Visão Geral + Janelas** — matriz Fase × Tempo na fase (heatmap), drill-down por célula, export CSV | Snapshot | ✅ no ar (migration `20260721`) |
 | 2 | **Equipe** — movimento por responsável **do card** no ciclo (movido c/ ou s/ atualização, só atualização, parado) + negociações feitas por responsável **pela negociação** (campo da fase), com drill | Série temporal (Make) | ✅ no ar (`20260722`/`20260722b`/`20260723_v2`/`20260731b`) |
 | 3 | **Controle de Minutas** — buckets por vencimento; Dívida do Cliente / Valor da Minuta Final / Última Negociação / Resguardado / % desc. / etiqueta; colunas ordenáveis; KPI "Resguardado na carteira"; insights clicáveis; export CSV | Snapshot | ✅ no ar (migrations `20260727` + `b`/`c`/`d`) |
-| 4 | **Pagamento + Insights** — projeção (plano de parcelas na fase Aguardando Pagamento) + realizado/histórico (conexão com o pipe do Financeiro); KPIs de carteira, cronograma parcela-a-parcela, calendário de recebimento, insights, CSV | Snapshot + série (conexão) | ✅ construída, migration `20260730b` aplicada — falta o Make/backfill semear (só o card de teste em `cs_card_payments`, conferido 31/jul) |
+| 4 | **Pagamento + Insights** — projeção (plano de parcelas, **só enquanto o card está na fase** Aguardando Pagamento) + realizado/histórico (conexão com o pipe do Financeiro, conta em **qualquer** fase); KPIs de carteira, cronograma parcela-a-parcela, calendário de recebimento, insights, CSV | Snapshot + série (conexão) | ✅ construída, migration `20260730b` aplicada — falta o Make/backfill semear (só o card de teste em `cs_card_payments`, conferido 31/jul). ⏳ **`20260811` a aplicar** (projeção só na fase) |
+
+> **Correção pendente de aplicar (11/ago):** a Página 4 conta projeção de card que **já saiu** da
+> fase — os campos do plano ficam no `metadata` pra sempre e a coorte era por campo, não por fase.
+> Migration `20260811_cs_pagamento_projecao_so_na_fase.sql`. No mesmo pedido do dono, **toda
+> exportação do painel passa a sair com a URL do card**. Ver
+> [`../fixes/pagamento-projecao-so-na-fase-e-url-no-csv.md`](../fixes/pagamento-projecao-so-na-fase-e-url-no-csv.md).
 
 > A **Equipe** é série temporal: enche conforme o Make acumula (a completude já rende do
 > snapshot). As páginas 1 e 3 são **foto de estado atual** (snapshot), sem filtro de período. A
