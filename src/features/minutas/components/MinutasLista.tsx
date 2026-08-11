@@ -7,6 +7,7 @@ import {
 } from 'lucide-react'
 import { updateParcela, deleteMinuta } from '@/app/actions/minutas'
 import type { ProcMinutasData, ProcParcelaStatus } from '@/lib/types/database'
+import { downloadCsv, type CsvValue } from '@/lib/csv'
 import { cn } from '@/lib/utils'
 import { recentCivilMonths, recentCycles, customPeriod, periodBounds, type LeadPeriod } from '@/lib/period'
 import {
@@ -170,40 +171,28 @@ export function MinutasLista({ data, onChanged }: { data: ProcMinutasData; onCha
     run(`del-${r.acordo.id}`, () => deleteMinuta(r.acordo.id))
   }
 
+  // Sem coluna de URL aqui, diferente das abas do painel de CS: minuta processual é registro
+  // NOSSO (tabela proc_*, criado no formulário desta página), não card do Pipefy — não existe
+  // link pra apontar. O identificador que serve de chave é o número do processo.
   function exportCsv() {
     const head = [
       'Cliente', 'Número do processo', 'Título', 'Recorrência', 'Parcela', 'Total parcelas',
       'Valor', 'Vencimento', 'Data de pagamento', 'Situação', 'Observações',
     ]
-    const cell = (v: string | number) => {
-      const s = String(v ?? '')
-      return /[";\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
-    }
-    const lines = filtered.map((r) =>
-      [
-        nomeCliente(r.acordo),
-        r.acordo.numeroProcesso ?? '',
-        r.acordo.titulo ?? '',
-        recorrenciaCurta(r.acordo.recorrencia),
-        r.parcela.num,
-        r.acordo.parcelaTotal,
-        r.parcela.valor ?? '',
-        fmtDate(r.parcela.vencimento),
-        fmtDate(r.parcela.dataPagamento),
-        STATUS_META[r.parcela.status].label,
-        r.parcela.observacoes ?? '',
-      ]
-        .map(cell)
-        .join(';'),
-    )
-    const csv = '﻿' + [head.map(cell).join(';'), ...lines].join('\n')
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `minutas-processuais-${todayBRT()}.csv`
-    a.click()
-    URL.revokeObjectURL(url)
+    const rows: CsvValue[][] = filtered.map((r) => [
+      nomeCliente(r.acordo),
+      r.acordo.numeroProcesso ?? '',
+      r.acordo.titulo ?? '',
+      recorrenciaCurta(r.acordo.recorrencia),
+      r.parcela.num,
+      r.acordo.parcelaTotal,
+      r.parcela.valor ?? '',
+      fmtDate(r.parcela.vencimento),
+      fmtDate(r.parcela.dataPagamento),
+      STATUS_META[r.parcela.status].label,
+      r.parcela.observacoes ?? '',
+    ])
+    downloadCsv(`minutas-processuais-${todayBRT()}`, head, rows)
   }
 
   // Cabeçalho clicável. É uma FUNÇÃO que devolve JSX (não um componente): declarar um

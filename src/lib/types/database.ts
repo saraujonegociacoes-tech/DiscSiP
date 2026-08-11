@@ -373,7 +373,9 @@ export interface CsMinutasData {
 // PÁGINA 4 (Pagamento) — design HÍBRIDO (migration 20260730b_cs_pagamento.sql):
 //   · PROJEÇÃO (o que vão pagar) = plano por parcela criado na fase "Aguardando Pagamento" do SC,
 //     lido do cs_cards.metadata (slugs irregulares, ver a migration). RPC get_cs_pagamento_projecao()
-//     (snapshot, sem período — como a P1/P3).
+//     (snapshot, sem período — como a P1/P3). Desde a 20260811 a projeção só existe ENQUANTO o card
+//     está na fase: os campos ficam no metadata pra sempre, mas fora da fase viram histórico, não
+//     previsão. O REALIZADO não tem esse filtro — pagamento conta em qualquer fase.
 //   · REALIZADO/HISTÓRICO (o que já pagaram) = conexão do card do SC com o pipe do FINANCEIRO
 //     (child_relations → tabela cs_card_payments); 1 card do Financeiro = 1 pagamento de 1 parcela.
 //     RPC get_cs_pagamento_historico(p_start,p_end) (série, filtrável por período).
@@ -402,8 +404,9 @@ export interface CsPagamentoCard {
   active: boolean // false = card em fase terminal (inativo)
   phaseId: string | null
   phase: string
+  naFase: boolean // está EM "Aguardando Pagamento" (343781769)? false = entrou na lista só pelo realizado
   forma: string | null // forma_de_pagamento do card do SC (ex.: "Parcelado 3x")
-  plano: CsPagamentoPlanoParcela[] // parcelas previstas (só as com valor/data preenchidos)
+  plano: CsPagamentoPlanoParcela[] // parcelas previstas — SEMPRE vazio quando naFase é false (20260811)
   pagamentos: CsPagamentoRealizado[] // parcelas efetivamente pagas (da conexão com o Financeiro)
 }
 

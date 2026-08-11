@@ -18,6 +18,7 @@ import { PeriodPicker } from '@/components/bluedesk/PeriodPicker'
 import { currentCycle, type LeadPeriod } from '@/lib/period'
 import { BRT_TZ } from '@/lib/timezone'
 import { getCsPagamentoProjecao, getCsPagamentoHistorico } from '@/app/actions/cs'
+import { downloadCsv, type CsvValue } from '@/lib/csv'
 import { cn } from '@/lib/utils'
 import type {
   CsPagamentoProjecaoData,
@@ -28,9 +29,13 @@ import type {
 // PÁGINA 4 do painel de CS — PAGAMENTO + INSIGHTS. Modelo híbrido (ver migration
 // 20260730b_cs_pagamento.sql e docs/painelcs-docs/updates/painel-sucesso-cliente-cs.md):
 //   · PROJEÇÃO ("quando/quanto vão pagar") = plano por parcela criado na fase "Aguardando
-//     Pagamento" do SC (snapshot, sem período). É o esperado.
+//     Pagamento" do SC (snapshot, sem período). É o esperado. Só vale ENQUANTO o card está
+//     na fase: a RPC manda `plano: []` pra quem saiu (migration 20260811) — os campos ficam
+//     no metadata pra sempre, mas fora da fase eles são histórico, não previsão.
 //   · REALIZADO/HISTÓRICO ("quanto já pagaram") = conexão com o pipe do Financeiro (cada card
-//     conectado = 1 pagamento de 1 parcela). O histórico é filtrável por período.
+//     conectado = 1 pagamento de 1 parcela). Esse NÃO tem filtro de fase — dinheiro que entrou
+//     conta sempre. Por isso a lista tem cards "Fora da fase": entram só pelo realizado.
+//     O histórico é filtrável por período.
 // A reconciliação prevista×paga (por número de parcela), os KPIs de carteira, o calendário de
 // recebimento e o status moram aqui no cliente. Nasce ~vazio: enche conforme os cards entram na
 // fase com o plano preenchido e as conexões de pagamento sobem.
@@ -71,12 +76,16 @@ const STATUS_TABS: { key: StatusFilter; label: string }[] = [
   { key: 'todos', label: 'Todos' },
 ]
 
-type CardStatus = 'quitado' | 'atrasado' | 'em_dia' | 'sem_plano'
+type CardStatus = 'quitado' | 'atrasado' | 'em_dia' | 'sem_plano' | 'fora_fase'
 const STATUS_META: Record<CardStatus, { label: string; tone: string; dot: string }> = {
   quitado: { label: 'Quitado', tone: 'text-success', dot: 'bg-success' },
   em_dia: { label: 'Em dia', tone: 'text-primary', dot: 'bg-primary' },
   atrasado: { label: 'Atrasado', tone: 'text-destructive', dot: 'bg-destructive' },
   sem_plano: { label: 'Sem plano', tone: 'text-muted-foreground', dot: 'bg-muted-foreground/60' },
+  // Card que já saiu de "Aguardando Pagamento": está na lista só porque tem pagamento
+  // conectado. Não tem projeção (a RPC manda `plano: []` desde a 20260811) — e não deve
+  // ter: o dinheiro que entrou continua contando, o previsto não.
+  fora_fase: { label: 'Fora da fase', tone: 'text-muted-foreground', dot: 'bg-muted-foreground/40' },
 }
 
 // Reconciliação de uma parcela: o previsto (plano do SC) casado com o pago (conexão), pelo número.
@@ -144,7 +153,8 @@ function derive(card: CsPagamentoCard, today: string): DerivedCard {
     parcelas.find((p) => !p.paga && (p.valorPrevisto != null || p.dataPrevista != null)) ?? null
 
   let status: CardStatus
-  if (parcelasPrevistas === 0) status = 'sem_plano'
+  if (!card.naFase) status = 'fora_fase'
+  else if (parcelasPrevistas === 0) status = 'sem_plano'
   else if (totalPrevisto > 0 && totalPago >= totalPrevisto - 0.005) status = 'quitado'
   else if (parcelas.some((p) => p.atrasada)) status = 'atrasado'
   else status = 'em_dia'
@@ -269,7 +279,9 @@ export function CsPagamento() {
     const previsto = filtered.reduce((a, d) => a + d.totalPrevisto, 0)
     const quitados = filtered.filter((d) => d.status === 'quitado').length
     const atrasados = filtered.filter((d) => d.status === 'atrasado').length
-    return { aReceber, recebido, previsto, quitados, atrasados, count: filtered.length }
+    // Na fase = quem gera projeção. O resto está na lista só pelo pagamento realizado.
+    const naFase = filtered.filter((d) => d.card.naFase).length
+    return { aReceber, recebido, previsto, quitados, atrasados, naFase, count: filtered.length }
   }, [filtered])
 
   // Calendário de recebimento: previsto (parcelas não pagas, por vencimento) × recebido (parcelas
@@ -375,41 +387,83 @@ export function CsPagamento() {
     setInsightSel(null)
   }
 
+  // Exportação da PROJEÇÃO: uma linha por card, com o resumo da carteira + o cronograma
+  // parcela a parcela aberto em colunas (o que a tela só mostra no drill). A URL do card
+  // é a PRIMEIRA coluna — o CSV existe pra virar plano de cobrança, e sem o link a
+  // planilha não leva a lugar nenhum.
+  //
+  // Nº de parcelas é dinâmico: o plano tem teto 3, mas o Financeiro pode conectar um
+  // pagamento com parcela 4+ (o campo é livre). Fixar em 3 comeria dado em silêncio.
   function exportCsv() {
-    const head = [
-      'ID', 'Cliente', 'Responsável', 'Forma', 'Total previsto', 'Pago', 'Em aberto',
-      'Parcelas pagas', 'Parcelas previstas', 'Próxima parcela', 'Status', 'Situação',
-    ]
-    const cell = (v: string | number) => {
-      const s = String(v)
-      return /[";\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
-    }
-    const lines = filtered.map((d) =>
-      [
-        d.card.pipefyCardId,
-        d.card.title ?? '',
-        d.card.agentName,
-        d.card.forma ?? '',
-        d.totalPrevisto || '',
-        d.totalPago || '',
-        d.emAberto || '',
-        d.parcelasPagas,
-        d.parcelasPrevistas,
-        d.proxima?.dataPrevista ? fmtDate(d.proxima.dataPrevista) : '',
-        STATUS_META[d.status].label,
-        d.card.active ? 'Ativo' : 'Inativo',
-      ]
-        .map(cell)
-        .join(';'),
+    const maxParcela = filtered.reduce(
+      (m, d) => d.parcelas.reduce((mm, p) => Math.max(mm, p.num), m),
+      0,
     )
-    const csv = '﻿' + [head.map(cell).join(';'), ...lines].join('\n')
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `cs-pagamento-${proj ? fmtStamp(proj.referenceAt).replace(/\s/g, '') : 'export'}.csv`
-    a.click()
-    URL.revokeObjectURL(url)
+    const head = [
+      'URL do card', 'ID', 'Cliente', 'Responsável', 'Fase', 'Na fase Aguardando Pagamento',
+      'Situação', 'Status', 'Forma', 'Total previsto', 'Total pago', 'Em aberto',
+      'Parcelas previstas', 'Parcelas pagas', 'Próxima parcela (venc.)', 'Próxima parcela (valor)',
+      ...Array.from({ length: maxParcela }, (_, i) => [
+        `P${i + 1} previsto`, `P${i + 1} vencimento`, `P${i + 1} pago`, `P${i + 1} pago em`,
+        `P${i + 1} situação`, `P${i + 1} comprovante`,
+      ]).flat(),
+    ]
+    const rows: CsvValue[][] = filtered.map((d) => [
+      pipefyUrl(d.card.pipefyCardId),
+      d.card.pipefyCardId,
+      d.card.title ?? '',
+      d.card.agentName,
+      d.card.phase,
+      d.card.naFase ? 'Sim' : 'Não',
+      d.card.active ? 'Ativo' : 'Inativo',
+      STATUS_META[d.status].label,
+      d.card.forma ?? '',
+      d.totalPrevisto || '',
+      d.totalPago || '',
+      d.emAberto || '',
+      d.parcelasPrevistas,
+      d.parcelasPagas,
+      d.proxima?.dataPrevista ? fmtDate(d.proxima.dataPrevista) : '',
+      d.proxima?.valorPrevisto ?? '',
+      ...Array.from({ length: maxParcela }, (_, i) => {
+        const p = d.parcelas.find((x) => x.num === i + 1)
+        if (!p) return ['', '', '', '', '', '']
+        return [
+          p.valorPrevisto ?? '',
+          p.dataPrevista ? fmtDate(p.dataPrevista) : '',
+          p.valorPago ?? '',
+          p.dataPagamento ? fmtDate(p.dataPagamento) : '',
+          p.paga ? 'Paga' : p.atrasada ? 'Atrasada' : 'A vencer',
+          p.comprovanteUrl ?? '',
+        ]
+      }).flat(),
+    ])
+    downloadCsv(
+      `cs-pagamento-${proj ? fmtStamp(proj.referenceAt).replace(/\s/g, '') : 'export'}`,
+      head,
+      rows,
+    )
+  }
+
+  // Exportação do REALIZADO: a outra metade da aba (pagamentos confirmados no período,
+  // vindos do pipe do Financeiro). Sai com a URL do card do SC e a do comprovante.
+  function exportHistoricoCsv() {
+    const head = [
+      'URL do card', 'ID do card (SC)', 'ID do pagamento (Financeiro)', 'Cliente',
+      'Responsável', 'Parcela', 'Valor pago', 'Data do pagamento', 'Comprovante',
+    ]
+    const rows: CsvValue[][] = (hist?.payments ?? []).map((p) => [
+      pipefyUrl(p.pipefyCardId),
+      p.pipefyCardId,
+      p.paymentCardId,
+      p.title ?? '',
+      p.agentName,
+      p.parcelaNum ?? '',
+      p.valorPago ?? '',
+      p.dataPagamento ? fmtDate(p.dataPagamento) : '',
+      p.comprovanteUrl ?? '',
+    ])
+    downloadCsv(`cs-pagamento-recebido-${period.key}`, head, rows)
   }
 
   if (proj === null) {
@@ -471,7 +525,12 @@ export function CsPagamento() {
         <>
           {/* ── KPIs de carteira ────────────────────────────────────────────── */}
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-            <Stat label="Em pagamento" value={nf(kpis.count)} sub={`${nf(kpis.quitados)} quitado(s)`} icon={Wallet} />
+            <Stat
+              label="Em pagamento"
+              value={nf(kpis.naFase)}
+              sub={`na fase · ${nf(kpis.count - kpis.naFase)} fora (só realizado)`}
+              icon={Wallet}
+            />
             <Stat label="A receber" value={brl(kpis.aReceber)} sub={`de ${brl(kpis.previsto)} previstos`} icon={CalendarClock} />
             <Stat label="Já recebido" value={brl(kpis.recebido)} sub="total pago na carteira" icon={CheckCircle2} />
             <Stat label="Atrasados" value={nf(kpis.atrasados)} sub="com parcela vencida" icon={AlertTriangle} />
@@ -483,7 +542,19 @@ export function CsPagamento() {
               <div className="rounded-2xl border border-border bg-gradient-card p-4 shadow-elevated">
                 <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                   <h2 className="text-sm font-semibold text-foreground">Cards em pagamento</h2>
-                  <span className="text-xs text-muted-foreground">{nf(filtered.length)} card(s)</span>
+                  <div className="flex items-center gap-3">
+                    <span className="text-xs text-muted-foreground">{nf(filtered.length)} card(s)</span>
+                    <button
+                      type="button"
+                      onClick={exportCsv}
+                      disabled={filtered.length === 0}
+                      title="CSV com URL do card, cliente, responsável, fase, totais e o cronograma parcela a parcela"
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-background/60 px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-background disabled:opacity-50"
+                    >
+                      <Download className="h-3.5 w-3.5" />
+                      Exportar
+                    </button>
+                  </div>
                 </div>
 
                 {filtered.length === 0 ? (
@@ -560,8 +631,11 @@ export function CsPagamento() {
                   </div>
                 )}
                 <p className="mt-2 text-[11px] text-muted-foreground">
-                  Previsto = plano de parcelas (fase Aguardando Pagamento) · Pago = pagamentos reais
-                  (conexão com o Financeiro) · clique num card para ver o cronograma parcela a parcela.
+                  Previsto = plano de parcelas, contado <span className="text-foreground">só enquanto o
+                  card está na fase Aguardando Pagamento</span> · Pago = pagamentos reais (conexão com o
+                  Financeiro), que contam em qualquer fase — por isso cards que já saíram aparecem como{' '}
+                  <span className="text-foreground">Fora da fase</span>, sem previsto · clique num card
+                  para ver o cronograma parcela a parcela.
                 </p>
               </div>
 
@@ -657,18 +731,9 @@ export function CsPagamento() {
             {/* Trilho: calendário + export + insights */}
             <div className="flex flex-col gap-4">
               <div className="rounded-2xl border border-border bg-gradient-card p-4 shadow-card">
-                <div className="mb-3 flex items-center justify-between gap-2">
-                  <h3 className="flex items-center gap-1.5 text-sm font-semibold text-foreground">
-                    <CalendarClock className="h-4 w-4 text-primary" /> Calendário de recebimento
-                  </h3>
-                  <button
-                    type="button"
-                    onClick={exportCsv}
-                    className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-background/60 px-2.5 py-1 text-xs font-medium text-foreground transition-colors hover:bg-background"
-                  >
-                    <Download className="h-3.5 w-3.5" /> CSV
-                  </button>
-                </div>
+                <h3 className="mb-3 flex items-center gap-1.5 text-sm font-semibold text-foreground">
+                  <CalendarClock className="h-4 w-4 text-primary" /> Calendário de recebimento
+                </h3>
                 {calendario.rows.length === 0 ? (
                   <p className="text-xs text-muted-foreground">Sem datas de parcela neste recorte.</p>
                 ) : (
@@ -796,7 +861,19 @@ export function CsPagamento() {
               Pagamentos confirmados no período (fonte: pipe do Financeiro).
             </p>
           </div>
-          <PeriodPicker value={period} onChange={setPeriod} disabled={loadingHist} />
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={exportHistoricoCsv}
+              disabled={(hist?.payments.length ?? 0) === 0}
+              title="CSV dos pagamentos do período, com URL do card e do comprovante"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-background/60 px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-background disabled:opacity-50"
+            >
+              <Download className="h-3.5 w-3.5" />
+              Exportar
+            </button>
+            <PeriodPicker value={period} onChange={setPeriod} disabled={loadingHist} />
+          </div>
         </div>
 
         <div className="mb-3 grid grid-cols-2 gap-3 sm:grid-cols-3">

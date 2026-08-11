@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { FileText, Download, ExternalLink, Loader2, Info, ArrowUp, ArrowDown, ArrowUpDown, ChevronDown, X } from 'lucide-react'
 import { BRT_TZ } from '@/lib/timezone'
 import { getCsMinutas } from '@/app/actions/cs'
+import { downloadCsv, type CsvValue } from '@/lib/csv'
 import { cn } from '@/lib/utils'
 import type { CsMinutasData, CsMinutaCard } from '@/lib/types/database'
 
@@ -303,44 +304,34 @@ export function CsMinutas() {
     setSortBy((cur) => (cur.key === key ? { key, dir: cur.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: 'asc' }))
   }
 
+  // URL do card na primeira coluna: a minuta fica anexada no card, então o link é o único
+  // caminho da planilha de volta pro documento (regra do dono, 11/ago — vale pra toda
+  // exportação do painel).
   function exportCsv() {
     const head = [
-      'ID', 'Cliente', 'Responsável', 'Dívida do Cliente', 'Valor da Minuta Final',
+      'URL do card', 'ID', 'Cliente', 'Responsável', 'Dívida do Cliente', 'Valor da Minuta Final',
       'Última Negociação', 'Resguardado', 'Mês resguardo', 'Vencimento', 'Dias até vencer',
-      'Bucket', '% desconto', 'Etiqueta', 'Situação',
+      'Bucket', '% desconto', 'Etiqueta', 'Fase', 'Situação',
     ]
-    const cell = (v: string | number) => {
-      const s = String(v)
-      return /[";\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
-    }
-    const lines = visibleCards.map((c) =>
-      [
-        c.pipefyCardId,
-        c.title ?? '',
-        c.agentName,
-        c.divida ?? '',
-        c.valor ?? '',
-        c.ultimaNegociacao ?? '',
-        c.resguardo ?? '',
-        c.resguardoMonth ?? '',
-        fmtDate(c.dueDate),
-        c.daysToDue,
-        bucketLabel(bucketOf(c.daysToDue)),
-        c.descontoPct ?? '',
-        c.etiqueta ?? '',
-        c.active ? 'Ativo' : 'Inativo',
-      ]
-        .map(cell)
-        .join(';'),
-    )
-    const csv = '﻿' + [head.map(cell).join(';'), ...lines].join('\n')
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `cs-minutas-${data ? fmtStamp(data.referenceAt).replace(/\s/g, '') : 'export'}.csv`
-    a.click()
-    URL.revokeObjectURL(url)
+    const rows: CsvValue[][] = visibleCards.map((c) => [
+      pipefyUrl(c.pipefyCardId),
+      c.pipefyCardId,
+      c.title ?? '',
+      c.agentName,
+      c.divida ?? '',
+      c.valor ?? '',
+      c.ultimaNegociacao ?? '',
+      c.resguardo ?? '',
+      c.resguardoMonth ?? '',
+      fmtDate(c.dueDate),
+      c.daysToDue,
+      bucketLabel(bucketOf(c.daysToDue)),
+      c.descontoPct ?? '',
+      c.etiqueta ?? '',
+      c.phase,
+      c.active ? 'Ativo' : 'Inativo',
+    ])
+    downloadCsv(`cs-minutas-${data ? fmtStamp(data.referenceAt).replace(/\s/g, '') : 'export'}`, head, rows)
   }
 
   if (data === null) {
