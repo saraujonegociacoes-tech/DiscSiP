@@ -1,14 +1,20 @@
 // CONFERÊNCIA (read-only) do Financeiro — o painel bate com o Pipefy?
 //
-// Reimplementa em JS as MESMAS regras da migration 20260731_financeiro_schema.sql
-// (parsers, COALESCE da categoria, sinal, as duas convenções de parcelamento) a partir do
-// Pipefy CRU, e compara com o que a ingestão gravou em fin_cards/fin_entries. É uma segunda
-// implementação de propósito: se as duas concordam, o erro teria que estar nas duas.
+// Reimplementa em JS as MESMAS regras da migration em vigor
+// (20260810_financeiro_valor_liquido.sql: parsers, COALESCE da categoria, sinal, e a
+// entrada = VALOR LÍQUIDO do card) a partir do Pipefy CRU, e compara com o que a ingestão
+// gravou em fin_cards/fin_entries. É uma segunda implementação de propósito: se as duas
+// concordam, o erro teria que estar nas duas.
 //
-// Responde as perguntas de aceite do Sprint 1:
+// ⚠️ Desde 10/ago é 1 CARD = 1 ENTRADA, de `copy_of_valor_do_pagamento_bruto` (rótulo
+// "Valor do Pagamento Líquido") + `data_do_pagamento`. Os campos de parcela NÃO são mais
+// lidos, e card com líquido vazio/zerado não gera entrada — este script lista esses cards
+// em vez de somá-los, igual à aba.
+//
+// Responde as perguntas de aceite:
 //   1. Todo card do Pipefy virou card no banco?
-//   2. Cada card gerou as entradas certas (valor e data), nas DUAS convenções?
-//   3. O total por mês bate — em 2024 (parcelas no card) e em 2026 (1 card = 1 pagamento)?
+//   2. Cada card gerou a entrada certa (líquido + data)?
+//   3. O total por mês bate com o que o banco tem?
 //
 // Rodar:  node scripts/verify-financeiro.mjs        (ou: npm run verify:financeiro)
 //         node scripts/verify-financeiro.mjs 2024-09 2026-07   (meses a detalhar)
@@ -87,11 +93,13 @@ const REF_FIELDS = [
   'refer_ncia_do_pagamento_juridico',
   'copy_of_refer_ncia_do_pagamento_juridico',
 ]
-const PARCELAS = [
-  ['informe_o_valor_pago_referente_a_1_parcela', 'informe_a_data_do_pagamento_da_1_parcela'],
-  ['informe_o_valor_pago_referente_a_2_parcela', 'informe_a_data_do_pagamento_da_2_parcela'],
-  ['informe_o_valor_pago_referente_a_3_parcela', 'informe_a_data_do_pagamento_da_3_parcela'],
-  ['copy_of_informe_o_valor_pago_referente_a_4_parcela', 'copy_of_informe_a_data_do_pagamento_da_3_parcela'],
+// Campos de valor das parcelas (convenção antiga). NÃO entram mais no total — só servem
+// para dizer quanto dinheiro o card declara fora do líquido, no aviso de campo vazio.
+const PARCELAS_VALOR = [
+  'informe_o_valor_pago_referente_a_1_parcela',
+  'informe_o_valor_pago_referente_a_2_parcela',
+  'informe_o_valor_pago_referente_a_3_parcela',
+  'copy_of_informe_o_valor_pago_referente_a_4_parcela',
 ]
 
 const sign = (cat) => (/desconto|devolu/i.test(cat ?? '') ? -1 : 1)
@@ -106,32 +114,36 @@ function expectedFromNode(node) {
   }
   const category = REF_FIELDS.map((k) => f[k]).find((v) => v != null && v !== '') ?? null
   const paidValue = parseMoney(f['valor_de_contrata_o'])
+  // O id diz "bruto" (herança de um copy_of no Pipefy); o RÓTULO é "Valor do Pagamento
+  // Líquido", e é este o número que a aba conta desde 10/ago.
+  const netValue = parseMoney(f['copy_of_valor_do_pagamento_bruto'])
   const paidDate = parseDate(f['data_do_pagamento'])
+  const parcelas = PARCELAS_VALOR.reduce((s, k) => s + (parseMoney(f[k]) ?? 0), 0)
 
   const entries = []
   let skipped = 0
-  PARCELAS.forEach(([vf, df], i) => {
-    const v = parseMoney(f[vf])
-    if (v == null || v === 0) return
-    const d = parseDate(f[df]) ?? paidDate
-    if (d == null) {
-      skipped++
-      return
-    }
-    entries.push({ seq: i + 1, value: v, date: d, source: 'parcela' })
-  })
-
-  if (entries.length === 0 && paidValue != null && paidValue !== 0) {
-    if (paidDate == null) skipped++
-    else entries.push({ seq: 1, value: paidValue, date: paidDate, source: 'card' })
+  let motivo = null
+  if (netValue == null || netValue === 0) {
+    skipped++
+    motivo = 'sem_liquido'
+  } else if (paidDate == null) {
+    skipped++
+    motivo = 'sem_data'
+  } else {
+    entries.push({ seq: 1, value: netValue, date: paidDate, source: 'liquido' })
   }
 
   return {
     pipefyCardId: String(node.id),
+    title: node.title ?? null,
     phaseId: node.current_phase?.id ?? null,
     category,
     entries,
     skipped,
+    motivo,
+    paidDate,
+    // Quanto o card declara FORA do líquido — é o que o aviso da aba mostra.
+    valorAlternativo: paidValue || parcelas || 0,
   }
 }
 
@@ -161,6 +173,7 @@ query VerifyDump($pipeId: ID!, $cursor: String) {
     pageInfo { hasNextPage endCursor }
     edges { node {
       id
+      title
       current_phase { id }
       fields { value field { id } }
     } }
@@ -237,12 +250,16 @@ async function main() {
   let iguais = 0
   const divergentes = []
   let skippedTotal = 0
+  const semLiquido = [] // cards fora do total por líquido vazio, mas com dinheiro declarado
   const esperadas = [] // { date, value, sign } de todos os cards não-cancelados
   const doBanco = []
 
   for (const node of nodes) {
     const exp = expectedFromNode(node)
     skippedTotal += exp.skipped
+    if (exp.motivo === 'sem_liquido' && exp.valorAlternativo !== 0 && exp.phaseId !== FASE_CANCELADO) {
+      semLiquido.push(exp)
+    }
     const card = dbCardById.get(exp.pipefyCardId)
     if (!card) continue
 
@@ -277,7 +294,16 @@ async function main() {
   for (const d of divergentes.slice(0, 10)) {
     console.log(`     #${d.id}\n        esperado: ${d.esperado}\n        banco   : ${d.banco}`)
   }
-  console.log(`   parcelas sem data (ignoradas dos dois lados): ${skippedTotal}`)
+  console.log(`   cards que não geram entrada (sem líquido ou sem data): ${skippedTotal}`)
+
+  // 2b) Os que ficam de fora do total por falta do campo líquido. Não é erro de
+  // ingestão: é pendência de preenchimento no Pipefy, a mesma lista que a aba mostra.
+  const brl = (n) => n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+  console.log('\n── 2b. Sem "Valor do Pagamento Líquido" (fora do total, com dinheiro em outro campo) ──')
+  console.log(`   ${semLiquido.length} cards · ${brl(semLiquido.reduce((s, c) => s + c.valorAlternativo, 0))} fora da soma`)
+  for (const c of semLiquido.slice(0, 20)) {
+    console.log(`     #${c.pipefyCardId}  ${c.paidDate ?? 's/data'}  ${brl(c.valorAlternativo)}  ${(c.title ?? '').slice(0, 32)}`)
+  }
 
   // 3) Totais por mês
   console.log('\n── 3. Total por mês (só fases que contam, com sinal) ──')
@@ -285,7 +311,6 @@ async function main() {
   const mDb = porMes(doBanco)
   const meses = [...new Set([...mExp.keys(), ...mDb.keys()])].sort()
   const alvo = MESES_ALVO.length ? MESES_ALVO : meses.slice(-6)
-  const brl = (n) => n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 
   let mesesDivergentes = 0
   for (const m of meses) {

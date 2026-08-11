@@ -22,6 +22,15 @@ travadas, e [`../links.md`](../../links.md) (índice geral por domínio).
 > 2. **`NEXT_PUBLIC_*` é assada no BUILD.** Definir a variável na Cloudflare Pages não altera o
 >    deploy que já está no ar; se `/ceo` mostrar "Em breve", é preciso refazer o deploy.
 >
+> **Mudança posterior — 10/ago: a aba Financeiro passou a contar o VALOR LÍQUIDO.** A entrada
+> deixou de ser "Valor que o Cliente Pagou?" e virou "Valor do Pagamento Líquido"
+> (migration `20260810_financeiro_valor_liquido.sql`). Como o líquido é um número por card, cada
+> card virou **uma** entrada e os campos de parcela pararam de ser lidos — **os totais de 2024/25
+> mudaram de valor e de mês**, e os números da conferência de 06/ago acima **não valem mais**
+> (histórico: R$ 7,42 mi → R$ 5,92 mi; jul/26: R$ 185.404,52 → R$ 174.727,19). Card sem o campo
+> preenchido fica fora da soma e aparece num aviso na aba. Detalhes, medições e o que ficou de
+> fora: [`financeiro-valor-liquido.md`](financeiro-valor-liquido.md).
+>
 > O histórico abaixo fica como registro do caminho — as datas explicam decisões, não o estado atual.
 >
 > ---
@@ -175,7 +184,8 @@ mapeamento completo. Resumo:
 
 Mais quatro decisões do dono saíram da conversa sobre os achados: histórico **completo** (com
 `fin_entries`), estornos **com sinal** (desconto/devolução negativos), "Jurídico" **normalizado**
-para "Negociação", e duplicidade como **aviso** que leva a categoria em conta.
+para "Negociação", e duplicidade como **aviso** que leva a categoria em conta — ~~esse último~~
+**o aviso de duplicidade saiu da aba em 10/ago**, a pedido do dono.
 
 **Achados que mudaram o desenho** (nenhum era visível na lista de field-ids — vieram da amostra de
 valores reais e da varredura de até 1.200 cards):
@@ -197,7 +207,7 @@ valores reais e da varredura de até 1.200 cards):
 - **`n_mera_o_do_pagamento_id` não é chave do pagamento** — repete entre cards com valores
   diferentes (é referência de contrato). Dedupe da ingestão continua por `pipefy_card_id`, e o
   mesmo contrato em vários cards é quase sempre legítimo: só mesmo valor + mesma categoria + mesmo
-  dia vira **aviso** de duplicidade (2 casos em 360 cards).
+  dia virava **aviso** de duplicidade (2 casos em 360 cards) — aviso removido da aba em 10/ago.
 
 **A Sprint 1 está fechada (31/jul):** código entregue, migration aplicada, carga histórica rodada,
 Make montado, flag ligada e conferência batendo 100%. A aba Financeiro serve dado real.
@@ -375,6 +385,8 @@ seção "Sprint 4" de [`painel-ceo-sprints.md`](painel-ceo-sprints.md).
   de verdade do projeto).
 - [`introspeccao-pipefy-financeiro.md`](introspeccao-pipefy-financeiro.md) — **mapeamento do pipe
   Financeiro** (resultado da introspecção) + as queries reutilizáveis para o pipe de Negociação.
+- [`financeiro-valor-liquido.md`](financeiro-valor-liquido.md) — **10/ago:** a entrada da aba virou
+  o "Valor do Pagamento Líquido"; o que isso fez com o histórico e com os cards sem o campo.
 - [`dashboard-cs-indice.md`](../../painelcs-docs/updates/dashboard-cs-indice.md) — painel de CS
   (molde a reutilizar; fase de projeção).
 - [`make-integracao-cs.md`](../../painelcs-docs/updates/make-integracao-cs.md) — cenário Pipefy →

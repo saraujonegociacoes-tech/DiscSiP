@@ -39,13 +39,19 @@ const EMPTY_FINANCEIRO: Omit<CeoFinanceiroData, 'periodStart' | 'periodEnd'> = {
   byCategory: [],
   byDepartment: [],
   byPaymentMethod: [],
-  duplicates: [],
+  missingNet: [],
+  missingNetTotal: 0,
 }
 
 // ABA 1 — Financeiro (entradas do mês). Lê get_ceo_financeiro(p_start, p_end)
-// (migration 20260731_financeiro_schema.sql), que soma sobre `fin_entries` — uma linha
-// por PAGAMENTO, não por card, porque o pipe do Financeiro mudou de convenção no meio de
-// 2025 e cards antigos carregam até 4 pagamentos com datas em meses diferentes.
+// (migrations 20260731_financeiro_schema.sql → 20260810_financeiro_valor_liquido.sql),
+// que soma sobre `fin_entries`.
+//
+// A entrada é o "Valor do Pagamento Líquido" do card (decisão do dono, 10/ago). Como o
+// líquido é um número único por card, cada card virou UMA linha e os campos de parcela
+// pararam de ser lidos — antes um card antigo podia render até 4 entradas em meses
+// diferentes. Card com líquido vazio não gera entrada: vem em `missingNet` pra tela
+// avisar, em vez de sumir do painel.
 //
 // Os valores chegam com o sinal já aplicado (desconto/devolução negativos) e sem a fase
 // "Pagamento cancelado".
@@ -92,7 +98,9 @@ export async function getCeoFinanceiro(
     byCategory: d.byCategory ?? [],
     byDepartment: d.byDepartment ?? [],
     byPaymentMethod: d.byPaymentMethod ?? [],
-    duplicates: d.duplicates ?? [],
+    // Só chegam depois da 20260810; até lá a aba roda sem o aviso, sem quebrar.
+    missingNet: d.missingNet ?? [],
+    missingNetTotal: Number(d.missingNetTotal ?? 0),
   }
 }
 

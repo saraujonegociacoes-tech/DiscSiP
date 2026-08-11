@@ -1,5 +1,12 @@
 # Introspecção do pipe Financeiro (Pipefy) — resultado
 
+> ⚠️ **O MAPEAMENTO DE VALOR MUDOU EM 10/ago.** A entrada do painel é o **"Valor do Pagamento
+> Líquido"** (`copy_of_valor_do_pagamento_bruto`), não mais `valor_de_contrata_o`, e **os campos
+> de parcela não são mais lidos** — um card, uma entrada. Ver
+> [`financeiro-valor-liquido.md`](financeiro-valor-liquido.md). O documento abaixo continua
+> valendo como **mapa do pipe** (todos os field-ids, os parsers, os achados); o que envelheceu é
+> qual campo alimenta `fin_entries`, marcado nos dois pontos afetados.
+
 > Criado e **executado** em 2026-07-31. As queries do fim deste arquivo devolvem, numa rodada, o
 > **pipe ID** e **todos os field-ids** de um pipe. Rodadas contra o Financeiro, elas destravaram o
 > [Sprint 1](painel-ceo-sprints.md#sprint-1--financeiro-entradas-do-mês) — o mapeamento abaixo é o
@@ -23,8 +30,8 @@ categoria, departamento) e cada pagamento vira uma linha em **`fin_entries`** (v
 | Coluna | Field-id | Tipo | Observação |
 |---|---|---|---|
 | `charged_value` | `valor_total_da_cobran_a` | `currency` | o que foi cobrado; difere do pago quando há desconto |
-| `paid_value` | `valor_de_contrata_o` | `currency` | "Valor que o Cliente Pagou?" — **fonte da entrada nos cards novos** |
-| `net_value` | `copy_of_valor_do_pagamento_bruto` | `currency` | label diz "Líquido", o id diz "bruto" (herança de um `copy_of`) |
+| `paid_value` | `valor_de_contrata_o` | `currency` | "Valor que o Cliente Pagou?" — era a fonte da entrada até 10/ago; hoje só contexto |
+| `net_value` | `copy_of_valor_do_pagamento_bruto` | `currency` | label diz "Líquido", o id diz "bruto" (herança de um `copy_of`) — **é a entrada do painel desde 10/ago** |
 | `paid_date` | `data_do_pagamento` | `date` | **`DD/MM/YYYY`** — ver parsers |
 | `category` | `COALESCE` de 3 campos | `select` | achado 1 |
 | `department` | `informe_o_seu_departamento` | `radio_vertical` | normalizado — achado 2 |
@@ -33,7 +40,12 @@ categoria, departamento) e cada pagamento vira uma linha em **`fin_entries`** (v
 
 **`fin_entries` — um pagamento por linha** (`fin_card_id`, `entry_value`, `entry_date`, `seq`)
 
-A ingestão gera as linhas assim, e é o **único** ponto que precisa saber das duas convenções:
+> ⚠️ **Desatualizado desde 10/ago.** As duas convenções abaixo descrevem o que a Sprint 1
+> implementou. Hoje a ingestão gera **uma linha por card**, de `copy_of_valor_do_pagamento_bruto`
+> ("Valor do Pagamento Líquido") + `data_do_pagamento`, e ignora os campos de parcela — decisão do
+> dono. Fica aqui porque explica **por que a tabela-filha existe** e o que há no pipe.
+
+A ingestão gerava as linhas assim, e era o **único** ponto que precisava saber das duas convenções:
 
 - **Card com campo de parcela preenchido** (convenção antiga): uma linha por parcela, de
   `informe_o_valor_pago_referente_a_N_parcela` + `informe_a_data_do_pagamento_da_N_parcela`.
@@ -171,13 +183,13 @@ parcelas, corrigida no achado 3 com 1.200 cards. Os números abaixo dizem de qua
 
 | Pergunta | Resposta |
 |---|---|
-| Qual valor é "a entrada" | `valor_de_contrata_o` — "Valor que o Cliente Pagou?" (cards novos; nos antigos, as parcelas) |
+| Qual valor é "a entrada" | ~~`valor_de_contrata_o` — "Valor que o Cliente Pagou?"~~ → **revisto em 10/ago: `copy_of_valor_do_pagamento_bruto`, "Valor do Pagamento Líquido", para todo card** |
 | Quais fases contam | todas menos "Pagamento cancelado" (`327456661`) |
 | Mês civil ou ciclo 11→10 | **ambos** — `PeriodPicker` com toggle; **default mês civil** |
 | Até onde vai o histórico | **tudo**, com a tabela-filha `fin_entries` |
 | Estornos | **distrato e reversão positivos; desconto e devolução negativos** |
 | "Departamento - Jurídico" | nome antigo de "Negociação" → normalizar na ingestão |
-| Duplicidade | **avisar**, nunca deduplicar — e a regra tem que olhar a categoria |
+| Duplicidade | ~~**avisar**, nunca deduplicar — e a regra tem que olhar a categoria~~ → **o aviso saiu da aba em 10/ago** (pedido do dono). Nunca houve dedupe |
 
 O "ambos" é barato porque a RPC já recebe `p_start`/`p_end`: quem define a janela é o frontend.
 O ciclo reusa [`src/lib/period.ts`](../../../src/lib/period.ts); o mês civil é `date_trunc('month')`.

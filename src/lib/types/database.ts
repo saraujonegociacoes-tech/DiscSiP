@@ -440,6 +440,11 @@ export interface CsPagamentoHistoricoData {
 // ABA 1 (Financeiro): get_ceo_financeiro(p_start, p_end), migration
 // 20260731_financeiro_schema.sql. Os valores JÁ vêm com sinal aplicado (desconto e
 // devolução entram negativos; distrato e reversão, positivos — decisão do dono).
+//
+// Desde 10/ago a entrada é o "Valor do Pagamento Líquido" do card, não mais o "Valor
+// que o Cliente Pagou?" (migration 20260810_financeiro_valor_liquido.sql). Como o
+// líquido é UM número por card, cada card virou UMA entrada e os campos de parcela
+// deixaram de ser lidos — o histórico de 2024/25 foi redistribuído por isso.
 
 /** Uma fatia de um breakdown (categoria, departamento ou forma de pagamento). */
 export interface CeoFinanceiroBucket {
@@ -456,18 +461,17 @@ export interface CeoFinanceiroMonth {
 }
 
 /**
- * Suspeita de lançamento em duplicata: mesmo contrato + mesmo valor + mesma categoria
- * + mesmo dia. É AVISO, não dedupe — o mesmo contrato com categorias diferentes (um
- * pagamento e um desconto, p.ex.) é dado legítimo e nem aparece aqui.
+ * Card sem "Valor do Pagamento Líquido" preenchido, mas com dinheiro declarado em
+ * outro campo (valor pago ou parcelas). NÃO entra em soma nenhuma — é pendência de
+ * preenchimento no Pipefy, e existe justamente porque o painel não inventa fallback.
  */
-export interface CeoFinanceiroDuplicate {
-  contractRef: string
+export interface CeoFinanceiroMissingNet {
+  cardId: string // pipefy_card_id (link do card)
+  title: string | null // nome do contratante, como está no card
   category: string | null
-  paidDate: string // ISO date
-  value: number
-  cards: number // quantos cards no grupo
-  cardIds: string[] // pipefy_card_id de cada um (link do card)
-  departments: string[]
+  department: string
+  paidDate: string // ISO date (data_do_pagamento do card)
+  value: number // o que o card diz ter recebido FORA do líquido
 }
 
 export interface CeoFinanceiroData {
@@ -481,7 +485,8 @@ export interface CeoFinanceiroData {
   byCategory: CeoFinanceiroBucket[]
   byDepartment: CeoFinanceiroBucket[]
   byPaymentMethod: CeoFinanceiroBucket[]
-  duplicates: CeoFinanceiroDuplicate[]
+  missingNet: CeoFinanceiroMissingNet[] // cards fora do total por líquido vazio
+  missingNetTotal: number // quanto de dinheiro eles somam (fora do KPI)
 }
 
 // ABA 2 (Projeções): get_ceo_projecoes(), migration 20260731b_negociacao_schema.sql.
