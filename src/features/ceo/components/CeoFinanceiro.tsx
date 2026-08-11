@@ -28,9 +28,14 @@ import { cn } from '@/lib/utils'
 import type { CeoFinanceiroData, CeoFinanceiroBucket } from '@/lib/types/database'
 
 // ABA 1 do painel do CEO — FINANCEIRO (entradas do mês), o carro-chefe.
-// Fonte: get_ceo_financeiro (20260731_financeiro_schema.sql), que soma sobre `fin_entries`
-// — uma linha por PAGAMENTO, não por card. Ver
+// Fonte: get_ceo_financeiro (20260731_financeiro_schema.sql →
+// 20260810_financeiro_valor_liquido.sql), que soma sobre `fin_entries` — uma linha por
+// CARD, valendo o "Valor do Pagamento Líquido". Ver
 // docs/projetopainelceo-docs/updates/introspeccao-pipefy-financeiro.md.
+//
+// Card com o líquido vazio fica FORA da soma de propósito (o painel mostra o líquido, não
+// um substituto) — e por isso ganha o bloco de aviso lá embaixo: o dinheiro não some da
+// tela, só sai do total até alguém preencher o campo no Pipefy.
 //
 // O toggle (mês civil × ciclo 11→10) vale para TUDO na aba: os KPIs e os 12 baldes da
 // série. Até 05/ago a série era sempre em meses civis — decisão da Sprint 1, com a
@@ -167,7 +172,7 @@ export function CeoFinanceiro() {
   const count = data?.count ?? 0
   const ticket = count > 0 ? total / count : 0
   const topCategory = data?.byCategory?.[0]
-  const duplicates = data?.duplicates ?? []
+  const missingNet = data?.missingNet ?? []
   const hasData = count > 0 || chartData.some((m) => m.count > 0)
 
   return (
@@ -176,8 +181,8 @@ export function CeoFinanceiro() {
         <div>
           <h2 className="text-sm font-semibold text-foreground">Entradas do período</h2>
           <p className="text-xs text-muted-foreground">
-            Pagamentos recebidos no pipe do Financeiro, sem a fase de cancelados. Devoluções e
-            descontos entram como valor negativo.
+            Valor do Pagamento Líquido dos cards do Financeiro, sem a fase de cancelados.
+            Devoluções e descontos entram como valor negativo.
           </p>
         </div>
         <CeoPeriodPicker
@@ -291,51 +296,50 @@ export function CeoFinanceiro() {
             />
           </div>
 
-          {/* Aviso, não filtro: os cards continuam somados. Só entra aqui o trio mesmo
-              valor + mesma categoria + mesmo dia no mesmo contrato — contrato repetido com
-              categorias diferentes é lançamento legítimo. */}
-          {duplicates.length > 0 && (
+          {/* Contrapeso da regra "sem líquido, sem entrada": estes cards NÃO estão nos
+              KPIs acima. O valor mostrado é o que o card declara em outro campo (valor
+              pago ou parcelas) — é a pista de quanto falta preencher, não uma segunda
+              contabilidade. */}
+          {missingNet.length > 0 && (
             <div className="relative overflow-hidden rounded-2xl border border-warning/30 bg-warning/5 p-5 shadow-card">
               <div className="relative mb-1 flex items-center gap-2">
                 <AlertTriangle className="h-4 w-4 text-warning" />
                 <h3 className="text-sm font-semibold text-foreground">
-                  {duplicates.length === 1
-                    ? '1 possível lançamento em duplicata'
-                    : `${nf(duplicates.length)} possíveis lançamentos em duplicata`}
+                  {missingNet.length === 1
+                    ? '1 card sem o valor líquido preenchido'
+                    : `${nf(missingNet.length)} cards sem o valor líquido preenchido`}
                 </h3>
               </div>
               <p className="relative mb-4 text-xs text-muted-foreground">
-                Mesmo contrato, mesmo valor, mesma categoria e mesmo dia — os valores{' '}
-                <strong>continuam somados</strong> acima. Confira no Pipefy antes de agir.
+                A aba conta o <strong>Valor do Pagamento Líquido</strong> do card. Nestes o campo
+                está vazio ou zerado, então eles ficam <strong>fora</strong> dos números acima —
+                são {brl(data?.missingNetTotal ?? 0)} declarados em outro campo. Preencha o líquido
+                no Pipefy e eles entram sozinhos na próxima sincronização.
               </p>
               <ul className="relative space-y-2">
-                {duplicates.map((d) => (
+                {missingNet.map((m) => (
                   <li
-                    key={`${d.contractRef}-${d.paidDate}-${d.value}-${d.category ?? ''}`}
+                    key={m.cardId}
                     className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border border-border/60 bg-background/50 px-3 py-2 text-xs"
                   >
-                    <span className="font-medium tabular-nums text-foreground">{brl(d.value)}</span>
-                    <span className="text-muted-foreground">{d.category ?? 'Sem categoria'}</span>
+                    <span className="font-medium tabular-nums text-foreground">{brl(m.value)}</span>
+                    <span className="truncate text-foreground" title={m.title ?? undefined}>
+                      {m.title ?? 'Sem título'}
+                    </span>
+                    <span className="text-muted-foreground">{m.category ?? 'Sem categoria'}</span>
                     <span className="tabular-nums text-muted-foreground">
-                      {d.paidDate.split('-').reverse().join('/')}
+                      {m.paidDate.split('-').reverse().join('/')}
                     </span>
-                    <span className="text-muted-foreground">
-                      {d.cards} cards · {d.departments.join(', ')}
-                    </span>
-                    <span className="ml-auto flex flex-wrap gap-2">
-                      {d.cardIds.map((id) => (
-                        <a
-                          key={id}
-                          href={pipefyUrl(id)}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="inline-flex items-center gap-1 text-primary hover:underline"
-                        >
-                          #{id}
-                          <ExternalLink className="h-3 w-3" />
-                        </a>
-                      ))}
-                    </span>
+                    <span className="text-muted-foreground">{m.department}</span>
+                    <a
+                      href={pipefyUrl(m.cardId)}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="ml-auto inline-flex items-center gap-1 text-primary hover:underline"
+                    >
+                      #{m.cardId}
+                      <ExternalLink className="h-3 w-3" />
+                    </a>
                   </li>
                 ))}
               </ul>
@@ -345,7 +349,7 @@ export function CeoFinanceiro() {
           {!hasData && (
             <p className="rounded-2xl border border-border bg-gradient-card px-5 py-4 text-xs text-muted-foreground shadow-card">
               Nenhuma entrada encontrada. Se a migration{' '}
-              <code className="text-foreground">20260731_financeiro_schema.sql</code> já foi
+              <code className="text-foreground">20260810_financeiro_valor_liquido.sql</code> já foi
               aplicada, rode <code className="text-foreground">npm run import:financeiro</code> para
               a carga histórica.
             </p>

@@ -173,6 +173,13 @@ colateral: os links relativos destes docs para `supabase/migrations/*.sql` volta
 > `src/app/ceo/CeoClient.tsx` · doc do Make.
 
 **Ingestão do pipe Financeiro (nova vertical isolada, clone do CS):**
+
+> ⚠️ **Revisto em 10/ago.** A entrada de `fin_entries` deixou de ser `valor_de_contrata_o` (e as
+> parcelas) e passou a ser **`copy_of_valor_do_pagamento_bruto`, o "Valor do Pagamento Líquido"** —
+> **um card, uma entrada**, migration `20260810_financeiro_valor_liquido.sql`. O que está descrito
+> abaixo é o desenho da Sprint 1; a regra em vigor e o efeito no histórico estão em
+> [`financeiro-valor-liquido.md`](financeiro-valor-liquido.md). As duas tabelas continuam.
+
 - Migration `AAAAMMDD_financeiro_schema.sql`: **duas** tabelas, porque o pipe mudou de convenção no
   meio de 2025 e um card antigo vale até 4 pagamentos com datas próprias (achado 3):
   - `fin_cards` — contexto do card (`pipefy_card_id`, `metadata jsonb`, `paid_value`,
@@ -195,10 +202,13 @@ colateral: os links relativos destes docs para `supabase/migrations/*.sql` volta
   linha jsonb (evita o teto de 1000 linhas do PostgREST). Filtra
   `current_phase_id <> '327456661'` ("Pagamento cancelado" — as outras 4 fases contam) e soma
   `entry_value * fin_entry_sign(category)`.
-- **Alerta de duplicidade** (pedido do dono): a RPC devolve, à parte, os grupos de mesmo
+- ~~**Alerta de duplicidade** (pedido do dono): a RPC devolve, à parte, os grupos de mesmo
   `contract_ref` **com mesmo valor, mesma categoria e mesmo dia** — o único trio que indica
-  lançamento em duplicata. Mesmo contrato com categorias diferentes é dado bom (pagamento + desconto,
-  por exemplo) e não pode entrar no alerta. É **aviso na tela, nunca dedupe automático**.
+  lançamento em duplicata.~~ — **REMOVIDO em 10/ago a pedido do dono**: o bloco saiu da aba e, como
+  ninguém mais lia a chave, o agrupamento saiu da RPC junto (`20260810_financeiro_valor_liquido.sql`).
+  O SQL do alerta continua íntegro em `20260805c_financeiro_serie_por_ciclo.sql`, que é de onde
+  copiar se voltar. A regra que ele implementava segue valendo como registro: mesmo contrato com
+  categorias diferentes é dado bom (pagamento + desconto), e nunca houve dedupe automático.
 - Backfill [`scripts/import-financeiro.mjs`](../../../scripts/import-financeiro.mjs) (clone de
   `import-cs-cards.mjs`) + env `FINANCEIRO_PIPEFY_PIPE_ID` (reusa `PIPEFY_TOKEN`), registrado como
   `npm run import:financeiro`. Reporta `pagamentos` e `cards_sem_entrada` por rodada.
@@ -207,7 +217,9 @@ colateral: os links relativos destes docs para `supabase/migrations/*.sql` volta
 
 **Frontend — aba "Financeiro":** 4 `KpiCard`s (entradas no período com delta vs. período anterior,
 nº de pagamentos, ticket médio, maior categoria) + `AreaChart` (Recharts via `useChartTheme`) dos 12
-meses + 3 breakdowns (categoria, departamento, forma de pagamento) + painel de aviso de duplicidade.
+meses + 3 breakdowns (categoria, departamento, forma de pagamento). ~~+ painel de aviso de
+duplicidade~~ (removido em 10/ago); no lugar dele, desde a mesma data, o aviso dos cards **sem valor
+líquido** ([`financeiro-valor-liquido.md`](financeiro-valor-liquido.md)).
 Action `getCeoFinanceiro` em `src/app/actions/ceo.ts`.
 
 **Período — `CeoPeriodPicker` (novo, local do domínio):** toggle **mês civil** (default) × **ciclo
@@ -344,18 +356,22 @@ porque lá um card guardava vários pagamentos **históricos já ocorridos** —
 
 ---
 
-## Sprint 3 — Saúde da empresa — ✅ CÓDIGO ENTREGUE (04/ago/2026)
+## Sprint 3 — Saúde da Equipe — ✅ FECHADA (06/ago/2026)
 
 > **O bloqueio caiu sem precisar extrair nada do banco.** Ver "O bloqueio de Leads" abaixo.
 >
 > **Arquivos entregues:** [`20260804_saude_empresa.sql`](../../../supabase/migrations/Migrations_projetopainelceo/20260804_saude_empresa.sql)
-> (`get_ceo_saude_empresa`) · `scripts/verify-saude-empresa.mjs` (`npm run verify:saude-empresa`) ·
-> `getCeoSaudeEmpresa` em `src/app/actions/ceo.ts` · tipos em `src/lib/types/database.ts` ·
-> `src/features/ceo/components/CeoSaudeEmpresa.tsx` · aba ligada em `src/app/ceo/CeoClient.tsx` ·
+> (`get_ceo_saude_empresa` v1) · [`20260805b_saude_custos.sql`](../../../supabase/migrations/Migrations_projetopainelceo/20260805b_saude_custos.sql)
+> (v2 — receita × custo por pessoa, `ceo_pessoa_custo` + `ceo_custo_config`) ·
+> `scripts/verify-saude-empresa.mjs` (`npm run verify:saude-empresa`) · `getCeoSaudeEquipe` em
+> `src/app/actions/ceo.ts` · tipos em `src/lib/types/database.ts` ·
+> `src/features/ceo/components/CeoSaudeEquipe.tsx` · aba ligada em `src/app/ceo/CeoClient.tsx` ·
 > 23 migrations base restauradas do git (ver abaixo).
 >
-> **Falta o dono:** aplicar a migration e abrir a aba. Não há ingestão nova nem cenário Make —
-> esta sprint só LÊ o que os outros domínios já gravam.
+> **Fechada em 06/ago:** o dono aplicou as migrations, commitou e ligou
+> `NEXT_PUBLIC_CEO_ENABLED` na Cloudflare Pages. Não houve ingestão nova nem cenário Make —
+> esta sprint só LÊ o que os outros domínios já gravam. A aba nasceu "Saúde da empresa" e
+> **herdou o nome da Sprint 4** ao ser fundida com ela; ver a seção da Sprint 4.
 
 `get_ceo_saude_empresa(p_start, p_end)` devolve 1 jsonb com cinco blocos, um por domínio:
 
@@ -665,6 +681,59 @@ trabalho descrito abaixo continua válido como pré-requisito.
 
 ---
 
+## ✅ Entrega do painel — conferência de conclusão (06/ago/2026)
+
+O dono aplicou **as 11 migrations**, commitou (`2fb09bf`) e definiu `NEXT_PUBLIC_CEO_ENABLED` na
+Cloudflare Pages. Esta seção registra a conferência feita **contra o banco ao vivo** no dia da
+entrega — não contra os arquivos `.sql`, que só provam o que foi *escrito*, não o que foi *aplicado*.
+
+**1. As RPCs no banco têm a assinatura das migrations** (introspecção OpenAPI do PostgREST):
+
+| RPC no banco | Migration que a define |
+|---|---|
+| `get_ceo_financeiro(p_start, p_end, p_modo)` | `20260805c` |
+| `get_ceo_projecoes(p_start, p_end)` | `20260806` |
+| `get_ceo_saude_empresa(p_start, p_end)` | `20260805b` |
+| `set_ceo_custo_geral(p_valor)` · `set_ceo_pessoa_custo(p_pessoa, p_valor)` | `20260805b` |
+| `neg_projection(p_metadata)` · `fin_vendedor(p_metadata)` | `20260805` · `20260805b` |
+
+**A armadilha do overload não se materializou:** `get_ceo_projecoes()` sem argumento responde
+(devolve NULL pela guarda) em vez de "could not choose the best candidate" — prova de que o
+`DROP FUNCTION` da versão de 0 argumentos rodou. Os nomes dos parâmetros também batem com o que
+`src/app/actions/ceo.ts` envia, que é onde um desalinho viraria **PGRST202 em runtime**, invisível
+para `tsc`.
+
+**2. A guarda protege as 6 RPCs, inclusive as de ESCRITA.** Chamadas como `service_role` (que não é
+`ceo` nem `admin`), todas devolveram `null` — e `ceo_custo_config.custo_geral` continuou `0` depois
+da tentativa de escrita. Uma `SECURITY DEFINER` de escrita sem guarda deixaria qualquer usuário
+autenticado mexer nos custos.
+
+**3. Os números batem com a fonte:**
+- `npm run verify:financeiro` — **4.572/4.572 cards**, 5.371 pagamentos, **0 divergências**,
+  33/33 meses, **R$ 7.353.595,15** idêntico ao Pipefy recomputado.
+- `npm run verify:saude-empresa` (ago/2026) — **R$ 42.123,11 em 8 pessoas / 3 departamentos**, e
+  **100% do valor com vendedor identificado** (nenhuma receita órfã na aba).
+- Negociação — **0 cards** com `proj_source='parcela2'` (a regra "só campos da fase" pegou de fato,
+  incluindo o re-cálculo), 8 cards na fase de espera, 5 já pagos, **3 projetam R$ 5.250,00**.
+
+**4. Código:** `tsc` limpo · `eslint src/` limpo · `npm run build` verde · `/ceo` em **7,18 kB**
+(208 kB First Load) — o lazy das abas com Recharts continua segurando o peso.
+
+### ⚠️ Entregue ≠ configurado: o custo ainda é R$ 0,00
+
+`ceo_custo_config.custo_geral = 0` e `ceo_pessoa_custo` está **vazia**. A aba funciona, mas
+**margem = receita (100%)** para as 8 pessoas. Não é bug — é o campo esperando o número do dono,
+na própria aba. Enquanto estiver assim, a coluna "margem" não informa nada.
+
+### ⚠️ `NEXT_PUBLIC_CEO_ENABLED` é assada no BUILD, não lida em runtime
+
+Vale para toda `NEXT_PUBLIC_*`. Definir a variável no painel da Cloudflare Pages **não muda o
+deploy que já está no ar** — só o próximo build a enxerga. Se `/ceo` mostrar "Em breve" com a
+variável definida, o diagnóstico é esse, não o papel do usuário nem a guarda: refazer o deploy.
+(A flag controla só o **lançamento**; quem barra o acesso é o middleware + `ceo_current_role()`.)
+
+---
+
 ## Riscos & dependências (resumo)
 - ~~**Financeiro**: pipe ID + field-ids~~ — resolvido em 31/jul
   ([`introspeccao-pipefy-financeiro.md`](introspeccao-pipefy-financeiro.md)).
@@ -702,8 +771,9 @@ trabalho descrito abaixo continua válido como pré-requisito.
   `IF NULL THEN` não entra — a guarda caía direto no corpo da função. Afetava as 4 RPCs do painel,
   inclusive a do Financeiro em produção.
 - **Qualidade do dado do Financeiro**: 2 grupos em 360 cards têm mesmo contrato + mesmo valor +
-  mesma categoria + mesmo dia (suspeita forte de lançamento em duplicata). Vira **aviso** na aba, não
-  dedupe — o mesmo contrato com categorias diferentes é dado legítimo.
+  mesma categoria + mesmo dia (suspeita forte de lançamento em duplicata). ~~Vira **aviso** na aba~~
+  — **o aviso saiu da aba em 10/ago** (pedido do dono). Nunca houve dedupe, e o risco continua o
+  mesmo: quem quiser checar, o SQL do agrupamento está na `20260805c`.
 - **Duas convenções de parcelamento no mesmo pipe** (2024/2025 × 2026): resolvido por `fin_entries`,
   mas é a fonte de erro mais provável do backfill. Conferir o total de um mês de 2024 **e** de um de
   2026 contra o Pipefy, não só um dos dois.
@@ -716,6 +786,11 @@ trabalho descrito abaixo continua válido como pré-requisito.
 ---
 
 ## Verificação (por sprint)
+
+> Os números abaixo são **do dia de cada sprint** e envelhecem com a operação (o pipe recebe cards
+> todo dia). Para o estado mais recente, ver "Entrega do painel — conferência de conclusão
+> (06/ago)" acima; para o de hoje, rodar os próprios scripts.
+
 - **Build**: `npm run lint` + `tsc` verdes nos arquivos tocados (padrão do repo).
 - **Ingestão** (S1/S2): rodar o backfill (`npm run import:financeiro` / `import:negociacao`), conferir
   linhas no Supabase; teste do cenário Make retornando **200**.

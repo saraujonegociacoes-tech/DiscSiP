@@ -163,9 +163,10 @@ completo em [`updates/painel-ceo-indice.md`](projetopainelceo-docs/updates/paine
 > **não funde** os schemas dos domínios — ele compõe por RPC de leitura.
 
 ## `updates/`
-- [`painel-ceo-indice.md`](projetopainelceo-docs/updates/painel-ceo-indice.md) — índice/estado do painel do CEO
-- [`painel-ceo-sprints.md`](projetopainelceo-docs/updates/painel-ceo-sprints.md) — roadmap em sprints (S0→S4: Fundação/trava · Financeiro · Projeções · Saúde da Empresa · Saúde da Equipe) + decisões travadas
-- [`introspeccao-pipefy-financeiro.md`](projetopainelceo-docs/updates/introspeccao-pipefy-financeiro.md) — mapeamento do pipe Financeiro (field-ids, parsers, achados) + as queries de introspecção reutilizáveis
+- [`painel-ceo-indice.md`](projetopainelceo-docs/updates/painel-ceo-indice.md) — índice/estado do painel do CEO. **✅ ENTREGUE em 06/ago/2026**, 3 abas no ar
+- [`painel-ceo-sprints.md`](projetopainelceo-docs/updates/painel-ceo-sprints.md) — roadmap em sprints (S0 Fundação/trava · S1 Financeiro · S2 Projeções · **S3+S4 Saúde da Equipe, fundidas numa aba só**) + decisões travadas + a conferência de conclusão da entrega
+- [`introspeccao-pipefy-financeiro.md`](projetopainelceo-docs/updates/introspeccao-pipefy-financeiro.md) — mapeamento do pipe Financeiro (field-ids, parsers, achados) + as queries de introspecção reutilizáveis. ⚠️ O **campo de valor** mudou em 10/ago — ver abaixo
+- [`financeiro-valor-liquido.md`](projetopainelceo-docs/updates/financeiro-valor-liquido.md) — **10/ago:** a entrada da aba Financeiro virou o **"Valor do Pagamento Líquido"** do card, no lugar do "Valor que o Cliente Pagou?". Como o líquido é um número por card, **um card = uma entrada** e os campos de parcela pararam de ser lidos: o histórico de 2024/25 mudou de valor **e de mês** (R$ 7,42 mi → R$ 5,92 mi). Card sem o campo preenchido sai do total e vira aviso na tela
 - [`introspeccao-pipefy-negociacao.md`](projetopainelceo-docs/updates/introspeccao-pipefy-negociacao.md) — mapeamento do pipe Negociação `304370275` (Sprint 2): fase da projeção, field-ids, parsers e 8 achados. Dois deles mudam o desenho: o **realizado já cai no pipe do Financeiro** (risco de contagem dupla) e o **`datetime_value` vem em UTC** (8,2% dos cards no dia errado)
 - [`make-integracao-financeiro.md`](projetopainelceo-docs/updates/make-integracao-financeiro.md) — cenário Pipefy → Make → Supabase do Financeiro
 - [`make-integracao-negociacao.md`](projetopainelceo-docs/updates/make-integracao-negociacao.md) — cenário Pipefy → Make → Supabase da Negociação (Sprint 2). Traz **só projeção**: o realizado desse pipe já entra pelo cenário do Financeiro

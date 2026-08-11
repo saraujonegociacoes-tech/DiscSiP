@@ -85,14 +85,15 @@ Retorno esperado (200): `{ "fin_card_id": "…", "entries": 1, "skipped": 0, "ca
 O mapeamento de field-ids vive **só no SQL** — o Make e o backfill mandam o node cru e não conhecem
 campo nenhum. Trocar um campo no mapeamento não exige mexer no cenário.
 
-- **`entries`** — o número no retorno é quantas linhas de pagamento o card gerou. É o campo a
-  observar: o pipe tem **duas convenções** e a RPC resolve as duas.
-  - Card de 2024/2025 com campos de parcela preenchidos → **uma linha por parcela**, cada uma com a
-    própria data (podem cair em meses diferentes). `valor_de_contrata_o` é ignorado nesses cards
-    porque é inconsistente lá.
-  - Card de 2026 (nenhum campo de parcela) → **uma linha** de `valor_de_contrata_o` + `data_do_pagamento`.
-- **`skipped`** — parcelas com valor mas **sem data** em lugar nenhum. Não entram em mês nenhum, e a
-  RPC não inventa data. Se esse número crescer, é dado sujo no Pipefy, não bug.
+- **`entries`** — quantas linhas de pagamento o card gerou. Desde 10/ago é **0 ou 1**: um card, uma
+  entrada, de `copy_of_valor_do_pagamento_bruto` ("Valor do Pagamento Líquido") +
+  `data_do_pagamento`. Os campos de parcela **não são mais lidos** — ver
+  [`financeiro-valor-liquido.md`](financeiro-valor-liquido.md). (Até 09/ago: uma linha por parcela
+  nos cards de 2024/25 e uma de `valor_de_contrata_o` nos de 2026.)
+- **`skipped` / `motivo`** — card que não virou entrada. `motivo = 'sem_liquido'` (o campo do
+  líquido está vazio ou zerado — o card aparece no aviso `missingNet` da aba) ou `'sem_data'` (sem
+  `data_do_pagamento`; a RPC não inventa data). Se esses números crescerem, é dado faltando no
+  Pipefy, não bug.
 - **Categoria** = `COALESCE` dos 3 campos de "referência" (Comercial / Negociação / Quitação).
 - **Departamento normalizado**: `"Departamento - Jurídico"` (nome antigo) vira
   `"Departamento - Negociação"`.

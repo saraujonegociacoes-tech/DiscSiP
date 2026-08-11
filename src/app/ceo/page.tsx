@@ -18,8 +18,8 @@ import { CeoComingSoon } from './CeoComingSoon'
 // `admin` chegam aqui. A partir do Sprint 1, as RPCs de leitura repetem a guarda no banco
 // (SECURITY DEFINER + ceo_current_role()) — defesa em profundidade, não confiança na rota.
 //
-// Sprint 0: só o esqueleto de abas. Nenhuma aba busca dado ainda; o primeiro entregável real
-// é o Financeiro (entradas do mês), no Sprint 1.
+// ENTREGUE em 06/ago: as TRÊS abas (Financeiro, Projeções, Saúde da Equipe) servem dado real.
+// Não há mais aba em placeholder — a quarta foi fundida na terceira, ver CeoClient.tsx.
 const CEO_ENABLED =
   process.env.NEXT_PUBLIC_CEO_ENABLED === '1' || process.env.NEXT_PUBLIC_CEO_ENABLED === 'true'
 

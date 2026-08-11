@@ -2,8 +2,9 @@
 // (RPC ingest_financeiro_card), só que em lote e a partir do repo.
 //
 // Clone de import-cs-cards.mjs: manda o NODE CRU do Pipefy pra RPC. O mapeamento de
-// field-ids mora só no SQL da migration 20260731_financeiro_schema.sql — este script não
-// conhece campo nenhum, então mudar o mapeamento não exige mexer aqui.
+// field-ids mora só no SQL da migration em vigor (20260731_financeiro_schema.sql, hoje
+// substituída pela 20260810_financeiro_valor_liquido.sql) — este script não conhece campo
+// nenhum, então mudar o mapeamento não exige mexer aqui.
 //
 // Idempotente: re-rodar é seguro (upsert por card + as fin_entries do card são regeradas).
 //
@@ -106,6 +107,7 @@ async function main() {
   let fail = 0
   let entries = 0
   let skipped = 0
+  let semLiquido = 0
   let semEntrada = 0
   const t0 = Date.now()
   do {
@@ -117,11 +119,13 @@ async function main() {
       total++
       if (r.status === 'fulfilled') {
         ok++
-        // A RPC devolve quantas linhas de pagamento o card gerou. 0 = card sem valor
-        // utilizável (ou sem data), que não entra em mês nenhum — vale acompanhar.
+        // A RPC devolve quantas linhas o card gerou — hoje 0 ou 1 (um card, um líquido).
+        // 0 = líquido vazio/zerado ou card sem data; nos dois casos ele não entra em mês
+        // nenhum. `motivo` diz qual dos dois foi.
         const n = r.value?.entries ?? 0
         entries += n
         skipped += r.value?.skipped ?? 0
+        if (r.value?.motivo === 'sem_liquido') semLiquido++
         if (n === 0) semEntrada++
       } else {
         fail++
@@ -133,10 +137,10 @@ async function main() {
   } while (cursor)
   const secs = ((Date.now() - t0) / 1000).toFixed(0)
   console.log(`\nimport-financeiro: fim. ${total} cards em ${page} páginas, ${secs}s.`)
-  console.log(`  ok=${ok} falha=${fail} pagamentos=${entries} sem_data=${skipped} cards_sem_entrada=${semEntrada}`)
+  console.log(`  ok=${ok} falha=${fail} pagamentos=${entries} fora_do_total=${skipped} (sem_liquido=${semLiquido}) cards_sem_entrada=${semEntrada}`)
   console.log('\nConferir no Supabase:')
   console.log("  SELECT source, count(*) FROM public.fin_entries GROUP BY source;")
-  console.log('  -- esperado: as duas convenções presentes (card = 2026, parcela = histórico)')
+  console.log("  -- esperado: uma linha só, 'liquido' (um card = uma entrada)")
 }
 
 main().catch((e) => {
