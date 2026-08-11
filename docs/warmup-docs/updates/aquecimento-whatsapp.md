@@ -103,21 +103,42 @@ controla o git). Migrations `20260719_warmup_schema.sql` **e** `20260719b_warmup
 
 ---
 
-## Estado em 20/jul/2026 — retomar aqui
+## Estado em 04/ago/2026 — retomar aqui
 
-Ponto de retomada. **Código 100% pronto e verde** (`tsc`/`lint`/`build`); o que resta é
-**configuração fora do código** (Meta + Cloudflare + GitHub + cadastro na UI).
+Ponto de retomada. **Código 100% pronto, verde e commitado**; o que resta é **configuração
+fora do código** (Meta + Cloudflare + GitHub + cadastro real na UI).
 
 ### ✅ Já feito
 - Todo o código das Sprints 0–3 (schema, RLS, `service_role`, tick, endpoints, cron,
-  painel, server actions) — implementado e verde.
+  painel, server actions) — implementado, verde e **versionado no git** (em 20/jul ainda
+  estava untracked).
 - Migrations **aplicadas** no Supabase: `20260719_warmup_schema.sql` (tabelas/RLS/seeds,
   `dry_run=true` de fábrica) + `20260719b_warmup_supervisor_access.sql` (libera supervisor).
 - **Cenário "Aquecimento · Disparo" montado no Make** (webhook → Router template/session →
   HTTP Graph API). Ver [`make-integracao-aquecimento.md`](make-integracao-aquecimento.md).
+- Wiring sobreviveu ao RBAC de 03/ago: `/aquecimento` agora é **operação comercial** —
+  `managerLevel` ou **supervisor com departamento `comercial`** (`middleware.ts`); item da
+  Sidebar com `depts: ['comercial']`. Quem for validar precisa cair numa dessas caixas.
+- Correções de 04/ago: flag do `.env.local` estava grafada `NEXT_PUBLIC_WARMUP_ENABLE`
+  (sem o **D**) e o painel caía no "Em breve"; `upsertWarmupNumber` zerava
+  `display_name`/`waba_id` em updates parciais (o toggle "Participa" apagava o apelido);
+  o formulário de números ganhou o campo **`waba_id`**.
 
-### ⛔ Bloqueador do "go live" — próximo passo
-1. **Atribuir os ativos ao System User na Meta** (Business Settings → **Usuários do sistema**
+### 📋 Estado real do banco em 04/ago (conferido)
+| Tabela | Estado |
+|---|---|
+| `warmup_numbers` | **2 linhas, mas de teste** — `sender_id` fictício (`1234…`/`9876…`), `waba_id` vazio. **Trocar pelos reais.** |
+| `warmup_templates` | 1 abertura com `meta_template_name = "Testando - Sem Meta"` (**não aprovado na Meta**) + 3 frases de sessão (essas servem) |
+| `warmup_settings` | `dry_run=true`, `warmup_mode=sessao`, `qntd_numbers=2`, gap 4–25 min, `tick_max_sends=3` — **`sessao_iniciada_em` vazio → tick inerte** |
+| `warmup_ramp_stages` | 4 estágios seedados (0→6, 3→14, 7→24, 14→40) |
+| `warmup_conversations` / `warmup_messages` | 1 thread + 2 mensagens `dry_run` de 19/jul (resíduo do teste) |
+
+### ⛔ Bloqueadores do "go live"
+1. **Template de abertura aprovado na Meta** — *comece por aqui*: é o único passo com
+   latência de terceiro (fila de revisão da Meta). Criar em WhatsApp Manager → Modelos de
+   mensagem, categoria **Utility/Marketing**, texto curto sem variável (ex.: "Oi, tudo
+   bem?"). Guardar **nome exato** (snake_case) + **idioma** (`pt_BR`) para cadastrar na UI.
+2. **Atribuir os ativos ao System User na Meta** (Business Settings → **Usuários do sistema**
    → *Adicionar ativos* → **Contas do WhatsApp** → marcar **cada WABA** do pool → **Controle
    total**). Depois **Gerar novo token** com `whatsapp_business_messaging` +
    `whatsapp_business_management` (expiração **Nunca**) e colá-lo na **conexão HTTP do Make**
@@ -125,26 +146,26 @@ Ponto de retomada. **Código 100% pronto e verde** (`tsc`/`lint`/`build`); o que
    Detalhe em [`make-integracao-aquecimento.md`](make-integracao-aquecimento.md), seção
    "Conexão única".
 
-### 🔜 Depois do token, em ordem
-2. **Secrets** — gerar dois valores aleatórios (`node -e "const c=require('crypto');console.log(c.randomBytes(32).toString('base64url'))"`)
-   e cadastrar: no **Cloudflare** (`WARMUP_CRON_SECRET`, `MAKE_CALLBACK_SECRET`,
-   `MAKE_WEBHOOK_URL_WARMUP` = URL do webhook do Make) e no **GitHub Actions**
-   (`BLUELINE_URL`, `WARMUP_CRON_SECRET` — **mesmo** valor do Cloudflare).
-   *(Dois valores já foram gerados na sessão de 20/jul — cole-os do histórico ou regenere;
-   não ficam salvos aqui de propósito, pois este doc é versionado no git.)*
-3. **Flag** — `NEXT_PUBLIC_WARMUP_ENABLED=1` no Cloudflare **e** no `.env.local` (sem ela,
-   `/aquecimento` mostra "Em breve").
-4. **Confirmar o callback no Make** ligado nos **dois** ramos (sucesso e erro) →
+### 🔜 Depois, em ordem
+3. **Secrets** — os três valores já existem no `.env.local` local; replicar no **Cloudflare**
+   (`WARMUP_CRON_SECRET`, `MAKE_CALLBACK_SECRET`, `MAKE_WEBHOOK_URL_WARMUP`) e no **GitHub
+   Actions** (`BLUELINE_URL`, `WARMUP_CRON_SECRET` — **mesmo** valor do Cloudflare). Para
+   gerar novos: `node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"`.
+   *(Valores não ficam neste doc de propósito — ele é versionado no git.)*
+4. **Flag** — `NEXT_PUBLIC_WARMUP_ENABLED=1` no Cloudflare (no `.env.local` já está, corrigida
+   em 04/ago). É build-time: exige **redeploy**, não só salvar a variável.
+5. **Confirmar o callback no Make** ligado nos **dois** ramos (sucesso e erro) →
    `POST {BLUELINE_URL}/api/aquecimento/dispatch-result`, header `X-Warmup-Callback-Secret`.
-5. **Cadastrar na UI** (`/aquecimento`): pool de números (o `sender_id` = phone_number_id de
-   cada número) + ≥1 template de abertura + ≥1 session_snippet. Sem ≥2 números `active` e
-   esses catálogos, o tick só retorna `skipped`.
-6. **Iniciar a sessão** (modo default `sessao` fica inerte até clicar "Iniciar aquecimento")
+6. **Cadastrar na UI** (`/aquecimento`): **remover os 2 números de teste**, cadastrar os reais
+   (`sender_id` = phone_number_id, `waba_id`, E.164) e **substituir o template "Testando -
+   Sem Meta"** pelo aprovado no passo 1. Sem ≥2 números `active` e esses catálogos, o tick só
+   retorna `skipped`.
+7. **Iniciar a sessão** (modo default `sessao` fica inerte até clicar "Iniciar aquecimento")
    ou trocar para `gradual`.
-7. **Validar em `dry_run`** (padrão, seguro): `curl` no endpoint do tick (401 sem header,
+8. **Validar em `dry_run`** (padrão, seguro): `curl` no endpoint do tick (401 sem header,
    resumo com header), rodar "rodar uma rodada agora", revisar o histórico simulado (pacing
    espalhado, sem repetição), e testar a regra da janela de 24h.
-8. **Só então virar `dry_run=false`** — sem mudança de código.
+9. **Só então virar `dry_run=false`** — sem mudança de código.
 
 ---
 
@@ -334,9 +355,14 @@ Só depois do cenário de Disparo validado em produção com números reais.
       Supabase (feito). As chaves novas do modo de operação **não exigem migration** — nascem
       com padrão no código e são gravadas no primeiro uso (upsert em `warmup_settings`).
 - [x] Montar o cenário **"Aquecimento · Disparo"** no Make (feito, 20/jul).
+- [ ] **⛔ Bloqueador (comece aqui):** criar e submeter o **template de abertura** no WhatsApp
+      Manager e aguardar aprovação — único passo com fila de terceiro. Anotar nome exato +
+      idioma.
 - [ ] **⛔ Bloqueador:** atribuir os **ativos (WABAs) ao System User** na Meta e gerar o
       **token** (`whatsapp_business_messaging` + `whatsapp_business_management`); colar na
       conexão HTTP do Make. Sem isso o cenário montado não autentica.
+- [ ] Limpar os **dados de teste**: remover os 2 números fictícios e o template
+      "Testando - Sem Meta" do painel, cadastrando os reais no lugar.
 - [ ] Definir os secrets: no **Cloudflare** (`WARMUP_CRON_SECRET`, `MAKE_CALLBACK_SECRET`,
       `MAKE_WEBHOOK_URL_WARMUP`) e no **GitHub Actions** (`BLUELINE_URL`, `WARMUP_CRON_SECRET`
       — mesmo valor). Gerar com `node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"`.
