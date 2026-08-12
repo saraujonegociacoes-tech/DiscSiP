@@ -37,13 +37,18 @@ Snapshot (foto de estado atual, **sem filtro de período**, como a P1). Só card
 - `20260727b_cs_minutas_resguardo` — métrica de Valor Resguardado.
 - `20260727c_cs_minutas_resguardo_split` — resguardo por situação (KPI acompanha o filtro).
 - `20260727d_cs_minutas_negociacao` — renames + coluna "Última Negociação" (superset de b+c).
+- `20260812_cs_minutas_lucro_estimado` — ✅ **aplicada 12/ago**: `lucroEstimado` = Minuta Final −
+  Última Negociação (superset da d; é a **última palavra** sobre a `get_cs_minutas()`).
 
 **Tabela** — todas as colunas **ordenáveis** asc/desc (texto A→Z, data velho→novo, número
 menor→maior): `Cliente | Responsável | Dívida do Cliente | Valor da Minuta Final | Última
-Negociação | Resguardado | Vencimento | Prazo | % desc. | Etiqueta`.
+Negociação | Lucro Est. | Resguardado | Vencimento | Prazo | % desc. | Etiqueta`.
 - **Dívida do Cliente** = `d_vida_atual_do_cliente` (dívida atual, sem desconto).
 - **Valor da Minuta Final** = `valor_resguardados_dos_clientes` (minuta emitida, com desconto).
 - **Última Negociação** = `q_d_valor_da_quita_o_com_desconto` (o Q.D real da fase de negociação).
+- **Lucro Est.** = Minuta Final − Última Negociação, derivado na RPC (`20260812`), só com os dois
+  lados > 0 ("0,00" do Pipefy = não preenchido). Pode ser **negativo** = negociação fechada acima
+  da minuta. Ver [`cs-minutas-lucro-estimado.md`](cs-minutas-lucro-estimado.md).
 - **Resguardado** = série mensal `valor_de_resguardo_N`, o **maior N com valor > 0** (um por card,
   nunca a soma; mostra o mês em superscrito).
 - **% desc.** = 1 − (Minuta Final ÷ Dívida) · **Vencimento** = `data_da_quita_o` · **Etiqueta** =
@@ -52,11 +57,14 @@ Negociação | Resguardado | Vencimento | Prazo | % desc. | Etiqueta`.
 **Buckets por vencimento** (tiles clicáveis, contagem + Σ): Vencidas (`<hoje`) · Mensal (`≤30d`) ·
 Trimestral (`31–90d`) · Semestral (`91–180d`) · 180+ (`>180d`). Toggle **Ativos/Inativos/Todos**.
 
-**Trilho:** "Minutas · Σ valor" (do recorte); **"Resguardado na carteira"** (Σ do resguardo, um por
+**Trilho:** "Minutas · Σ valor" (do recorte); **"Lucro estimado"** (Σ do lucro + os dois lados da
+conta e a cobertura "N de M com os dois valores", **acompanha o filtro de situação**, desenho
+espelhado da "Margem" do painel do CEO); **"Resguardado na carteira"** (Σ do resguardo, um por
 card, **acompanha o filtro Ativos/Inativos/Todos** via `resguardo.active`/`.inactive`); e
 **Insights clicáveis** — cada um abre o drill dos cards citados (link Pipefy + valor relevante):
 vencidas, vence ≤30d, **última negociação abaixo da minuta final** (com a diferença acumulada),
-maior minuta. **Export CSV.**
+**lucro estimado negativo** (negociação fechada acima da minuta), maior minuta. **Export CSV**
+(com a coluna Lucro Estimado).
 
 Arquivos: RPC nas migrations acima; tipos `CsMinutaCard`/`CsMinutasData`/`CsResguardoBucket`;
 action `getCsMinutas`; componente `CsMinutas.tsx`; aba "minutas" do `CsClient`.
@@ -72,7 +80,7 @@ Financeiro** via `child_relations` (relação "Subir pagamento") — 1 card cone
   `cs_parse_date` da `20260730`), tipos `CsPagamento*`, actions, `CsPagamento.tsx`, query do import
   com `child_relations`.
 - **Correção 11/ago — projeção só na fase (migration `20260811_cs_pagamento_projecao_so_na_fase.sql`,
-  ⏳ A APLICAR):** a coorte da `get_cs_pagamento_projecao` era por **campo** (`1_parcela_valor`
+  ✅ APLICADA 12/ago):** a coorte da `get_cs_pagamento_projecao` era por **campo** (`1_parcela_valor`
   preenchido), e os campos do plano ficam no `metadata` mesmo depois que o card sai da fase — card
   em "1° Mês"/"Quitados"/"Arquivado" seguia com previsto/em aberto/atrasado. Agora: **projeção só
   dentro de "Aguardando Pagamento"** (`cs_is_pagamento_phase`, espelha o `neg_is_waiting_phase` do
@@ -80,9 +88,11 @@ Financeiro** via `child_relations` (relação "Subir pagamento") — 1 card cone
   com o pago). Sem backfill: o plano é resolvido na leitura. Detalhe em
   [`../fixes/pagamento-projecao-so-na-fase-e-url-no-csv.md`](../fixes/pagamento-projecao-so-na-fase-e-url-no-csv.md).
 - **Exportação (mesmo pedido, já no código):** **URL do card em toda exportação** do painel
-  (Matriz, Minutas, Pagamento); CSV da Página 4 reescrito com cronograma parcela a parcela e botão
-  novo no Histórico de recebimento; formato do CSV centralizado em `src/lib/csv.ts`.
-- **PENDENTE do dono:** ~~aplicar `20260730b`~~ (✅ aplicada — RPCs respondem); ligar
+  (Matriz, Minutas, Pagamento; a **Equipe** entrou em 12/ago — ver
+  [`cs-equipe-export.md`](cs-equipe-export.md)); CSV da Página 4 reescrito com cronograma parcela a
+  parcela e botão novo no Histórico de recebimento; formato do CSV centralizado em `src/lib/csv.ts`.
+- **PENDENTE do dono:** ~~aplicar `20260730b`~~ (✅ aplicada — RPCs respondem);
+  ~~aplicar `20260811`~~ (✅ aplicada 12/ago); ligar
   `child_relations` na query do Make **+ poll sem-delta do balde "Aguardando Pagamento"** (gatilho:
   pagamento no Financeiro pode não tocar o `updated_at` do card do SC); re-rodar
   `npm run import:cs-cards`. Conferido em 31/jul: `cs_card_payments` tem **1 linha** (só o card de
@@ -95,6 +105,10 @@ Financeiro** via `child_relations` (relação "Subir pagamento") — 1 card cone
   + snapshot dos 5 campos + troca de responsável; RPC `get_cs_team`), `import-cs-cards.mjs` com
   `comments{}`, action `getCsTeam`, tela `CsTeam.tsx` (PeriodPicker + KPIs + tabela de
   movimento por responsável + barras de completude + tiers de negociação).
+- **Export CSV (12/ago):** um botão por seção — **Negociações** sai uma linha por **card** com a
+  URL do Pipefy na 1ª coluna (regra de 11/ago); **Movimento** sai uma linha por **responsável**,
+  **sem URL**, porque a `get_cs_team` não devolve os ids dos cards dessa seção. Detalhe e o
+  caminho caso a URL passe a ser necessária: [`cs-equipe-export.md`](cs-equipe-export.md).
 - **Decisões travadas:** atribuição = **qualquer comentário** (autor guardado); "negociação
   feita" = **mudança nos 5 campos**; relevância **pela prioridade** Q.D›Q.A›P.A›P.P›P.V (sem
   epsilon); completude **Completa=5 · Parcial=3–4 COM Q.D · Incompleta=1–2 ou 3–4 sem Q.D ·

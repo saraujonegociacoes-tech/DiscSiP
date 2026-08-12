@@ -2,13 +2,12 @@
 
 **Data:** 2026-08-11 · **Pedido do dono (duas coisas, um pedido só)** ·
 **Migration:** `supabase/migrations/Migrations_painelcs/20260811_cs_pagamento_projecao_so_na_fase.sql`
-⏳ **a aplicar** · **Frontend:** `CsPagamento.tsx`, `CsMatrix.tsx`, `CsMinutas.tsx`,
+✅ **aplicada em 12/ago/2026** · **Frontend:** `CsPagamento.tsx`, `CsMatrix.tsx`, `CsMinutas.tsx`,
 `MinutasLista.tsx`, `src/lib/csv.ts` (novo), `src/lib/types/database.ts`.
 
-> **A parte de SQL não vale nada até a migration rodar.** A aba continua mostrando os cards
-> fora da fase até você executar o arquivo no SQL editor do Supabase. O frontend já está
-> preparado pros dois cenários (antes da migration, `naFase` chega `undefined` → cai como
-> "Fora da fase", ver "Ordem de aplicação" no fim).
+> **No ar.** A migration foi aplicada pelo dono em 12/ago: a projeção passou a valer só dentro da
+> fase "Aguardando Pagamento" e o `naFase` chega no payload. Nada precisou de backfill — o plano é
+> resolvido na leitura (ver "Aplicação" no fim).
 
 ## 1. Projeção estava contando card que já saiu da fase
 
@@ -127,20 +126,21 @@ alguém. O Excel em pt-BR pode ler essas células como texto. Se o dono quiser, 
 linha no `src/lib/csv.ts` (formatar número com vírgula) e passa a valer para todas as abas de
 uma vez — é justamente o ganho de ter um escritor só.
 
-## Ordem de aplicação
+## Aplicação — feita
 
-O frontend e a migration são independentes e podem subir em qualquer ordem:
+Migration e frontend estão os dois no ar desde **12/ago/2026**. Não houve backfill nem reingestão:
+o plano é resolvido **na leitura**, direto do `metadata`, então trocar a função já mudou a aba na
+chamada seguinte.
 
-- **Frontend antes da migration:** a RPC velha não manda `naFase`; ele chega `undefined`
-  (falsy) e todo card aparece como "Fora da fase". A aba não quebra, mas os números só ficam
-  certos depois da migration. **Aplique a migration.**
-- **Migration antes do frontend:** a aba velha ignora o `naFase` e mostra os cards fora da fase
-  como "Sem plano" — já sem previsto, que é o efeito principal.
+> Registro de como os dois lados se comportavam separados, caso um rollback parcial aconteça: com
+> a **RPC velha**, `naFase` chega `undefined` (falsy) e todo card aparece como "Fora da fase" — a
+> aba não quebra, mas os números ficam errados. Com o **frontend velho**, o `naFase` é ignorado e
+> os cards fora da fase aparecem como "Sem plano" — já sem previsto, que é o efeito principal.
 
-## Aplicar
+## Reconferir
 
-1. Rodar `20260811_cs_pagamento_projecao_so_na_fase.sql` no SQL editor do Supabase.
-2. Conferir (as queries completas estão comentadas no fim da migration):
+As queries completas estão comentadas no fim da migration. Valem principalmente **depois de
+qualquer mexida na `get_cs_pagamento_projecao`**:
 
 ```sql
 -- a fase é a certa?
@@ -153,9 +153,11 @@ WHERE (c->>'naFase')::boolean IS FALSE
   AND jsonb_array_length(c->'plano') > 0;
 ```
 
-3. `node scripts/verify-cs-pagamento.mjs` (read-only, sem PII).
+E `node scripts/verify-cs-pagamento.mjs` (read-only, sem PII).
 
-> ⚠️ A `20260730b` tem um `CREATE OR REPLACE` da **mesma** `get_cs_pagamento_projecao`, na
-> versão sem filtro de fase. Reexecutar aquele arquivo **depois** deste desfaz a correção em
-> silêncio. Se precisar reaplicar a `20260730b`, rode a `20260811` logo em seguida — a mesma
-> armadilha que já mordeu o painel do CEO na `20260731b`/`20260803`.
+> ⚠️ **Armadilha viva:** a `20260730b` tem um `CREATE OR REPLACE` da **mesma**
+> `get_cs_pagamento_projecao`, na versão sem filtro de fase. Reexecutar aquele arquivo **desfaz
+> esta correção em silêncio** — sem erro, os cards fora da fase só voltam a somar. Se precisar
+> reaplicar a `20260730b`, rode a `20260811` logo em seguida e refaça a conferência acima. É a
+> mesma armadilha que já mordeu o painel do CEO na `20260731b`/`20260803` e que a `20260812`
+> herdou na `get_cs_minutas()`.

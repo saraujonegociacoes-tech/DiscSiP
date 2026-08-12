@@ -8,12 +8,14 @@ import {
   Handshake,
   Inbox,
   Info,
+  Download,
   ExternalLink,
   X,
 } from 'lucide-react'
 import { PeriodPicker } from '@/components/bluedesk/PeriodPicker'
 import { currentCycle, type LeadPeriod } from '@/lib/period'
 import { getCsTeam } from '@/app/actions/cs'
+import { downloadCsv, type CsvValue } from '@/lib/csv'
 import { cn } from '@/lib/utils'
 import type { CsTeamData, CsTeamNegotiationAgent, CsNegotiationClass } from '@/lib/types/database'
 
@@ -69,6 +71,14 @@ function Stat({
   )
 }
 
+const classLabel = (cls: CsNegotiationClass): string =>
+  NEG_CLASSES.find((c) => c.key === cls)?.label ?? cls
+
+// Sufixo de arquivo pelo período (as duas seções são filtradas por ele, então a planilha
+// precisa dizer de quando é). ISO cru — não tem espaço nem barra, então é seguro em nome
+// de arquivo, diferente do `period.label` ("Ciclo 11/10 · ago/26").
+const periodSlug = (d: CsTeamData): string => `${d.periodStart.slice(0, 10)}_${d.periodEnd.slice(0, 10)}`
+
 // Recorte selecionado no drill. A chave é o VALOR do campo da fase (texto), não um id de
 // agente — cards sem o campo preenchido caem todos no mesmo balde (negotiator = null).
 type NegSel = { negotiator: string | null; negotiatorName: string; cls: 'total' | CsNegotiationClass }
@@ -121,6 +131,68 @@ export function CsTeam() {
     return { cards, label }
   }, [negSel, negotiations])
 
+  // ── Export ────────────────────────────────────────────────────────────────
+  // As duas seções desta aba têm GRANULARIDADE DIFERENTE, então saem em dois arquivos, não
+  // num só: juntar linha de card com linha de responsável numa planilha só produziria uma
+  // tabela que não soma nem filtra direito. Ambos os botões respeitam o período selecionado.
+
+  // Negociações: uma linha por CARD, URL na primeira coluna (regra do dono, 11/ago — vale pra
+  // toda exportação do painel). Cada card aparece sob UM único negociador (o agrupamento é
+  // pelo valor do campo da fase), então achatar os agentes não duplica linha. Exporta sempre o
+  // período inteiro, não o drill: as colunas "Responsável" e "Completude" já deixam refazer
+  // qualquer recorte na planilha, e assim o botão não depende de estado invisível no CSV.
+  function exportNegociacoes() {
+    if (!data) return
+    const head = [
+      'URL do card', 'ID', 'Cliente', 'Responsável pela negociação', 'Completude',
+      'Campos faltando', 'Qtd. faltando', 'Período (início)', 'Período (fim)',
+    ]
+    const start = data.periodStart.slice(0, 10)
+    const end = data.periodEnd.slice(0, 10)
+    const rows: CsvValue[][] = data.negotiations.flatMap((a) =>
+      a.cards.map((c) => [
+        pipefyUrl(c.pipefyCardId),
+        c.pipefyCardId,
+        c.title ?? '',
+        a.negotiatorName,
+        classLabel(c.cls),
+        c.missing.join(', '),
+        c.missing.length,
+        start,
+        end,
+      ]),
+    )
+    downloadCsv(`cs-equipe-negociacoes-${periodSlug(data)}`, head, rows)
+  }
+
+  // Movimento: uma linha por RESPONSÁVEL, sem URL — e isso não é esquecimento da regra. A
+  // `get_cs_team` devolve só as CONTAGENS por responsável (`CsTeamMovementAgent`), não os ids
+  // dos cards; não existe card por trás da linha pra linkar. Se um dia isso for preciso, o
+  // caminho é a RPC passar a devolver os cards do movimento (como já faz nas negociações), não
+  // inventar URL aqui.
+  function exportMovimento() {
+    if (!data) return
+    const head = [
+      'Responsável', 'Recebidos', 'Movimentados (total)', 'Movido c/ atualização',
+      'Movido s/ atualização', 'Só atualização', 'Sem mover/atualizar', 'Período (início)',
+      'Período (fim)',
+    ]
+    const start = data.periodStart.slice(0, 10)
+    const end = data.periodEnd.slice(0, 10)
+    const rows: CsvValue[][] = data.movement.map((a) => [
+      a.agentName,
+      a.received,
+      a.movedWithUpdate + a.movedNoUpdate,
+      a.movedWithUpdate,
+      a.movedNoUpdate,
+      a.onlyUpdate,
+      a.idle,
+      start,
+      end,
+    ])
+    downloadCsv(`cs-equipe-movimento-${periodSlug(data)}`, head, rows)
+  }
+
   function toggleNeg(agent: CsTeamNegotiationAgent, cls: 'total' | CsNegotiationClass, count: number) {
     if (count === 0) return
     setNegSel((cur) =>
@@ -165,14 +237,26 @@ export function CsTeam() {
 
           {/* ── Movimento no período ────────────────────────────────────────── */}
           <section className="rounded-2xl border border-border bg-gradient-card p-4 shadow-elevated">
-            <div className="mb-3">
-              <h2 className="flex items-center gap-1.5 text-sm font-semibold text-foreground">
-                <ArrowRightLeft className="h-4 w-4 text-primary" /> Movimento no período
-              </h2>
-              <p className="mt-0.5 text-xs text-muted-foreground">
-                Por responsável do card, sobre os cards ativos. Ignora entrada/saída de Negociação e
-                Aguardando pagamento.
-              </p>
+            <div className="mb-3 flex flex-wrap items-start justify-between gap-2">
+              <div className="min-w-0">
+                <h2 className="flex items-center gap-1.5 text-sm font-semibold text-foreground">
+                  <ArrowRightLeft className="h-4 w-4 text-primary" /> Movimento no período
+                </h2>
+                <p className="mt-0.5 text-xs text-muted-foreground">
+                  Por responsável do card, sobre os cards ativos. Ignora entrada/saída de Negociação
+                  e Aguardando pagamento.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={exportMovimento}
+                disabled={loading || movement.length === 0}
+                title="Exporta uma linha por responsável (é a granularidade desta seção — a RPC não devolve os cards do movimento, então não há URL pra linkar)."
+                className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-border bg-background/60 px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-background disabled:opacity-50"
+              >
+                <Download className="h-3.5 w-3.5" />
+                Exportar
+              </button>
             </div>
 
             {!hasMovement && (
@@ -249,16 +333,28 @@ export function CsTeam() {
 
           {/* ── Negociações feitas no período (com drill-down) ──────────────── */}
           <section className="rounded-2xl border border-border bg-gradient-card p-4 shadow-elevated">
-            <div className="mb-3">
-              <h2 className="flex items-center gap-1.5 text-sm font-semibold text-foreground">
-                <Handshake className="h-4 w-4 text-primary" /> Negociações feitas no período
-              </h2>
-              <p className="mt-0.5 text-xs text-muted-foreground">
-                Cards com mudança nos 5 campos no período, pelo campo{' '}
-                <span className="font-medium text-foreground">Quem realizou a Negociação?</span> da
-                fase de negociação — não pelo responsável do card. Clique num número para ver os
-                cards, o que falta e o link do Pipefy.
-              </p>
+            <div className="mb-3 flex flex-wrap items-start justify-between gap-2">
+              <div className="min-w-0">
+                <h2 className="flex items-center gap-1.5 text-sm font-semibold text-foreground">
+                  <Handshake className="h-4 w-4 text-primary" /> Negociações feitas no período
+                </h2>
+                <p className="mt-0.5 text-xs text-muted-foreground">
+                  Cards com mudança nos 5 campos no período, pelo campo{' '}
+                  <span className="font-medium text-foreground">Quem realizou a Negociação?</span> da
+                  fase de negociação — não pelo responsável do card. Clique num número para ver os
+                  cards, o que falta e o link do Pipefy.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={exportNegociacoes}
+                disabled={loading || !nt || nt.total === 0}
+                title="Exporta uma linha por card (com a URL do Pipefy), de todos os responsáveis do período — não só do recorte aberto."
+                className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-border bg-background/60 px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-background disabled:opacity-50"
+              >
+                <Download className="h-3.5 w-3.5" />
+                Exportar
+              </button>
             </div>
 
             {!nt || nt.total === 0 ? (

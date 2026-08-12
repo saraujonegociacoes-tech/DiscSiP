@@ -345,6 +345,9 @@ export interface CsMinutaCard {
   valor: number | null // "Valor da Minuta Final" (valor_resguardados_dos_clientes) — null se vazio
   divida: number | null // "Dívida do Cliente" (d_vida_atual_do_cliente, fixa) — base do % de desconto
   ultimaNegociacao: number | null // "Última Negociação" = Q.D real da fase de negociação (q_d_valor_da_quita_o_com_desconto)
+  lucroEstimado: number | null // Minuta Final − Última Negociação, derivado no SQL (20260812); null quando um
+  // dos dois lados falta ou é 0 ("0,00" do Pipefy = não preenchido). NEGATIVO é válido: negociação
+  // fechada acima da minuta emitida = prejuízo estimado.
   descontoPct: number | null // (1 − Minuta Final/Dívida)·100, derivado; null se não dá pra calcular
   etiqueta: string | null // rótulo de desconto marcado (sele_o_de_etiqueta), se houver
   resguardo: number | null // valor de resguardo do mês mais avançado preenchido (>0); null se nenhum

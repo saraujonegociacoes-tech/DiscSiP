@@ -59,7 +59,7 @@ const STATUS_NOUN: Record<StatusFilter, string> = {
 // (dívida atual do cliente, sem desconto) → VEM ANTES do Q.D (valor com desconto). Texto ordena
 // alfabético (pt-BR); número/data ordenam numérico/cronológico. `type: 'text'` cobre datas ISO
 // (comparação lexicográfica = cronológica), então "asc" já é do mais velho pro mais novo.
-type SortKey = 'cliente' | 'responsavel' | 'qa' | 'qd' | 'negociacao' | 'resguardo' | 'vencimento' | 'prazo' | 'desconto' | 'etiqueta'
+type SortKey = 'cliente' | 'responsavel' | 'qa' | 'qd' | 'negociacao' | 'lucro' | 'resguardo' | 'vencimento' | 'prazo' | 'desconto' | 'etiqueta'
 type SortDir = 'asc' | 'desc'
 interface SortState {
   key: SortKey
@@ -78,6 +78,7 @@ const COLUMNS: {
   { key: 'qa', label: 'Dívida do Cliente', align: 'right', type: 'num', title: 'Dívida atual do cliente, sem desconto (d_vida_atual_do_cliente)' },
   { key: 'qd', label: 'Valor da Minuta Final', align: 'right', type: 'num', title: 'Valor da minuta emitida, com desconto (valor_resguardados_dos_clientes)' },
   { key: 'negociacao', label: 'Última Negociação', align: 'right', type: 'num', title: 'Q.D real da fase de negociação — valor negociado atual no card (q_d_valor_da_quita_o_com_desconto)' },
+  { key: 'lucro', label: 'Lucro Est.', align: 'right', type: 'num', title: 'Lucro estimado = Valor da Minuta Final − Última Negociação. Só quando os dois estão preenchidos (>0); negativo = negociação fechada acima da minuta.' },
   { key: 'resguardo', label: 'Resguardado', align: 'right', type: 'num', title: 'Valor de Resguardo do mês mais avançado preenchido (>0)' },
   { key: 'vencimento', label: 'Vencimento', align: 'center', type: 'text' },
   { key: 'prazo', label: 'Prazo', align: 'center', type: 'num' },
@@ -97,6 +98,8 @@ function rawVal(c: CsMinutaCard, key: SortKey): string | number | null {
       return c.valor
     case 'negociacao':
       return c.ultimaNegociacao
+    case 'lucro':
+      return c.lucroEstimado
     case 'resguardo':
       return c.resguardo
     case 'vencimento':
@@ -118,8 +121,11 @@ function sortCards(cards: CsMinutaCard[], sort: SortState): CsMinutaCard[] {
   return [...cards].sort((a, b) => {
     const av = rawVal(a, sort.key)
     const bv = rawVal(b, sort.key)
-    const aNull = av === null || av === ''
-    const bNull = bv === null || bv === ''
+    // `== null` (não `===`) de propósito: cobre também `undefined`, que é o que chega de um
+    // campo que a RPC ainda não devolve (migration nova não aplicada). Sem isso o valor cairia
+    // no ramo numérico e viraria NaN, embaralhando a ordenação inteira.
+    const aNull = av == null || av === ''
+    const bNull = bv == null || bv === ''
     if (aNull && bNull) return 0
     if (aNull) return 1 // nulos sempre por último, independente da direção
     if (bNull) return -1
@@ -222,6 +228,29 @@ export function CsMinutas() {
 
   const totalValor = useMemo(() => filtered.reduce((a, c) => a + (c.valor ?? 0), 0), [filtered])
 
+  // Lucro estimado da carteira em UMA passada só: total, cobertura, os dois lados da conta (pra o
+  // cartão reconciliar Σ Minuta − Σ Negociação = Σ Lucro sobre a MESMA coorte) e os cards no
+  // vermelho, que o insight reaproveita em vez de varrer `filtered` de novo. O valor por card já
+  // vem pronto da RPC (`lucroEstimado`, migration 20260812); aqui só se soma — a fórmula não é
+  // reimplementada no front, então tabela, KPI, insight e CSV não têm como divergir.
+  const lucro = useMemo(() => {
+    let total = 0
+    let count = 0
+    let minuta = 0
+    let negociado = 0
+    const negativos: CsMinutaCard[] = []
+    for (const c of filtered) {
+      const l = c.lucroEstimado
+      if (l == null) continue // card sem os dois lados preenchidos não estima nada
+      total += l
+      count++
+      minuta += c.valor ?? 0
+      negociado += c.ultimaNegociacao ?? 0
+      if (l < 0) negativos.push(c)
+    }
+    return { total, count, minuta, negociado, negativos }
+  }, [filtered])
+
   // Resguardo da carteira acompanhando o filtro de situação (ativos = não-terminais; inativos =
   // terminais; todos = soma dos dois). Independe do bucket — é métrica de carteira, não da lista.
   const resg = useMemo(() => {
@@ -273,6 +302,20 @@ export function CsMinutas() {
       })
     }
 
+    // Lucro estimado NEGATIVO: a negociação fechou ACIMA da minuta emitida, então o card come
+    // margem em vez de gerar. Reaproveita a lista já montada no memo do lucro.
+    if (lucro.negativos.length > 0) {
+      const perda = lucro.negativos.reduce((a, c) => a + (c.lucroEstimado ?? 0), 0)
+      out.push({
+        id: 'lucroNeg',
+        tone: 'text-destructive',
+        text: `${nf(lucro.negativos.length)} card(s) com lucro estimado negativo (${brl(perda)}).`,
+        cards: lucro.negativos,
+        detail: (c) =>
+          `${brl(c.valor ?? 0)} − ${brl(c.ultimaNegociacao ?? 0)} = ${brl(c.lucroEstimado ?? 0)}`,
+      })
+    }
+
     let biggest: CsMinutaCard | null = null
     for (const c of filtered)
       if (c.valor != null && (biggest === null || c.valor > (biggest.valor ?? 0))) biggest = c
@@ -285,7 +328,7 @@ export function CsMinutas() {
         detail: (c) => `${c.valor == null ? '—' : brl(c.valor)} · vence ${fmtDate(c.dueDate)}`,
       })
     return out
-  }, [filtered])
+  }, [filtered, lucro])
 
   const insightDrill = useMemo(
     () => insights.find((i) => i.id === insightSel) ?? null,
@@ -310,8 +353,8 @@ export function CsMinutas() {
   function exportCsv() {
     const head = [
       'URL do card', 'ID', 'Cliente', 'Responsável', 'Dívida do Cliente', 'Valor da Minuta Final',
-      'Última Negociação', 'Resguardado', 'Mês resguardo', 'Vencimento', 'Dias até vencer',
-      'Bucket', '% desconto', 'Etiqueta', 'Fase', 'Situação',
+      'Última Negociação', 'Lucro Estimado', 'Resguardado', 'Mês resguardo', 'Vencimento',
+      'Dias até vencer', 'Bucket', '% desconto', 'Etiqueta', 'Fase', 'Situação',
     ]
     const rows: CsvValue[][] = visibleCards.map((c) => [
       pipefyUrl(c.pipefyCardId),
@@ -321,6 +364,7 @@ export function CsMinutas() {
       c.divida ?? '',
       c.valor ?? '',
       c.ultimaNegociacao ?? '',
+      c.lucroEstimado ?? '', // vazio (não 0) quando não dá pra estimar — 0 é um lucro válido
       c.resguardo ?? '',
       c.resguardoMonth ?? '',
       fmtDate(c.dueDate),
@@ -520,6 +564,20 @@ export function CsMinutas() {
                           <td className="px-3 py-1.5 text-right text-xs tabular-nums text-muted-foreground">
                             {c.ultimaNegociacao == null ? '—' : brl(c.ultimaNegociacao)}
                           </td>
+                          {/* Sinal manda na cor, como a "Margem" do painel do CEO (CeoSaudeEquipe):
+                              positivo em success, negativo em destructive, sem estimativa em "—". */}
+                          <td
+                            className={cn(
+                              'px-3 py-1.5 text-right text-xs font-medium tabular-nums',
+                              c.lucroEstimado == null
+                                ? 'text-muted-foreground'
+                                : c.lucroEstimado < 0
+                                  ? 'text-destructive'
+                                  : 'text-success',
+                            )}
+                          >
+                            {c.lucroEstimado == null ? '—' : brl(c.lucroEstimado)}
+                          </td>
                           <td
                             className="px-3 py-1.5 text-right text-xs tabular-nums text-muted-foreground"
                             title={c.resguardoMonth ? `Resguardo do ${c.resguardoMonth}º mês` : undefined}
@@ -556,8 +614,10 @@ export function CsMinutas() {
 
               <p className="mt-2 text-[11px] text-muted-foreground">
                 Dívida do Cliente = dívida atual (sem desconto) · Valor da Minuta Final = valor da
-                minuta emitida · Última Negociação = Q.D real da fase de negociação · % desc. = 1 −
-                (Minuta Final ÷ Dívida) · Resguardado = valor do mês mais avançado preenchido (o
+                minuta emitida · Última Negociação = Q.D real da fase de negociação ·{' '}
+                <span className="text-foreground">Lucro Est. = Minuta Final − Última Negociação</span>{' '}
+                (só com os dois preenchidos; negativo = negociação fechada acima da minuta) · % desc.
+                = 1 − (Minuta Final ÷ Dívida) · Resguardado = valor do mês mais avançado preenchido (o
                 superscrito é o mês). Clique num cabeçalho para ordenar; clique num cliente para abrir
                 o card (a minuta está anexada nele).
               </p>
@@ -594,6 +654,50 @@ export function CsMinutas() {
                     card(s) ainda sem minuta (sem data de quitação).
                   </p>
                 )}
+              </div>
+
+              {/* Lucro estimado — mesmo desenho da "Margem" por departamento do painel do CEO
+                  (CeoSaudeEquipe): o resultado grande em cima, colorido pelo sinal, e os dois lados
+                  da conta logo abaixo, pra dar pra conferir a subtração de olho. Acompanha o filtro
+                  de situação (é métrica de carteira, como o resguardo), não o bucket clicado. */}
+              <div className="rounded-2xl border border-border bg-gradient-card p-4 shadow-card">
+                <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                  Lucro estimado
+                </div>
+                <div
+                  className={cn(
+                    'mt-1 text-2xl font-semibold tracking-tight tabular-nums',
+                    lucro.count === 0
+                      ? 'text-muted-foreground'
+                      : lucro.total < 0
+                        ? 'text-destructive'
+                        : 'text-success',
+                  )}
+                >
+                  {lucro.count === 0 ? '—' : brl(lucro.total)}
+                </div>
+                <dl className="mt-3 grid grid-cols-2 gap-2 border-t border-border/60 pt-2">
+                  <div>
+                    <dt className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                      Minuta final
+                    </dt>
+                    <dd className="mt-0.5 text-xs font-medium tabular-nums text-foreground">
+                      {brl(lucro.minuta)}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                      − Últ. negociação
+                    </dt>
+                    <dd className="mt-0.5 text-xs font-medium tabular-nums text-foreground">
+                      {brl(lucro.negociado)}
+                    </dd>
+                  </div>
+                </dl>
+                <p className="mt-2 text-xs text-muted-foreground">
+                  {nf(lucro.count)} de {nf(filtered.length)} card(s) com os dois valores ·{' '}
+                  <span className="text-foreground">{STATUS_NOUN[status]}</span>
+                </p>
               </div>
 
               <div className="rounded-2xl border border-border bg-gradient-card p-4 shadow-card">
