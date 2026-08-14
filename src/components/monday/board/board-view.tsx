@@ -16,6 +16,7 @@ import {
 import { Plus } from 'lucide-react'
 import { toast } from 'sonner'
 import { moveTask } from '@/app/actions/monday-tasks'
+import { useDragScroll } from '@/hooks/use-drag-scroll'
 import { STATUS_ORDER, STATUS_META } from '@/lib/monday/domain'
 import type { MondayTaskStatus, MondayTaskWithTags } from '@/lib/monday/types'
 import { cn } from '@/lib/utils'
@@ -41,6 +42,7 @@ export function BoardView({ projectId, boardId, members, initialTasks, currentUs
   const [detailOpen, setDetailOpen] = useState(false)
   const [detailTask, setDetailTask] = useState<MondayTaskWithTags | null>(null)
   const [mounted, setMounted] = useState(false)
+  const board = useDragScroll<HTMLDivElement>()
 
   // O DragOverlay e portado para o body: o <main class="fade-up"> mantem um
   // transform (translateY(0), fill-mode both), o que o tornaria o bloco de contencao
@@ -130,7 +132,14 @@ export function BoardView({ projectId, boardId, members, initialTasks, currentUs
   return (
     <>
       <DndContext sensors={sensors} onDragStart={onDragStart} onDragEnd={onDragEnd}>
-        <div className="flex gap-4 overflow-x-auto pb-4">
+        {/* Board de altura fixa (viewport menos o cabecalho/abas do projeto): as fases
+            nao crescem mais com a quantidade de cards — cada uma rola por dentro, e a
+            navegacao lateral e feita segurando e puxando o fundo (sem barra horizontal). */}
+        <div
+          ref={board.ref}
+          onPointerDown={board.onPointerDown}
+          className="scrollbar-none flex h-[calc(100dvh-20rem)] min-h-96 cursor-grab gap-4 overflow-x-auto overflow-y-hidden overscroll-x-contain"
+        >
           {STATUS_ORDER.map((status) => (
             <Column
               key={status}
@@ -197,7 +206,7 @@ function Column({
   const meta = STATUS_META[status]
 
   return (
-    <div className="flex w-72 shrink-0 flex-col">
+    <div className="flex h-full w-72 shrink-0 flex-col">
       <div className="mb-2 flex items-center justify-between px-1">
         <div className="flex items-center gap-2">
           <span className={cn('size-2.5 rounded-full', meta.dot)} />
@@ -212,7 +221,8 @@ function Column({
       <div
         ref={setNodeRef}
         className={cn(
-          'flex min-h-24 flex-1 flex-col gap-2 rounded-lg border border-dashed p-2 transition-colors',
+          // min-h-0 deixa o flex-child encolher (senao o overflow-y-auto nunca ativa).
+          'scrollbar-slim flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto overscroll-y-contain rounded-lg border border-dashed p-2 transition-colors',
           isOver ? 'border-primary bg-primary/5' : 'border-transparent bg-muted/40',
         )}
       >
@@ -242,12 +252,15 @@ function DraggableCard({
   onClick: (task: MondayTaskWithTags) => void
 }) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: task.id })
+  // data-no-pan: o card e do dnd-kit — arrastar aqui move a tarefa, nao o board.
+  // shrink-0: a coluna agora rola, entao o card nao pode ser espremido pelo flex.
   return (
     <div
       ref={setNodeRef}
       {...listeners}
       {...attributes}
-      className={cn('touch-none', isDragging && 'opacity-40')}
+      data-no-pan
+      className={cn('shrink-0 touch-none', isDragging && 'opacity-40')}
     >
       <TaskCard task={task} memberLabel={memberLabel} onClick={() => onClick(task)} />
     </div>

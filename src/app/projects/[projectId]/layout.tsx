@@ -13,6 +13,7 @@ import { ProjectName } from '@/components/monday/projects/project-name'
 import { ProjectDescription } from '@/components/monday/projects/project-description'
 import { DeleteProjectButton } from '@/components/monday/projects/delete-project-button'
 import { ManageMembersButton } from '@/components/monday/projects/manage-members-dialog'
+import { TransferProjectButton } from '@/components/monday/projects/transfer-project-button'
 
 export default async function ProjectLayout({
   children,
@@ -33,6 +34,11 @@ export default async function ProjectLayout({
     getAssignableUsers(),
   ])
   if (!project) notFound()
+
+  // O dono e sempre membro (trigger handle_new_monday_project), entao o nome sai da
+  // lista que ja veio — sem consulta extra so para exibi-lo.
+  const ownerProfile = members.find((m) => m.user_id === project.owner_id)?.profile
+  const ownerName = ownerProfile?.name || ownerProfile?.email || 'Sem dono'
 
   return (
     <MondayShell>
@@ -63,6 +69,13 @@ export default async function ProjectLayout({
                 ownerId={project.owner_id}
                 currentUserId={profile.id}
                 initialMembers={members}
+                assignableUsers={assignableUsers}
+              />
+              <TransferProjectButton
+                projectId={projectId}
+                projectName={project.name}
+                ownerId={project.owner_id}
+                ownerName={ownerName}
                 assignableUsers={assignableUsers}
               />
               {/* Gate de papel: o layout ja redireciona quem nao e manager/admin (gerencia).

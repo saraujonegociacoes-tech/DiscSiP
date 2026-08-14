@@ -8,7 +8,10 @@ import type {
   MondaySprintStatus,
   MondaySprintWithStats,
   MondayBurndownPoint,
+  MondayTaskPriority,
 } from '@/lib/monday/types'
+
+type ServerClient = Awaited<ReturnType<typeof createServerClient>>
 
 // ─── Leitura ────────────────────────────────────────────────────────────────
 
@@ -39,6 +42,19 @@ export async function getBurndown(sprintId: string): Promise<MondayBurndownPoint
 
 // ─── Mutacao ────────────────────────────────────────────────────────────────
 
+/**
+ * Subtarefa informada na criacao do sprint. Vira uma tarefa normal do board — os
+ * campos sao os mesmos de `CreateTaskInput`, menos o `status` (sempre "Fazendo").
+ */
+export type CreateSprintSubtask = {
+  title: string
+  description?: string | null
+  priority?: MondayTaskPriority
+  assignee_id?: string | null
+  estimate?: number | null
+  due_date?: string | null
+}
+
 export type CreateSprintInput = {
   projectId: string
   name: string
@@ -46,9 +62,13 @@ export type CreateSprintInput = {
   start_date?: string | null
   end_date?: string | null
   status?: MondaySprintStatus
+  /** Criadas junto com o sprint, ja na fase "Fazendo" do board. */
+  subtasks?: CreateSprintSubtask[]
 }
 
-export async function createSprint(input: CreateSprintInput): Promise<{ id?: string; error?: string }> {
+export async function createSprint(
+  input: CreateSprintInput,
+): Promise<{ id?: string; error?: string; warning?: string }> {
   const supabase = await createServerClient()
   const {
     data: { user },
@@ -73,8 +93,66 @@ export async function createSprint(input: CreateSprintInput): Promise<{ id?: str
     .single()
   if (error || !data) return { error: error?.message ?? 'Falha ao criar sprint.' }
 
+  const sprintId = data.id as string
+  const warning = await insertSprintSubtasks(
+    supabase,
+    input.projectId,
+    sprintId,
+    user.id,
+    input.subtasks ?? [],
+  )
+
+  // O sprint aparece em /sprints; as subtarefas, no board — revalida os dois.
   revalidatePath(`/projects/${input.projectId}`)
-  return { id: data.id as string }
+  revalidatePath(`/projects/${input.projectId}/sprints`)
+  return { id: sprintId, warning }
+}
+
+/**
+ * Grava as subtarefas de um sprint recem-criado como tarefas do board primario
+ * (o de menor `position`, mesmo criterio de `getPrimaryBoardData`), todas na fase
+ * "Fazendo" e ligadas ao sprint — num unico INSERT, nao um por linha.
+ *
+ * Falhar aqui NAO invalida o sprint, que ja esta gravado: devolve um aviso em vez de
+ * um erro, senao o usuario acharia que nada foi criado e tentaria de novo (duplicando).
+ */
+async function insertSprintSubtasks(
+  supabase: ServerClient,
+  projectId: string,
+  sprintId: string,
+  userId: string,
+  subtasks: CreateSprintSubtask[],
+): Promise<string | undefined> {
+  const rows = subtasks.filter((s) => s.title.trim())
+  if (!rows.length) return
+
+  const { data: board } = await supabase
+    .from('monday_boards')
+    .select('id')
+    .eq('project_id', projectId)
+    .order('position', { ascending: true })
+    .limit(1)
+    .maybeSingle()
+  if (!board) return 'Sprint criado, mas o projeto não tem board para receber as subtarefas.'
+
+  const now = Date.now()
+  const { error } = await supabase.from('monday_tasks').insert(
+    rows.map((s, i) => ({
+      board_id: board.id as string,
+      sprint_id: sprintId,
+      title: s.title.trim(),
+      description: s.description ?? null,
+      status: 'working',
+      priority: s.priority ?? 'medium',
+      assignee_id: s.assignee_id ?? null,
+      estimate: s.estimate ?? null,
+      due_date: s.due_date ?? null,
+      created_by: userId,
+      // now + i preserva a ordem em que o usuario digitou as subtarefas.
+      position: now + i,
+    })),
+  )
+  return error ? `Sprint criado, mas as subtarefas falharam: ${error.message}` : undefined
 }
 
 export async function updateSprintStatus(

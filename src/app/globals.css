@@ -376,6 +376,14 @@
   &::-webkit-scrollbar-corner { background: transparent; }
 }
 
+/* Sem barra de rolagem visível — o container continua rolável (roda do mouse, teclado,
+   arrasto), só a barra some. Usado no board de Projetos, onde a navegação lateral é
+   feita segurando e puxando o fundo (ver `useDragScroll`). */
+@utility scrollbar-none {
+  scrollbar-width: none;
+  &::-webkit-scrollbar { width: 0; height: 0; }
+}
+
 /* Recharts — mata o anel de foco (retângulo branco "de borda") que o navegador desenha ao
    CLICAR numa barra clicável (drill do Funil). O recharts põe tabindex no wrapper, e o foco
    pode cair no wrapper OU no <svg> surface conforme o navegador — então zeramos o outline em

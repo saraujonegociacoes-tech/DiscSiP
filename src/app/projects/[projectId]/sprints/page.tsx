@@ -2,8 +2,10 @@ import { format, parseISO } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import { Target } from 'lucide-react'
 import { getSprintsWithStats, getBurndown } from '@/app/actions/monday-sprints'
+import { getProjectMembers } from '@/app/actions/monday-projects'
 import { SPRINT_STATUS_META } from '@/lib/monday/domain'
 import { cn } from '@/lib/utils'
+import type { MemberOption } from '@/components/monday/board/task-dialog'
 import { CreateSprintDialog } from '@/components/monday/sprints/create-sprint-dialog'
 import { SprintCardActions } from '@/components/monday/sprints/sprint-card-actions'
 import { BurndownChart } from '@/components/monday/sprints/burndown-chart-lazy'
@@ -18,7 +20,15 @@ export default async function SprintsPage({
   params: Promise<{ projectId: string }>
 }) {
   const { projectId } = await params
-  const sprints = await getSprintsWithStats(projectId)
+  // members alimenta o "Responsável" das subtarefas do formulário de novo sprint.
+  const [sprints, members] = await Promise.all([
+    getSprintsWithStats(projectId),
+    getProjectMembers(projectId),
+  ])
+  const memberOptions: MemberOption[] = members.map((m) => ({
+    id: m.user_id,
+    label: m.profile?.name || m.profile?.email || 'Membro',
+  }))
 
   // Burndown apenas dos sprints ativos (calculo pesado no banco).
   const burndowns = new Map<string, MondayBurndownPoint[]>()
@@ -32,7 +42,7 @@ export default async function SprintsPage({
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h2 className="text-lg font-semibold">Sprints</h2>
-        <CreateSprintDialog projectId={projectId} />
+        <CreateSprintDialog projectId={projectId} members={memberOptions} />
       </div>
 
       {sprints.length === 0 ? (

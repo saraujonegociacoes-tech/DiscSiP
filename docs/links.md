@@ -116,6 +116,15 @@ membership, só `manager`/`admin`).
 - [`editar-apagar-sprint-e-formatacao.md`](projetos-docs/updates/editar-apagar-sprint-e-formatacao.md) —
   botões de editar/apagar sprint no card (apagar devolve tarefas ao backlog) + render `RichText`
   (tópicos/numeração/negrito/quebras) nas descrições de tarefa e objetivos de sprint. **Sem migration.**
+- [`ocultar-concluidos-e-board-arrastavel.md`](projetos-docs/updates/ocultar-concluidos-e-board-arrastavel.md) —
+  switch "Ocultar concluídos" na lista + board de altura fixa (cada fase rola por dentro) e
+  navegação lateral segurando/puxando o fundo no lugar da barra. **Sem migration.**
+- [`subtarefas-na-criacao-do-sprint.md`](projetos-docs/updates/subtarefas-na-criacao-do-sprint.md) —
+  lista de subtarefas no formulário de novo sprint (campos da tarefa, status fixo em "Fazendo");
+  viram tarefas do board num único INSERT. **Sem migration.**
+- [`transferir-projeto.md`](projetos-docs/updates/transferir-projeto.md) — botão "Transferir" no
+  cabeçalho: troca `owner_id` **e** o papel `'owner'` em `monday_project_members` (a RLS de delete
+  olha o papel); dono antigo vira `admin` e pode devolver. **Sem migration.**
 
 ---
 

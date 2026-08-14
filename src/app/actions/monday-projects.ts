@@ -197,6 +197,71 @@ export async function updateProjectName(
   return { name: (data[0] as { name: string }).name }
 }
 
+/**
+ * Passa o projeto para outra pessoa.
+ *
+ * Duas coisas precisam andar JUNTAS: a coluna `monday_projects.owner_id` (o que
+ * agrupa a lista por dono) e o papel 'owner' em `monday_project_members` — porque a
+ * policy `monday_projects_delete` olha o PAPEL (`monday_project_role(id) = 'owner'`),
+ * nao a coluna. Mexer so na coluna deixaria o dono antigo ainda podendo apagar tudo.
+ *
+ * O dono antigo vira 'admin': continua com acesso total e pode devolver o projeto
+ * (`can_manage_monday_project` cobre owner E admin) — o "vice-versa" do pedido.
+ *
+ * Sem migration: as tres escritas ja sao permitidas pelas policies existentes.
+ */
+export async function transferProject(
+  projectId: string,
+  newOwnerId: string,
+): Promise<{ error?: string; warning?: string }> {
+  const supabase = await createServerClient()
+
+  // 1) A troca da coluna e o portao de permissao (RLS can_manage_monday_project).
+  //    Sem permissao o update volta 0 linhas e nenhum erro — mesmo padrao do rename.
+  //    Vindo primeiro, uma recusa nao deixa nenhum papel alterado para tras.
+  const { data, error } = await supabase
+    .from('monday_projects')
+    .update({ owner_id: newOwnerId })
+    .eq('id', projectId)
+    .select('id')
+  if (error) return { error: error.message }
+  if (!data || data.length === 0) {
+    return { error: 'Sem permissão para transferir este projeto.' }
+  }
+
+  // 2) e 3) tocam linhas diferentes da mesma tabela (a do novo dono / as dos demais),
+  //    entao vao em paralelo — uma ida ao banco em vez de duas.
+  const [{ error: promoteError }, { error: demoteError }] = await Promise.all([
+    // Novo dono vira membro 'owner'. upsert porque ele pode ainda nao ser membro.
+    supabase
+      .from('monday_project_members')
+      .upsert(
+        { project_id: projectId, user_id: newOwnerId, role: 'owner' },
+        { onConflict: 'project_id,user_id' },
+      ),
+    // Quem era 'owner' vira 'admin'. O predicado dispensa ler antes quem era o dono.
+    supabase
+      .from('monday_project_members')
+      .update({ role: 'admin' })
+      .eq('project_id', projectId)
+      .eq('role', 'owner')
+      .neq('user_id', newOwnerId),
+  ])
+
+  revalidatePath('/projects')
+  revalidatePath(`/projects/${projectId}`)
+
+  // Sem transacao, os papeis podem ficar a meio caminho. Refazer a transferencia e
+  // idempotente (os tres passos convergem), entao o aviso pede exatamente isso.
+  const failed = promoteError ?? demoteError
+  if (failed) {
+    return {
+      warning: `Projeto transferido, mas os papéis ficaram inconsistentes (${failed.message}). Refaça a transferência.`,
+    }
+  }
+  return {}
+}
+
 export async function archiveProject(projectId: string): Promise<{ error?: string }> {
   const supabase = await createServerClient()
   const { error } = await supabase
