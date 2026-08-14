@@ -1,4 +1,9 @@
-import type { MondayTaskStatus, MondayTaskPriority, MondaySprintStatus } from '@/lib/monday/types'
+import type {
+  MondayTaskStatus,
+  MondayTaskPriority,
+  MondaySprintStatus,
+  MondayProjectOverview,
+} from '@/lib/monday/types'
 
 export const STATUS_META: Record<
   MondayTaskStatus,
@@ -45,6 +50,16 @@ export function formatBrtTime(iso: string): string {
     minute: '2-digit',
     timeZone: 'America/Sao_Paulo',
   })
+}
+
+/**
+ * Projeto "concluido": tem tarefas e todas ja estao em `done`. Projeto vazio (sem
+ * tarefa nenhuma) nao conta como concluido — senao um projeto recem-criado nasceria
+ * escondido pelo filtro "Ocultar concluidos".
+ */
+export function isProjectDone(overview: MondayProjectOverview | null | undefined): boolean {
+  const total = overview?.total_tasks ?? 0
+  return total > 0 && (overview?.done_tasks ?? 0) >= total
 }
 
 /** Iniciais para avatar a partir de um nome/email. */
