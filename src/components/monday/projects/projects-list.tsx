@@ -39,7 +39,7 @@ function groupByOwner(projects: MondayProjectWithStats[]): OwnerGroup[] {
  * useMemo: so refaz quando os projetos mudam ou o switch vira — o custo por render e zero.
  */
 export function ProjectsList({ projects }: { projects: MondayProjectWithStats[] }) {
-  const [hideDone, setHideDone] = useState(false)
+  const [hideDone, setHideDone] = useState(true)
 
   const doneCount = useMemo(
     () => projects.reduce((n, p) => n + (isProjectDone(p.overview) ? 1 : 0), 0),

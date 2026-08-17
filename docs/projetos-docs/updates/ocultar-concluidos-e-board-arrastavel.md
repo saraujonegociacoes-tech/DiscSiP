@@ -33,7 +33,10 @@ O contador do cabeçalho (“N projetos · M pessoas”) segue mostrando o **tot
 escondido aparece no próprio switch. Com tudo concluído e o filtro ligado, entra um aviso
 "Todos os projetos estão concluídos." no lugar das pastas.
 
-O estado **não persiste** entre visitas (`useState`, igual ao do calendário).
+O switch **já entra ligado** (`useState(true)`): o caso comum é olhar só o que está em
+andamento, então concluído nasce escondido e quem quiser ver tudo desliga o filtro. O estado
+**não persiste** entre visitas (`useState`, igual ao do calendário) — cada visita volta a
+esconder os concluídos.
 
 ---
 
