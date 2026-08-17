@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { Mic, MicOff, Volume2, VolumeX, PhoneOff } from 'lucide-react'
 import { useSoftphoneStore } from '@/store/softphoneStore'
 import { useDialerStore } from '@/store/dialerStore'
-import { helperFetch } from '@/lib/constants'
+import { getTransport } from '@/lib/telephony'
 import { cn } from '@/lib/utils'
 
 // O painel de áudio (mute mic/alto-falante) precisa do helper >= 1.7 (endpoint /mute). Em
@@ -42,15 +42,9 @@ export function CallControls() {
     const target = device === 'mic' ? !micMuted : !speakerMuted
     setBusy(device)
     try {
-      const res = await helperFetch('/mute', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ device, muted: target }),
-      })
-      // Só vira o botão se o helper confirmou que aplicou (assertividade: a UI não mente).
-      if (res.ok) setMuted(device, target)
-    } catch {
-      // helper não respondeu — mantém o estado atual
+      // Só vira o botão se o transporte confirmou que aplicou (assertividade: a UI não mente).
+      const applied = await getTransport().setMuted(device, target)
+      if (applied) setMuted(device, target)
     } finally {
       setBusy(null)
     }
@@ -60,9 +54,7 @@ export function CallControls() {
     if (!helperOnline || busy) return
     setBusy('hangup')
     try {
-      await helperFetch('/hangup', { method: 'POST' })
-    } catch {
-      // helper offline — ainda assim avança a UI se havia chamada
+      await getTransport().hangup()
     } finally {
       setBusy(null)
     }

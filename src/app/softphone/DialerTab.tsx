@@ -12,7 +12,7 @@ import { getListFieldLabels } from '@/app/actions/lists'
 import { DISPOSITIONS } from '@/lib/dispositions'
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
-import { helperFetch } from '@/lib/constants'
+import { getTransport } from '@/lib/telephony'
 import type { Campaign } from '@/lib/types/database'
 
 const STATUS_LABEL: Record<string, string> = {
@@ -78,12 +78,10 @@ export function DialerTab() {
     setPreparingMicrosip(true)
     setPrepareError(null)
     try {
-      const res = await helperFetch('/microsip-multicall', { method: 'POST' })
-      const data = await res.json().catch(() => null)
-      if (!res.ok) throw new Error(data?.error ?? 'falhou')
-      const ping = await helperFetch('/ping', { signal: AbortSignal.timeout(3000) })
-      const info = ping.ok ? await ping.json().catch(() => null) : null
-      setHelperOnline(true, info?.version ?? helperVersion, info?.multiCall ?? true)
+      const result = await getTransport().prepareMultiCall()
+      if (!result.ok) throw new Error(result.error ?? 'falhou')
+      const st = getTransport().getStatus()
+      setHelperOnline(true, st.version ?? helperVersion, st.multiCall ?? true)
     } catch (err) {
       setPrepareError(
         err instanceof Error && err.message !== 'falhou'

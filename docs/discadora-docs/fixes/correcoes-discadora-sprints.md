@@ -62,7 +62,8 @@ por diagnóstico, não por patch às cegas.
 **Fase A — Diagnóstico guiado (~10 min, sem alterar código):**
 1. Derrubar o helper oculto e subir com console:
    `taskkill /IM node.exe /F` → `cd local-helper` → `node index.js`
-   (desde a v1.9 o hider já vem desligado; para escondê-lo, `set HELPER_HIDE=1` antes)
+   (⚠️ **atualizado v1.15**: o hider voltou a vir LIGADO. Para ver a janela do softphone durante
+   o diagnóstico, `set HELPER_NO_HIDE=1` antes — a antiga `HELPER_HIDE=1` não existe mais)
    (softphone utilizado visível + log ao vivo).
 2. Rodar **uma campanha antiga** em 1-a-1 e observar:
    - O softphone utilizado estabelece áudio ou a chamada cai sozinha?

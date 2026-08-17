@@ -35,6 +35,25 @@
 
 O servidor Intelbras usa WebSocket sem TLS (`ws://`). Browsers bloqueiam conexões `ws://` a partir de páginas HTTPS por política de mixed content. Tentativa de TLS handshake confirmou que o servidor não suporta WSS na porta 7048.
 
+> ⚠️ **CORRIGIDO em 14/08/2026 — este parágrafo está desatualizado.** A conclusão acima vale
+> **só para a porta 7048** (a porta SIP UDP do tenant), que foi onde o teste original foi feito.
+> A sondagem de 07/08/2026 encontrou o endpoint WebRTC em **outra porta**, no ar e funcionando:
+>
+> ```
+> wss://widevoice8.intelbras.com.br:8089/ws  →  101 Switching Protocols
+>                                               Sec-WebSocket-Protocol: sip
+> ```
+>
+> Sem o subprotocolo `sip` o servidor devolve `400` — é SIP over WebSocket (RFC 7118) de verdade.
+> A plataforma é **Asterisk 22** (`Handphone/22.10.1`), e a Intelbras confirmou o suporte por
+> escrito em 15/07/2026 (Bloco 6 de
+> [`perguntas-intelbras-widevoice.md`](perguntas-intelbras-widevoice.md)).
+>
+> Ou seja: **a premissa que justifica o helper local não vale mais.** A migração para softphone
+> no navegador está em andamento — ver
+> [`../updates/softphone-webrtc-navegador.md`](../updates/softphone-webrtc-navegador.md).
+> O helper segue sendo o caminho de produção até o WebRTC provar paridade.
+
 ### Solução adotada — Helper local + softphone utilizado
 
 Os agentes já usavam o softphone utilizado como softphone para chamadas manuais. O softphone utilizado é um app nativo Windows que conecta ao PABX sem restrições de TLS.
@@ -79,6 +98,12 @@ PABX Intelbras WidevoiceX
 Arquivo: `local-helper/`
 
 App Express mínimo (~40 linhas) rodando em `http://localhost:3001`.
+
+> ⚠️ **Desatualizado (nota de 14/08/2026).** Isto descreve o helper do **Sprint 4**. Ele está hoje
+> na **v1.15**, com ~1145 linhas e 14 endpoints — discagem paralela, corte de toque, fila de
+> `microsip.exe`, mute pelo mixer do Windows, hider de janela e auto-atualização. O mapa atual,
+> arquivo por arquivo, está em [`helper-anatomia.md`](helper-anatomia.md). O texto abaixo fica
+> como registro do desenho original.
 
 **Endpoints:**
 - `GET /ping` — health check (usado pelo Blue Desk para mostrar status "Helper online/offline")

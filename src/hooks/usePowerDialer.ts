@@ -12,17 +12,7 @@ import {
 import { saveCallLog } from '@/app/actions/dialer'
 import { sendDispositionNotification } from '@/app/actions/notifications'
 import type { ContactStatus } from '@/lib/types/database'
-import { helperFetch } from '@/lib/constants'
-
-const onlyDigits = (s: string) => String(s || '').replace(/\D/g, '')
-
-// Normaliza como o helper (formatNumber): tira não-dígitos e o código de país 55, para casar
-// o número do contato com o número discado ('021' + DDD + número) que volta no /parallel-status.
-function normalizeForMatch(raw: string): string {
-  let d = onlyDigits(raw)
-  if (d.length > 11 && d.startsWith('55')) d = d.slice(2)
-  return d
-}
+import { getTransport, digitsOf as onlyDigits, normalizeForMatch } from '@/lib/telephony'
 
 async function retryGetNextContact(
   campaignId: string,
@@ -39,39 +29,21 @@ async function retryGetNextContact(
   return null
 }
 
-async function triggerMicroSIP(number: string): Promise<void> {
-  const clean = onlyDigits(number)
+async function triggerDial(number: string): Promise<void> {
   try {
-    await helperFetch('/call', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ number: clean }),
-    })
+    await getTransport().call(number)
   } catch {
-    // Helper offline — MicroSIP não será acionado automaticamente
+    // Transporte indisponível — a chamada não foi acionada automaticamente
   }
 }
 
-// Dispara o lote no helper. Devolve o id da sessão (para a UI só aceitar o status DESTE lote)
-// ou uma mensagem de erro — antes o erro era engolido e o agente ficava olhando "Discando N…"
-// sem nunca ter saído chamada nenhuma (caso clássico: MicroSIP em modo de chamada única).
+// Dispara o lote no transporte. Devolve o id da sessão (para a UI só aceitar o status DESTE
+// lote) ou uma mensagem de erro — antes o erro era engolido e o agente ficava olhando
+// "Discando N…" sem nunca ter saído chamada nenhuma (caso clássico: MicroSIP em chamada única).
 async function triggerParallel(
   numbers: string[]
 ): Promise<{ sessionId: number | null; error?: string }> {
-  try {
-    const res = await helperFetch('/dial-parallel', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ numbers: numbers.map(onlyDigits) }),
-    })
-    const data = await res.json().catch(() => null)
-    if (!res.ok) {
-      return { sessionId: null, error: data?.message ?? data?.error ?? 'O helper recusou a discagem.' }
-    }
-    return { sessionId: typeof data?.session === 'number' ? data.session : null }
-  } catch {
-    return { sessionId: null, error: 'Helper offline — a discagem não foi disparada.' }
-  }
+  return getTransport().dialParallel(numbers)
 }
 
 // Bipe curto no atendimento — o agente pode estar fazendo outra coisa enquanto disca N.
@@ -133,7 +105,7 @@ export function usePowerDialer() {
     }
     setCurrentContact(contact)
     setCallStatus('calling', contact.phone_number)
-    await triggerMicroSIP(contact.phone_number)
+    await triggerDial(contact.phone_number)
   }, [campaign, agentId, setCurrentContact, setDialerStatus, setCallStatus])
 
   // ─── Modo paralelo (preditivo) ─────────────────────────────────────────────────
@@ -193,8 +165,7 @@ export function usePowerDialer() {
 
     const resolve = async () => {
       try {
-        const res = await helperFetch('/parallel-status', { signal: AbortSignal.timeout(2000) })
-        const st = await res.json()
+        const st = await getTransport().getParallelStatus()
         if (done || !st.active) return
         // Só aceita o status DESTE lote. Sem a trava, o resultado do lote anterior (que segue
         // no helper, com vencedor definido) resolveria o lote novo e mandaria contatos que
@@ -292,13 +263,12 @@ export function usePowerDialer() {
     let cancelled = false
     const poll = async () => {
       try {
-        const res = await helperFetch('/parallel-status', { signal: AbortSignal.timeout(2000) })
-        const st = await res.json()
+        const st = await getTransport().getParallelStatus()
         if (cancelled || !st.active || !st.winner) return
         const w = st.calls?.[st.winner]
         if (w && w !== 'answered') setCallStatus('ended')
       } catch {
-        // helper offline
+        // transporte indisponível
       }
     }
     poll()
@@ -318,8 +288,7 @@ export function usePowerDialer() {
     let baseline: number | null = null
     const poll = async () => {
       try {
-        const res = await helperFetch('/events', { signal: AbortSignal.timeout(2000) })
-        const ev = await res.json()
+        const ev = await getTransport().getLastEvent()
         if (cancelled) return
         if (baseline === null) {
           baseline = ev.id
@@ -329,7 +298,7 @@ export function usePowerDialer() {
           setCallStatus('ended')
         }
       } catch {
-        // helper offline — sem detecção automática; o botão Encerrar ainda funciona
+        // transporte indisponível — sem detecção automática; o botão Encerrar ainda funciona
       }
     }
     poll()
@@ -380,13 +349,8 @@ export function usePowerDialer() {
     setParallelBatch([])
     setParallelSessionId(null)
     setCallStatus('idle')
-    try {
-      // /hangup-calling (helper >= 1.8) poupa uma linha que tenha acabado de ser atendida.
-      // Em helper antigo a rota não existe (404) e as linhas caem sozinhas por não-atendimento.
-      await helperFetch('/hangup-calling', { method: 'POST' })
-    } catch {
-      // helper offline — idem
-    }
+    // Poupa uma linha que tenha acabado de ser atendida — conversa em curso nunca cai por aqui.
+    await getTransport().hangupCalling()
     await releaseContacts(batch.map((c) => c.id))
   }, [setDialerStatus, setParallelBatch, setParallelSessionId, setCallStatus])
 

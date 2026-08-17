@@ -1,0 +1,478 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Probe WebRTC/SIP — Blue Desk (Etapa 0)</title>
+<style>
+  :root { color-scheme: light dark; --bg:#0f1116; --fg:#e6e8ee; --mut:#8b93a7; --line:#262b36;
+          --ok:#3fb950; --err:#f85149; --warn:#d29922; --acc:#3b82f6; }
+  * { box-sizing: border-box; }
+  body { margin:0; padding:24px; background:var(--bg); color:var(--fg);
+         font:14px/1.5 ui-sans-serif,system-ui,"Segoe UI",sans-serif; }
+  h1 { font-size:18px; margin:0 0 4px; }
+  .sub { color:var(--mut); margin:0 0 20px; font-size:13px; }
+  fieldset { border:1px solid var(--line); border-radius:10px; padding:14px; margin:0 0 16px; }
+  legend { color:var(--mut); font-size:12px; text-transform:uppercase; letter-spacing:.08em; padding:0 6px; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:10px; }
+  label { display:block; font-size:12px; color:var(--mut); margin-bottom:4px; }
+  input[type=text], input[type=password] { width:100%; padding:8px 10px; border-radius:8px;
+    border:1px solid var(--line); background:#171a21; color:var(--fg); font:inherit; }
+  .row { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-top:12px; }
+  button { padding:9px 14px; border-radius:8px; border:1px solid var(--line); background:#1c212b;
+    color:var(--fg); font:inherit; font-weight:500; cursor:pointer; }
+  button:hover:not(:disabled) { background:#252b37; }
+  button:disabled { opacity:.4; cursor:not-allowed; }
+  button.primary { background:var(--acc); border-color:var(--acc); color:#fff; }
+  button.danger { background:#3a1d1f; border-color:#5c2b2e; color:#ffb4b0; }
+  #log { background:#0b0d12; border:1px solid var(--line); border-radius:10px; padding:12px;
+    height:340px; overflow:auto; font:12px/1.55 ui-monospace,"Cascadia Code",Consolas,monospace;
+    white-space:pre-wrap; word-break:break-word; }
+  .ok{color:var(--ok)} .err{color:var(--err)} .warn{color:var(--warn)} .dim{color:var(--mut)}
+  .verdict { display:grid; gap:6px; margin-top:12px; }
+  .v { padding:8px 12px; border-radius:8px; border:1px solid var(--line); background:#131720; font-size:13px; }
+  .v b { font-weight:600; }
+  .pill { display:inline-block; min-width:64px; font-weight:600; }
+</style>
+</head>
+<body>
+
+<h1>Probe WebRTC/SIP — Etapa 0</h1>
+<p class="sub">
+  Responde as 4 incógnitas que decidem a migração do <code>local-helper</code> para softphone no
+  navegador. Nada aqui toca o Blue Desk — é um arquivo solto.
+  Plano: <code>docs/discadora-docs/updates/softphone-webrtc-navegador.md</code>
+</p>
+
+<fieldset>
+  <legend>Credenciais do ramal</legend>
+  <div class="grid">
+    <div>
+      <label>WebSocket (WSS)</label>
+      <input type="text" id="ws" value="wss://widevoice8.intelbras.com.br:8089/ws" />
+    </div>
+    <div>
+      <label>Domínio SIP</label>
+      <input type="text" id="domain" value="widevoice8.intelbras.com.br" />
+    </div>
+    <div>
+      <label>Ramal</label>
+      <input type="text" id="ext" placeholder="5125" />
+    </div>
+    <div>
+      <label>Senha SIP</label>
+      <input type="password" id="pass" placeholder="senha do ramal" />
+    </div>
+  </div>
+  <div class="row">
+    <button class="primary" id="btnReg">1 · Registrar</button>
+    <button id="btnUnreg" disabled>Desregistrar</button>
+    <span class="dim" id="regState">não registrado</span>
+  </div>
+  <div class="row">
+    <button id="btnDiag">0 · Diagnóstico de mídia (não precisa registrar)</button>
+    <span class="dim">o que o navegador oferece — evidência para o ticket</span>
+  </div>
+</fieldset>
+
+<fieldset>
+  <legend>Discagem</legend>
+  <div class="grid">
+    <div>
+      <label>Número A (celular seu)</label>
+      <input type="text" id="numA" placeholder="11952085529" />
+    </div>
+    <div>
+      <label>Número B (para o teste de 2 linhas)</label>
+      <input type="text" id="numB" placeholder="11999999999" />
+    </div>
+  </div>
+  <div class="row">
+    <label style="margin:0"><input type="checkbox" id="csp" checked /> aplicar CSP 021 + DDD (como a produção disca)</label>
+  </div>
+  <div class="row">
+    <button id="btn1" disabled>2 · Discar A (1 linha)</button>
+    <button id="btn2" disabled>3 · Discar A+B (2 simultâneas)</button>
+    <button class="danger" id="btnHang" disabled>Desligar tudo</button>
+  </div>
+</fieldset>
+
+<div class="verdict" id="verdict">
+  <div class="v"><span class="pill dim">—</span> <b>1. Registro</b> · o ramal existe para WebRTC</div>
+  <div class="v"><span class="pill dim">—</span> <b>2. Áudio</b> · <code>webrtc=yes</code> ligado e codec compatível</div>
+  <div class="v"><span class="pill dim">—</span> <b>3. Multi-linha</b> · 2 chamadas no mesmo ramal (preditiva)</div>
+  <div class="v"><span class="pill dim">—</span> <b>4. Sem TURN</b> · mídia direta, sem custo de infra</div>
+</div>
+
+<p class="sub" style="margin:14px 0 6px">Log (timestamps em ms — como o <code>helper.log</code>)</p>
+<div id="log"></div>
+<audio id="remote" autoplay></audio>
+
+<script type="module">
+import {
+  UserAgent, Registerer, RegistererState, Inviter, SessionState
+} from 'https://cdn.jsdelivr.net/npm/sip.js@0.21.2/+esm'
+
+const $ = (id) => document.getElementById(id)
+const logEl = $('log')
+const t0 = Date.now()
+
+function log(msg, cls = '') {
+  const ms = String(Date.now() - t0).padStart(6, ' ')
+  const line = document.createElement('div')
+  if (cls) line.className = cls
+  line.textContent = `[+${ms}ms] ${msg}`
+  logEl.appendChild(line)
+  logEl.scrollTop = logEl.scrollHeight
+}
+
+// Os 4 vereditos da Etapa 0. Cada teste vira verde/vermelho sozinho.
+function verdict(i, state, detail) {
+  const row = $('verdict').children[i]
+  const pill = row.querySelector('.pill')
+  const map = {
+    ok: ['PASSOU', 'ok'],
+    err: ['FALHOU', 'err'],
+    warn: ['ATENÇÃO', 'warn'],
+    skip: ['INCONCLUSIVO', 'warn'],
+  }
+  const [txt, cls] = map[state] ?? ['—', 'dim']
+  pill.textContent = txt
+  pill.className = `pill ${cls}`
+  // Um único nó de detalhe, reaproveitado — antes cada chamada CONCATENAVA o texto e o
+  // veredito aparecia duplicado ("só 0 linha(s) — só 0 linha(s)").
+  let det = row.querySelector('.det')
+  if (!det) {
+    det = document.createElement('span')
+    det.className = 'det dim'
+    row.appendChild(det)
+  }
+  det.textContent = detail ? ` — ${detail}` : ''
+}
+
+// Estado do teste 2. O teste 3 só significa alguma coisa se a chamada de 1 linha funcionar:
+// se as duas linhas morrem pelo MESMO motivo do teste 2, isso não diz nada sobre multi-linha.
+let audioOk = null   // null = não testado · false = falhou · true = passou
+
+// Mesma normalização do helper (formatNumber): tira não-dígitos e o 55, prefixa o CSP.
+function formatNumber(raw) {
+  let d = String(raw).replace(/\D/g, '')
+  if (d.length > 11 && d.startsWith('55')) d = d.slice(2)
+  return ($('csp').checked ? '021' : '') + d
+}
+
+let ua = null, registerer = null
+const sessions = new Map()   // número → Inviter
+let sharedStream = null      // UMA captura de mic para todas as linhas (ver §6 do plano)
+
+// Uma única getUserMedia reusada por todas as sessões. Sem isso o sip.js captura um stream por
+// chamada — com 3 linhas são 3 acessos ao microfone e comportamento imprevisível.
+async function getMic() {
+  if (sharedStream) return sharedStream
+  sharedStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false })
+  log('microfone capturado (stream única compartilhada entre as linhas)', 'ok')
+  return sharedStream
+}
+
+$('btnReg').onclick = async () => {
+  const ext = $('ext').value.trim()
+  const pass = $('pass').value
+  const domain = $('domain').value.trim()
+  const wsUrl = $('ws').value.trim()
+  if (!ext || !pass) return log('preencha ramal e senha', 'err')
+
+  try {
+    await getMic()   // pede a permissão AGORA, não na 1ª ligação
+  } catch (e) {
+    log(`microfone negado: ${e.message}`, 'err')
+    verdict(1, 'err', 'sem permissão de microfone')
+    return
+  }
+
+  const uri = UserAgent.makeURI(`sip:${ext}@${domain}`)
+  if (!uri) return log('URI SIP inválida', 'err')
+
+  log(`conectando em ${wsUrl} …`)
+  ua = new UserAgent({
+    uri,
+    authorizationUsername: ext,
+    authorizationPassword: pass,
+    transportOptions: { server: wsUrl, traceSip: true },
+    sessionDescriptionHandlerFactoryOptions: {
+      peerConnectionConfiguration: {
+        iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
+      },
+    },
+    logLevel: 'warn',
+  })
+
+  ua.delegate = {
+    onDisconnect: (err) => log(`transporte caiu${err ? ': ' + err.message : ''}`, 'err'),
+  }
+
+  try {
+    await ua.start()
+    log('WebSocket conectado (101 Switching Protocols)', 'ok')
+  } catch (e) {
+    log(`falhou ao conectar o WebSocket: ${e.message}`, 'err')
+    verdict(0, 'err', 'WebSocket não conectou')
+    return
+  }
+
+  registerer = new Registerer(ua)
+  registerer.stateChange.addListener((s) => {
+    $('regState').textContent = String(s).toLowerCase()
+    if (s === RegistererState.Registered) {
+      log('REGISTRADO — o ramal aceita WebRTC', 'ok')
+      verdict(0, 'ok', 'o ramal aceita SIP over WebSocket')
+      $('btn1').disabled = $('btn2').disabled = $('btnUnreg').disabled = false
+      $('btnReg').disabled = true
+    }
+    if (s === RegistererState.Unregistered) log('desregistrado', 'dim')
+  })
+
+  try {
+    await registerer.register({
+      requestDelegate: {
+        onReject: (r) => {
+          log(`REGISTER rejeitado: ${r.message.statusCode} ${r.message.reasonPhrase}`, 'err')
+          verdict(0, 'err', `${r.message.statusCode} ${r.message.reasonPhrase}`)
+        },
+      },
+    })
+  } catch (e) {
+    log(`erro no REGISTER: ${e.message}`, 'err')
+    verdict(0, 'err', e.message)
+  }
+}
+
+$('btnUnreg').onclick = async () => {
+  try { await registerer?.unregister() } catch {}
+  try { await ua?.stop() } catch {}
+  $('btnReg').disabled = false
+  $('btn1').disabled = $('btn2').disabled = $('btnUnreg').disabled = true
+}
+
+// Liga um número. `attachAudio` só é true para a linha que deve ser ouvida — no modo 2 linhas,
+// só o VENCEDOR recebe áudio (é assim que o ringback múltiplo deixa de ser um problema).
+async function dial(rawNumber, { attachAudio }) {
+  const dialed = formatNumber(rawNumber)
+  const target = UserAgent.makeURI(`sip:${dialed}@${$('domain').value.trim()}`)
+  if (!target) return log(`número inválido: ${rawNumber}`, 'err')
+
+  const stream = await getMic()
+  const inviter = new Inviter(ua, target, {
+    sessionDescriptionHandlerOptions: {
+      constraints: { audio: true, video: false },
+      mediaStream: stream,
+    },
+  })
+  sessions.set(dialed, inviter)
+  $('btnHang').disabled = false
+
+  const startedAt = Date.now()
+
+  inviter.stateChange.addListener(async (s) => {
+    if (s === SessionState.Established) {
+      const secs = ((Date.now() - startedAt) / 1000).toFixed(1)
+      audioOk = true
+      log(`${dialed}: ATENDEU em ${secs}s`, 'ok')
+      if (attachAudio) {
+        attachRemote(inviter)
+        setTimeout(() => inspect(inviter, dialed), 3000)
+      } else {
+        log(`${dialed}: atendeu mas NÃO recebe áudio (é uma linha perdedora do lote)`, 'dim')
+      }
+    }
+    if (s === SessionState.Terminated) {
+      log(`${dialed}: encerrada`, 'dim')
+      sessions.delete(dialed)
+      if (sessions.size === 0) $('btnHang').disabled = true
+    }
+  })
+
+  log(`${dialed}: INVITE enviado…`)
+  await inviter.invite({
+    requestDelegate: {
+      // 180/183 — o que o helper NUNCA viu. É aqui que mora a classificação de verdade.
+      onProgress: (r) => log(`${dialed}: ${r.message.statusCode} ${r.message.reasonPhrase}`, 'dim'),
+      onReject: (r) => {
+        const c = r.message.statusCode
+        const motivo = { 486:'ocupado', 408:'não atende', 480:'indisponível', 404:'inexistente',
+                         484:'número incompleto', 603:'recusada', 503:'serviço indisponível',
+                         488:'MÍDIA INCOMPATÍVEL (negociação SDP)',
+                         606:'mídia não aceita' }[c] ?? '?'
+        log(`${dialed}: REJEITADA ${c} ${r.message.reasonPhrase} (${motivo})`, 'err')
+
+        // O Asterisk costuma explicar o 488 num header `Warning` (ex.: 305 "Incompatible media
+        // format"). É a frase exata que faz o ticket na Intelbras ser resolvido numa ida só.
+        const warning = r.message.getHeader?.('Warning')
+        if (warning) log(`   ↳ Warning: ${warning}`, 'warn')
+
+        if (c === 488 || c === 606) {
+          audioOk = false
+          verdict(1, 'err', `${c} — o PABX recusou a mídia oferecida pelo navegador`)
+          log('   ↳ 488 NÃO é número errado nem ocupado: é o PABX recusando o ÁUDIO oferecido.', 'err')
+          log('   ↳ Diagnóstico fechado em 14/08: acontece inclusive discando RAMAL INTERNO, que', 'err')
+          log('   ↳ não passa pelo tronco — logo o problema é o ENDPOINT do ramal registrado, que', 'err')
+          log('   ↳ não está com perfil de mídia WebRTC (DTLS-SRTP + AVPF). É config do PABX.', 'err')
+          log('   ↳ Ver docs/discadora-docs/updates/softphone-webrtc-navegador.md §1.2', 'warn')
+        }
+      },
+    },
+  })
+  return inviter
+}
+
+function attachRemote(inviter) {
+  const pc = inviter.sessionDescriptionHandler?.peerConnection
+  if (!pc) return log('sem peerConnection — não dá para anexar o áudio', 'err')
+  const ms = new MediaStream()
+  pc.getReceivers().forEach((r) => r.track && ms.addTrack(r.track))
+  $('remote').srcObject = ms
+  $('remote').play().catch(() => {})
+}
+
+// Veredito automático de áudio + TURN: lê as estatísticas reais da conexão.
+async function inspect(inviter, dialed) {
+  const pc = inviter.sessionDescriptionHandler?.peerConnection
+  if (!pc) return
+  const stats = await pc.getStats()
+
+  let inbound = null, outbound = null, pair = null
+  const codecs = new Map(), candidates = new Map()
+  stats.forEach((r) => {
+    if (r.type === 'inbound-rtp' && r.kind === 'audio') inbound = r
+    if (r.type === 'outbound-rtp' && r.kind === 'audio') outbound = r
+    if (r.type === 'candidate-pair' && (r.selected || r.state === 'succeeded')) pair = r
+    if (r.type === 'codec') codecs.set(r.id, r)
+    if (r.type === 'local-candidate' || r.type === 'remote-candidate') candidates.set(r.id, r)
+  })
+
+  const codec = inbound?.codecId ? codecs.get(inbound.codecId) : null
+  const codecName = codec ? `${codec.mimeType} @ ${codec.clockRate}Hz` : 'desconhecido'
+  const recv = inbound?.bytesReceived ?? 0
+  const sent = outbound?.bytesSent ?? 0
+
+  log(`--- diagnóstico de ${dialed} (3s de conversa) ---`)
+  log(`codec negociado : ${codecName}`)
+  log(`áudio recebido  : ${recv} bytes`)
+  log(`áudio enviado   : ${sent} bytes`)
+
+  if (recv > 0 && sent > 0) {
+    verdict(1, 'ok', codecName)
+    log('ÁUDIO NOS DOIS SENTIDOS — webrtc=yes está ligado e o codec serve', 'ok')
+  } else if (sent > 0 && recv === 0) {
+    verdict(1, 'err', 'só áudio de saída')
+    log('SEM ÁUDIO DE ENTRADA — típico de webrtc=yes faltando (DTLS não fecha) ou codec incompatível. É ticket na Intelbras, não bug do front.', 'err')
+  } else {
+    verdict(1, 'err', 'nenhuma mídia')
+    log('NENHUMA MÍDIA fluiu — ver o plano §1, critérios de aceite', 'err')
+  }
+
+  const local = pair?.localCandidateId ? candidates.get(pair.localCandidateId) : null
+  const tipo = local?.candidateType ?? '?'
+  log(`candidato local : ${tipo} (${local?.protocol ?? '?'})`)
+  if (tipo === 'relay') {
+    verdict(3, 'err', 'usou relay — precisa de TURN')
+    log('A mídia passou por RELAY: em produção isso exigiria um servidor TURN (custo).', 'warn')
+  } else if (tipo === '?') {
+    verdict(3, 'warn', 'não foi possível determinar')
+  } else {
+    verdict(3, 'ok', `mídia direta via ${tipo}`)
+    log('Mídia DIRETA — sem TURN, sem custo de infraestrutura.', 'ok')
+  }
+}
+
+$('btn1').onclick = async () => {
+  const a = $('numA').value.trim()
+  if (!a) return log('preencha o número A', 'err')
+  log('=== TESTE 2 · uma linha ===')
+  await dial(a, { attachAudio: true })
+}
+
+$('btn2').onclick = async () => {
+  const a = $('numA').value.trim(), b = $('numB').value.trim()
+  if (!a || !b) return log('preencha os números A e B', 'err')
+  log('=== TESTE 3 · duas linhas simultâneas (preditiva) ===')
+  // Só a PRIMEIRA recebe áudio aqui, simulando o "vencedor" do lote.
+  const [ia, ib] = await Promise.all([
+    dial(a, { attachAudio: true }),
+    dial(b, { attachAudio: false }),
+  ])
+  setTimeout(() => {
+    const vivas = [ia, ib].filter(
+      (i) => i && i.state !== SessionState.Terminated && i.state !== SessionState.Initial
+    ).length
+    log(`linhas simultâneas ativas: ${vivas}/2`)
+
+    // Se a chamada de UMA linha já não completa, duas linhas morrerem não diz nada sobre
+    // multi-linha — elas caíram pelo mesmo motivo. Chamar isso de "falha de multi-linha" seria
+    // um falso negativo, e mandaria investigar limite de canais quando o problema é outro.
+    if (audioOk !== true) {
+      verdict(2, 'skip', 'o teste 2 não completou — isto não testa multi-linha')
+      log('TESTE 3 INCONCLUSIVO: as linhas caíram pelo mesmo motivo do teste 2, não por limite', 'warn')
+      log('do PABX. Resolva o teste 2 primeiro e repita este.', 'warn')
+      return
+    }
+
+    if (vivas === 2) {
+      verdict(2, 'ok', '2 chamadas no mesmo ramal — a preditiva funciona')
+      log('MULTI-LINHA CONFIRMADA — a preditiva pode migrar para o navegador', 'ok')
+    } else {
+      verdict(2, 'err', `só ${vivas} linha(s) sobreviveram`)
+      log('A 2ª linha não subiu: o PABX pode limitar chamadas simultâneas por ramal. Ver plano §8 — nesse caso só o 1-a-1 migra.', 'err')
+    }
+  }, 4000)
+}
+
+$('btnHang').onclick = async () => {
+  for (const [num, s] of sessions) {
+    try {
+      if (s.state === SessionState.Established) await s.bye()
+      else if (s.state === SessionState.Establishing || s.state === SessionState.Initial) await s.cancel()
+      log(`${num}: desligada`, 'dim')
+    } catch (e) { log(`${num}: erro ao desligar — ${e.message}`, 'err') }
+  }
+  sessions.clear()
+  $('btnHang').disabled = true
+}
+
+// Diagnóstico independente: monta uma oferta SDP igual à que o sip.js manda e lista os codecs
+// e o perfil de transporte. Serve para provar, no ticket, EXATAMENTE o que o navegador propõe —
+// sem depender de credencial nem de o PABX responder.
+$('btnDiag').onclick = async () => {
+  log('=== TESTE 0 · o que o navegador oferece ===')
+  try {
+    const pc = new RTCPeerConnection()
+    pc.addTransceiver('audio', { direction: 'sendrecv' })
+    const offer = await pc.createOffer()
+    const sdp = offer.sdp ?? ''
+
+    const mLine = sdp.split(/\r?\n/).find((l) => l.startsWith('m=audio')) ?? ''
+    const profile = mLine.split(' ')[2] ?? '?'
+    const codecs = [...sdp.matchAll(/^a=rtpmap:\d+ ([^/]+)\/(\d+)/gm)]
+      .map((m) => `${m[1]}/${m[2]}`)
+      .filter((c, i, a) => a.indexOf(c) === i)
+
+    log(`perfil de transporte : ${profile}`)
+    log(`codecs oferecidos    : ${codecs.join(', ')}`)
+    log(`DTLS-SRTP            : ${/a=fingerprint:/.test(sdp) ? 'sim (obrigatório no navegador)' : 'não'}`)
+    log(`rtcp-mux             : ${/a=rtcp-mux/.test(sdp) ? 'sim' : 'não'}`)
+
+    log('')
+    log('LEITURA: o navegador SÓ fala esta lista — não existe GSM nem G.729 aqui, e não há', 'warn')
+    log('como adicionar. Se o PABX responde 488, o endpoint do ramal precisa aceitar ao menos', 'warn')
+    log('um destes codecs (PCMA/PCMU já cursam no tronco hoje) e falar DTLS-SRTP + AVPF.', 'warn')
+    pc.close()
+  } catch (e) {
+    log(`falhou o diagnóstico: ${e.message}`, 'err')
+  }
+}
+
+log('probe carregado. Rode "0 · Diagnóstico de mídia" e depois "1 · Registrar".', 'dim')
+log(`origem: ${location.origin} — ${location.protocol === 'https:' || location.hostname === 'localhost' ? 'secure context OK' : 'ATENÇÃO: precisa de https ou localhost'}`,
+    location.protocol === 'https:' || location.hostname === 'localhost' ? 'ok' : 'err')
+</script>
+</body>
+</html>

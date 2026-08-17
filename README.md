@@ -52,6 +52,13 @@ discar pelo browser, ele aproveita o **softphone utilizado** que os agentes já 
 navegador e aciona o softphone utilizado, que disca via SIP no PABX. Sem proxy central, sem
 IP fixo, sem API Intelbras.
 
+> 🚧 **Esta premissa mudou (ago/2026).** O `ws://`-only vale só para a porta 7048; existe um
+> endpoint **WSS** no ar (`wss://widevoice8.intelbras.com.br:8089/ws`, Asterisk 22). Está em
+> andamento a migração para um **softphone WebRTC no navegador**, que elimina o helper e a
+> instalação por máquina — ver
+> [`docs/discadora-docs/updates/softphone-webrtc-navegador.md`](docs/discadora-docs/updates/softphone-webrtc-navegador.md).
+> Até lá, **o helper continua sendo o caminho de produção** e tudo abaixo segue valendo.
+
 O **Dashboard de Leads** e o **Painel de CS** resolvem outro problema: dar visibilidade a
 dois funis que já rodam no **Pipefy** (comercial e sucesso do cliente), sincronizados quase
 em tempo real via **Make** para o Supabase e exibidos com métricas próprias por
@@ -288,7 +295,10 @@ PABX Intelbras WidevoiceX
 
 ## Helper local (máquinas dos agentes)
 
-App Express (`local-helper/index.js`, **v1.14**) em `http://localhost:3001`. Endpoints:
+App Express (`local-helper/index.js`, **v1.15**) em `http://localhost:3001`. Endpoints:
+
+> 📖 **O que cada arquivo do helper faz** (e o que é essencial × contorno de Windows):
+> [`docs/discadora-docs/reference/helper-anatomia.md`](docs/discadora-docs/reference/helper-anatomia.md).
 
 | Método | Rota | Função |
 |--------|------|--------|
@@ -318,6 +328,18 @@ versões convivendo; o app trata isso (ex.: o painel de mute exige helper ≥ 1.
 **v1.11** quem reabre o `node` no código novo é o **próprio helper** (`restartSelf`): ele spawna
 a versão nova desacoplada e encerra, sem precisar de launcher externo. O código de saída 42
 continua existindo só como plano B para máquinas com o `start.bat` antigo.
+
+Na prática o rollout se resolve sozinho: como o helper grava a origem do Blue Desk
+(`helper-config.json`, alimentada pelo header `Origin` de qualquer request do app), toda máquina
+que teve um agente logado se atualiza **no próximo boot**. Máquina com o helper **parado** é a
+exceção — não tem processo para receber o clique nem para rodar o boot, e precisa do
+"Ligar helper" ou de subir na mão.
+
+> ⚠️ O botão **"Ligar helper"** depende do protocolo `bluedesk-helper://`, que o `instalar.bat`
+> registra com o **caminho absoluto** do `start-hidden.vbs`. Se a pasta do helper mudar de lugar
+> depois da instalação, o botão falha **em silêncio** (o navegador aciona, nada acontece). Conferir
+> com `reg query "HKCU\Software\Classes\bluedesk-helper\shell\open\command" /ve`; o conserto é
+> rodar o `instalar.bat` de novo.
 
 ### Arquivos do helper
 
@@ -613,7 +635,13 @@ O `build:cf` faz o build com `@opennextjs/cloudflare` e, em seguida: renomeia `w
 | `MAKE_CALLBACK_SECRET` | Cloudflare (Secret) | Segredo do callback `POST /api/aquecimento/dispatch-result` (header `X-Warmup-Callback-Secret`) |
 | `BLUELINE_URL` | GitHub Actions (Secret) | URL pública do deploy, usada pelo workflow do tick do Aquecimento |
 
-Variáveis do helper (opcionais, na máquina do agente, só Discador): `DIAL_PREFIX` (default `021`), `MICROSIP_PATH`.
+Variáveis do helper (opcionais, na máquina do agente, só Discador): `DIAL_PREFIX` (default `021`),
+`MICROSIP_PATH`, `MICROSIP_INI`, `RING_CUTOFF_MS` (default `20000`), `MIN_ANSWER_MS` (default `0`
+= desligado), `MSIP_MIN_GAP_MS` (default `300`), e as três travas de comportamento:
+**`HELPER_NO_HIDE=1`** (mostra a janela do softphone — o padrão é esconder, desde a v1.15),
+`HELPER_NO_INI_FIX=1` (não corrige o `singleMode` no boot) e `HELPER_NO_UPDATE=1` (não se
+auto-atualiza). Lista completa em
+[`docs/discadora-docs/reference/helper-anatomia.md`](docs/discadora-docs/reference/helper-anatomia.md).
 
 ---
 
