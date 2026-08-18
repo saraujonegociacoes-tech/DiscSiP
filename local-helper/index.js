@@ -9,7 +9,7 @@ const PORT = 3001
 
 // Versão do helper. É o que o Blue Desk compara para saber se está desatualizado e
 // oferecer o botão "Atualizar". Suba este número a cada correção no helper.
-const HELPER_VERSION = '1.14'
+const HELPER_VERSION = '1.15'
 
 // Código de seleção de operadora (CSP) para discagem interurbana. Sem ele o MicroSIP
 // não completa chamadas para outros estados. Resultado: DIAL_PREFIX + DDD + número.
@@ -222,7 +222,10 @@ function patchIni(map) {
 
 function isMicrosipRunning() {
   return new Promise((resolve) => {
-    exec('tasklist /FI "IMAGENAME eq microsip.exe" /NH', (err, stdout) => {
+    // windowsHide (v1.15): sem isso o `exec` roda `cmd.exe /c` COM console e PISCA uma janela
+    // preta na cara do agente. Como enableMultiCall chama isto em loop a cada 400ms, viravam
+    // várias piscadas seguidas — parte do "o helper não fica escondido".
+    exec('tasklist /FI "IMAGENAME eq microsip.exe" /NH', { windowsHide: true }, (err, stdout) => {
       resolve(!err && /microsip\.exe/i.test(stdout || ''))
     })
   })
@@ -252,13 +255,9 @@ async function enableMultiCall() {
   const patched = patchIni({ singleMode: '0' })
   if (!patched.ok) return patched
   if (running && MICROSIP) {
-    try {
-      const child = spawn(MICROSIP, [], { detached: true, stdio: 'ignore' })
-      child.on('error', () => {})
-      child.unref()
-    } catch {
-      // reabrir falhou — o ini já está certo; o agente abre o MicroSIP na mão
-    }
+    // Pela fila também (v1.15): reabrir o MicroSIP logo depois de gravar o ini era outra
+    // chance de dois processos tocarem no arquivo ao mesmo tempo.
+    queueMsip([])
   }
   console.log(`[${ts()}] MicroSIP: multi-call LIGADO (singleMode=0)${running ? ' + reiniciado' : ''}`)
   return { ok: true, restarted: running }
@@ -311,7 +310,11 @@ function queueMsip(args, onSpawn) {
     }
     try {
       if (onSpawn) onSpawn()
-      const child = spawn(MICROSIP, args, { detached: true, stdio: 'ignore' })
+      const child = spawn(MICROSIP, args, {
+        detached: true,
+        stdio: 'ignore',
+        windowsHide: true,
+      })
       child.on('error', () => {})
       child.unref()
     } catch {
@@ -509,13 +512,14 @@ function handleSingleAnswer(evNumber) {
 // so o powershell.exe que existe em todo Windows. O loop embute o PID do helper e termina
 // sozinho quando o helper morre (nao deixa processo orfao). Comando vai como -EncodedCommand
 // (base64 UTF-16LE).
-// ⚠️ DESLIGADO POR PADRÃO (v1.9). Enquanto o MicroSIP está sendo testado e configurado, esconder
-// a janela atrapalha mais do que ajuda — o agente/administrador precisa conseguir ABRIR o
-// softphone para mexer nas configurações. Passou a ser opt-in: só roda com HELPER_HIDE=1.
-// (Antes era o contrário: ligado por padrão, desligável com HELPER_NO_HIDE=1.)
+// ⚠️ LIGADO POR PADRÃO de novo (v1.15). Histórico: nasceu ligado, virou opt-in na v1.9 (durante
+// a configuração do MicroSIP, esconder a janela impedia o próprio administrador de abrir o
+// softphone). Essa fase acabou e o efeito colateral apareceu em produção: a janela do MicroSIP
+// aparecendo na frente do agente no meio da operação. Volta a ser opt-OUT — desligue com
+// HELPER_NO_HIDE=1 quando precisar mexer no softphone.
 let hiderChild = null
 function startMicrosipHider() {
-  if (!process.env.HELPER_HIDE || !MICROSIP || hiderChild) return
+  if (process.env.HELPER_NO_HIDE || !MICROSIP || hiderChild) return
   const script = `
 $parentPid = ${process.pid}
 Add-Type @"
@@ -849,26 +853,25 @@ app.post('/call', (req, res) => {
   // Marca o instante da discagem para medir o tempo-até-atender desta chamada avulsa.
   lastSingleCall = { dial, at: Date.now(), answered: false }
 
-  // Caminho preferido: chamar o microsip.exe direto com o número (auto-disca).
+  // Caminho preferido: chamar o microsip.exe com o número (auto-disca) — SEMPRE pela fila.
+  //
+  // ⚠️ v1.15: aqui havia um `spawn` DIRETO, fora da fila. Era o furo que causava o modal
+  // "Failed to open file for writing ...microsip.ini" em produção: a fila (queueMsip) existe
+  // justamente para dois microsip.exe nunca nascerem juntos e brigarem pelo ini, mas o
+  // caminho MAIS usado do helper — discagem 1-a-1 e discagem manual — não passava por ela.
+  // Só o /dial-parallel usava. Resultado: bastava o agente discar enquanto a instância
+  // principal gravava o histórico no ini para o modal aparecer e CONGELAR a fila de comandos
+  // do MicroSIP. Ver o comentário do queueMsip.
   if (MICROSIP) {
-    try {
-      const child = spawn(MICROSIP, [dial], { detached: true, stdio: 'ignore' })
-      child.on('error', (err) => {
-        console.error(`[${ts}] ERRO ao abrir MicroSIP: ${err.message}`)
-      })
-      child.unref()
-      // Se o agente deixou o alto-falante mudo, reaplica na sessao de audio desta chamada nova.
-      if (speakerMuted) setTimeout(() => setMicrosipSpeakerMuted(true), 800)
-      console.log(`[${ts}] Discando ${dial} via ${MICROSIP}`)
-      return res.json({ ok: true, number: dial, method: 'microsip-exe' })
-    } catch (err) {
-      console.error(`[${ts}] ERRO no spawn do MicroSIP: ${err.message}`)
-      // cai para o fallback abaixo
-    }
+    queueMsip([dial])
+    // Se o agente deixou o alto-falante mudo, reaplica na sessao de audio desta chamada nova.
+    if (speakerMuted) setTimeout(() => setMicrosipSpeakerMuted(true), 800)
+    console.log(`[${ts}] Discando ${dial} via ${MICROSIP}`)
+    return res.json({ ok: true, number: dial, method: 'microsip-exe' })
   }
 
   // Fallback: protocolo tel: do Windows (depende do handler estar registrado)
-  exec(`start "" "tel:${dial}"`, (err) => {
+  exec(`start "" "tel:${dial}"`, { windowsHide: true }, (err) => {
     if (err) {
       console.error(`[${ts}] ERRO ao acionar tel: ${err.message}`)
       return res.status(500).json({ error: err.message })
@@ -1112,9 +1115,9 @@ async function main() {
     else console.log(' microsip.ini nao encontrado — nao da para conferir o modo multi-chamada')
     console.log(` Corte de toque: ${RING_CUTOFF_MS / 1000}s (linha que so toca e derrubada antes da caixa postal)`)
     console.log(
-      process.env.HELPER_HIDE
-        ? ' Janela do MicroSIP: ESCONDIDA (HELPER_HIDE=1)'
-        : ' Janela do MicroSIP: visivel — abra pelo icone na bandeja (HELPER_HIDE=1 esconde)'
+      process.env.HELPER_NO_HIDE
+        ? ' Janela do MicroSIP: VISIVEL (HELPER_NO_HIDE=1) — para configurar o softphone'
+        : ' Janela do MicroSIP: escondida (padrao; HELPER_NO_HIDE=1 mostra)'
     )
     console.log(` Pasta: ${__dirname}`)
     console.log('Aguardando chamadas do Blue Desk...')

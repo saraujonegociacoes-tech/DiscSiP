@@ -6,7 +6,7 @@ import { useSoftphoneStore } from '@/store/softphoneStore'
 import { useDialerStore } from '@/store/dialerStore'
 import { saveCallLog } from '@/app/actions/dialer'
 import { DISPOSITIONS } from '@/lib/dispositions'
-import { helperFetch } from '@/lib/constants'
+import { getTransport } from '@/lib/telephony'
 import { cn } from '@/lib/utils'
 
 // Discagem manual: o agente digita o número e liga. Fora de campanha — não consome mailing,
@@ -102,8 +102,7 @@ export function ManualDialTab() {
     let cancelled = false
     const poll = async () => {
       try {
-        const res = await helperFetch('/events', { signal: AbortSignal.timeout(2000) })
-        const ev = await res.json()
+        const ev = await getTransport().getLastEvent()
         if (cancelled || baselineRef.current === null || ev.id <= baselineRef.current) return
         if (ev.type === 'call-start' && !answeredAtRef.current) {
           answeredAtRef.current = new Date()
@@ -136,13 +135,8 @@ export function ManualDialTab() {
     setSavedMsg(null)
 
     // Linha de base dos eventos: só contam os que vierem depois desta discagem.
-    try {
-      const res = await helperFetch('/events', { signal: AbortSignal.timeout(2000) })
-      const ev = await res.json()
-      baselineRef.current = typeof ev?.id === 'number' ? ev.id : 0
-    } catch {
-      baselineRef.current = 0
-    }
+    const baseEvent = await getTransport().getLastEvent()
+    baselineRef.current = baseEvent.id
 
     dialedRef.current = digits
     startedAtRef.current = new Date()
@@ -151,13 +145,7 @@ export function ManualDialTab() {
     outcomeRef.current = 'no_answer'
 
     try {
-      const res = await helperFetch('/call', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ number: digits, raw: isExtension(digits) }),
-      })
-      const data = await res.json().catch(() => null)
-      if (!res.ok) throw new Error(data?.error ?? 'O helper recusou a discagem.')
+      await getTransport().call(digits, { raw: isExtension(digits) })
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Helper offline — a ligação não foi disparada.')
       return
@@ -168,11 +156,7 @@ export function ManualDialTab() {
   }
 
   const handleHangup = async () => {
-    try {
-      await helperFetch('/hangup', { method: 'POST' })
-    } catch {
-      // helper offline — encerra a UI de qualquer forma
-    }
+    await getTransport().hangup()
     endedAtRef.current = new Date()
     setStatus('ended')
     setCallStatus('ended')

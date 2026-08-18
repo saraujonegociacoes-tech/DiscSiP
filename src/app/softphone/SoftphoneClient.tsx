@@ -15,6 +15,7 @@ import { CallControls } from './CallControls'
 import { AppShell } from '@/components/bluedesk/AppShell'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
+import { getTransport } from '@/lib/telephony'
 import { helperFetch } from '@/lib/constants'
 
 type Tab = 'dialer' | 'manual' | 'history' | 'performance'
@@ -96,22 +97,9 @@ export default function SoftphoneClient() {
   // Verifica se o helper local está online a cada 10s (e lê a versão dele no /ping)
   useEffect(() => {
     const check = async () => {
-      try {
-        const res = await helperFetch('/ping', {
-          signal: AbortSignal.timeout(2000),
-        })
-        const data = res.ok ? await res.json().catch(() => null) : null
-        // Um 200 NÃO basta: qualquer processo pode estar na 3001 e responder OK. Aconteceu de
-        // verdade — um segundo `next dev` achou a 3000 ocupada, pulou para a 3001 e passou a
-        // responder HTML ali; o app dizia "Helper online" (sem versão) e nada funcionava. Só
-        // contamos como helper se vier o payload dele.
-        const isHelper = res.ok && data?.ok === true
-        // `multiCall` só existe no helper >= 1.8; em helper antigo fica undefined e o store
-        // mantém o valor anterior (null = desconhecido), sem inventar um estado.
-        setHelperOnline(isHelper, data?.version ?? null, data?.multiCall)
-      } catch {
-        setHelperOnline(false)
-      }
+      // A verificação do payload (não basta um 200 na 3001) vive no transporte agora.
+      const st = await getTransport().refreshStatus()
+      setHelperOnline(st.ready, st.version, st.multiCall)
     }
     check()
     const interval = setInterval(check, 10000)
@@ -144,6 +132,10 @@ export default function SoftphoneClient() {
 
   // Dispara a auto-atualização do helper: ele baixa o código novo de /helper/index.js
   // (passamos nossa origem), sobrescreve a si mesmo e reinicia. Ficamos esperando voltar.
+  //
+  // Continua falando com o helper DIRETO (sem passar pela camada de telefonia) de propósito:
+  // isto é manutenção do processo local, não telefonia — o transporte WebRTC nunca teria um
+  // equivalente. Some inteiro na Etapa 5 do plano, junto com o helper.
   const handleUpdateHelper = async () => {
     setUpdating(true)
     setUpdateError(false)

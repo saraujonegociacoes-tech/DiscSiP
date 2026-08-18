@@ -3,6 +3,13 @@
 > Criado em 2026-08-06, atualizado em 2026-08-07. Duas mudanças no discador: (1) fazer a
 > **discagem preditiva** realmente acontecer nas máquinas dos agentes e (2) criar a **discagem
 > manual** (o agente digita o número e liga). Helper **1.7 → 1.14**.
+>
+> ⚠️ **Este doc cobre até a v1.14.** O helper está na **v1.15** — ver
+> [`../fixes/correcao-modal-ini-e-janela-visivel.md`](../fixes/correcao-modal-ini-e-janela-visivel.md)
+> (modal do `microsip.ini` corrigido na raiz, janela do softphone escondida de novo) e
+> [`../reference/helper-anatomia.md`](../reference/helper-anatomia.md) (o que cada arquivo faz).
+> E o discador está migrando para **softphone WebRTC no navegador**:
+> [`softphone-webrtc-navegador.md`](softphone-webrtc-navegador.md).
 > Fonte da feature preditiva: [`discagem-paralela-preditiva.md`](discagem-paralela-preditiva.md).
 
 ---
@@ -255,7 +262,14 @@ pelo próprio helper (memória, ~500 amostras), com mediana, p90 e **`perdidasPe
 quantas atendidas o corte atual teria descartado. Humano se espalha pela faixa; caixa postal
 se concentra num valor fixo. Ajustar via `RING_CUTOFF_MS` depois de ver o número real.
 
-### Hider desligado (v1.9)
+### Hider desligado (v1.9) — ⚠️ REVERTIDO na v1.15
+
+> **Atualização 14/08/2026:** o hider **voltou a ser ligado por padrão** (opt-out, desligável com
+> `HELPER_NO_HIDE=1`). A fase de configuração do softphone acabou e o efeito colateral apareceu em
+> produção: a janela do MicroSIP aparecendo na frente do agente durante a operação. O texto abaixo
+> fica como registro da decisão original. Ver
+> [`../fixes/correcao-modal-ini-e-janela-visivel.md`](../fixes/correcao-modal-ini-e-janela-visivel.md).
+
 O hider da janela do MicroSIP passou a ser **opt-in** (`HELPER_HIDE=1`). Enquanto o softphone
 está sendo testado e configurado, esconder a janela impede o próprio administrador de abri-lo.
 Com `minimized=1` ele continua nascendo na bandeja — dá para abrir pelo ícone.

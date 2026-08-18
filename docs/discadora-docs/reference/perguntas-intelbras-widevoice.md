@@ -385,6 +385,66 @@ agente disca para um número interno que cai num script, e o script faz a discag
 
 ---
 
+## Teste COM credencial (14/08/2026) — o que a sondagem passiva não podia responder
+
+A sondagem de 07/08 foi passiva (sem credencial). Em 14/08 o ramal **5125** foi registrado de
+verdade por WebRTC, com o probe [`scripts/probe-webrtc-sip.html`](../../../scripts/probe-webrtc-sip.html)
+(`npm run probe:webrtc`). Resultado detalhado em
+[`../updates/softphone-webrtc-navegador.md`](../updates/softphone-webrtc-navegador.md) §1.1.
+
+### 🟢 Fecha o Bloco 6 (parte 1): o ramal registra por WebRTC
+
+O ramal 5125 **registrou** em ~120ms no `wss://widevoice8.intelbras.com.br:8089/ws`. Isso
+confirma, com credencial real: o endpoint aceita SIP over WebSocket, o certificado serve, e o
+ramal está provisionado o suficiente para **sinalização** WebRTC.
+
+### 🔴 Achado novo: a MÍDIA é recusada — `488 Not Acceptable Here`
+
+Toda chamada de saída foi recusada em ~400ms com `488`, **de forma idêntica para seis formatos
+diferentes do número**. `488` é falha de negociação de **mídia (SDP)** — não de número (`404`),
+ocupado (`486`) ou rota (`403`/`503`).
+
+Isso dá corpo à **observação geral #1** (contradição de codecs) e transforma o Bloco 8 no
+bloqueio prático do projeto WebRTC:
+
+- Navegador oferece **só** Opus / PCMU / PCMA / G.722, sempre com **DTLS-SRTP** e perfil
+  **RTP/SAVPF**. Não existe GSM nem G.729 em WebRTC — não é escolha nossa, é o padrão.
+- A resposta do Bloco 8 diz que a conta tem **só GSM e G729** habilitados. Se valer para o
+  endpoint do ramal, **não há codec em comum** — e o `488` é exatamente o esperado.
+- Alternativa (ou soma): o endpoint pode não estar com o perfil de mídia WebRTC
+  (`media_encryption=dtls` + `use_avpf`), o que também produz `488`.
+
+> 📌 **Lição registrada:** `REGISTER` **não negocia mídia**. Registrar com sucesso não prova que
+> o ramal está provisionado para WebRTC — o perfil de mídia só aparece no `INVITE`. A previsão
+> anterior ("registra, disca e não sai áudio") estava otimista: falha antes, na negociação.
+
+### 🎯 Isolado: é o ENDPOINT, não o tronco
+
+Discando o **ramal interno 5126** (com e sem CSP), a recusa é a mesma: `488`, em ~400ms. Chamada
+ramal↔ramal **não passa pelo tronco nem pela operadora** — o PABX rejeita a mídia no canal de
+origem, antes de haver destino.
+
+Isso **exclui** tronco, gateway de saída, CSP, formato de número e codec da operadora. Sobra o
+**perfil de mídia do endpoint do ramal**: o navegador oferece `UDP/TLS/RTP/SAVPF` (DTLS-SRTP +
+AVPF, obrigatórios em WebRTC) e o endpoint não aceita esse perfil. É configuração, do lado deles.
+
+### ⏳ O que continua sem resposta
+
+- **Multi-linha por ramal via WebRTC** (Bloco 6, parte 2) — **não foi testado**: as duas linhas
+  do teste caíram pelo mesmo `488`, então nada se pode concluir sobre limite de canais. Só volta
+  à mesa depois que o endpoint aceitar mídia.
+- **Codec real do endpoint WebRTC** — segue sem confirmação documental. Com o achado do ramal
+  interno, virou questão secundária: mesmo com o codec certo, o perfil `RTP/AVP` recusaria.
+
+### 📨 O pedido a fazer
+
+Texto pronto em [`../updates/softphone-webrtc-navegador.md`](../updates/softphone-webrtc-navegador.md)
+§1.2. Em uma linha: **habilitar PCMA/PCMU (e Opus, se houver) no endpoint do ramal 5125 e
+confirmar o perfil WebRTC** — lembrando que as chamadas desse ramal **já cursam PCMA hoje** pelo
+softphone desktop, ou seja, o codec existe no caminho.
+
+---
+
 ## Resumo do e-mail (versão curta para abrir a conversa)
 Se quiser começar enxuto, peça primeiro o essencial e o estratégico:
 1. **(Bloco 2)** Têm **AMD** em discagem ativa? Ele **derruba** a chamada em caixa postal?
