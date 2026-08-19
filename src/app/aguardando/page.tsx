@@ -1,48 +1,15 @@
-'use client'
+import { ensureProfile } from '@/app/actions/auth'
+import { AguardandoClient } from './AguardandoClient'
 
-import Link from 'next/link'
-import { useRouter } from 'next/navigation'
-import { Clock } from 'lucide-react'
-import { signOut } from '@/app/actions/auth'
-import { BlueDeskLogo } from '@/components/brand/BlueDeskLogo'
-import { Button } from '@/components/ui/button'
-
-export default function AguardandoPage() {
-  const router = useRouter()
-
-  return (
-    <div className="flex min-h-screen items-center justify-center bg-background bg-gradient-mesh p-4">
-      <div className="w-full max-w-md rounded-2xl border border-border bg-gradient-card p-8 text-center shadow-elevated">
-        <div className="mb-6 flex justify-center">
-          <BlueDeskLogo />
-        </div>
-        <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-primary text-primary-foreground shadow-glow">
-          <Clock className="h-6 w-6" />
-        </div>
-        <h1 className="text-xl font-semibold text-foreground">Aguardando aprovação</h1>
-        <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-          Sua conta foi criada e confirmada. Um administrador precisa aprovar seu acesso e
-          atribuir seu papel (e ramal, se for discar) antes de você usar o Blue Desk.
-        </p>
-
-        <div className="mt-6 flex flex-col gap-2">
-          <Button onClick={() => router.refresh()} className="w-full bg-primary hover:bg-primary/90">
-            Já fui aprovado — verificar
-          </Button>
-          <Link
-            href="/ajuda"
-            className="py-1 text-xs text-primary transition-colors hover:text-primary/80"
-          >
-            Como usar o sistema?
-          </Link>
-          <button
-            onClick={() => signOut()}
-            className="py-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
-          >
-            Sair
-          </button>
-        </div>
-      </div>
-    </div>
-  )
+// Esta rota é o funil de TODO usuário sem acesso liberado: o middleware manda para cá tanto
+// quem tem `role = 'pending'` quanto quem NÃO TEM perfil nenhum (`!profile`). É por isso que a
+// recuperação do perfil órfão mora aqui e não em outro lugar — é o único ponto por onde essa
+// pessoa passa. Ver docs/rbac-docs/fixes/perfil-orfao-auth-sem-profile.md.
+//
+// Antes: o órfão ficava clicando "Já fui aprovado — verificar" para sempre, sem aparecer no
+// /admin para ninguém aprovar. Agora a primeira visita recria a linha em `profiles` como
+// 'pending' e o admin volta a enxergá-lo no fluxo normal.
+export default async function AguardandoPage() {
+  await ensureProfile()
+  return <AguardandoClient />
 }
