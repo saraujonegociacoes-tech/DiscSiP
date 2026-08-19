@@ -76,6 +76,25 @@ export async function getCurrentProfile(): Promise<Profile | null> {
   return loadCurrentProfile()
 }
 
+// Rede de segurança do RBAC: recria o perfil de quem tem sessão mas não tem linha em
+// `profiles`. Sem isto o "usuário órfão" fica invisível — o middleware o prende em
+// /aguardando, o /admin (que lista `profiles`) não o mostra para ser aprovado, e recadastrar
+// esbarra em "já existe uma conta com este email" porque o auth.users continua lá.
+//
+// A função no banco é SECURITY DEFINER e sempre cria como 'pending' (ver
+// supabase/migrations/Migrations_rbac/20260819_ensure_profile.sql). Quem já tem perfil não é
+// tocado — chamar em usuário aprovado é no-op, nunca rebaixa ninguém.
+//
+// Nunca lança: se a migration ainda não estiver aplicada, o RPC volta erro e só registramos.
+// A tela de espera precisa renderizar de qualquer jeito — antes disso ela já renderizava.
+export async function ensureProfile(): Promise<void> {
+  const supabase = await createServerClient()
+  const { error } = await supabase.rpc('ensure_profile')
+  if (error) {
+    console.error('[auth] ensure_profile falhou (perfil órfão segue órfão):', error.message)
+  }
+}
+
 export async function signOut(): Promise<void> {
   const supabase = await createServerClient()
   await supabase.auth.signOut()

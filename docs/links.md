@@ -162,6 +162,13 @@ como"). Transversal — toca Sidebar, middleware, store e os gates de página.
   `20260803_tester_role.sql` **aplicada** (03/ago). Pendente: escopo de DADOS por departamento no
   Painel da Discadora/Campanhas.
 
+## `fixes/`
+- [`perfil-orfao-auth-sem-profile.md`](rbac-docs/fixes/perfil-orfao-auth-sem-profile.md) — usuário
+  em `auth.users` **sem linha em `profiles`** ficava invisível no `/admin` e preso em `/aguardando`,
+  e recadastrar batia em "já existe uma conta com este email". RPC `ensure_profile()` recria o
+  perfil como `pending` na entrada de `/aguardando`. ⏳ migration `20260819_ensure_profile.sql`
+  pendente do dono.
+
 ---
 
 # Painel do CEO (executivo) · `projetopainelceo-docs/`
