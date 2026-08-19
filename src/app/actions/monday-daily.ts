@@ -1,7 +1,8 @@
 'use server'
 
 import { createServerClient } from '@/lib/supabase/server'
-import { PRIORITY_ORDER } from '@/lib/monday/domain'
+import { PRIORITY_ORDER, QUICK_PSEUDO_PROJECT } from '@/lib/monday/domain'
+import { assigneeNameFrom, resolveProfiles, resolveProjects } from '@/lib/monday/task-joins'
 import type {
   DailyPersonGroup,
   DailyReport,
@@ -10,7 +11,7 @@ import type {
   HistoryReport,
   HistoryTaskItem,
   MondayMemberProfile,
-  MondayProject,
+  MondayQuickTask,
   MondayTask,
 } from '@/lib/monday/types'
 
@@ -25,10 +26,14 @@ type TaskRow = Pick<
   MondayTask,
   'id' | 'title' | 'status' | 'priority' | 'due_date' | 'completed_at' | 'assignee_id' | 'board_id'
 >
-type ProjectRow = Pick<MondayProject, 'id' | 'name' | 'key' | 'color'>
+type QuickRow = Pick<
+  MondayQuickTask,
+  'id' | 'title' | 'status' | 'priority' | 'due_date' | 'completed_at' | 'assignee_id'
+>
 
 const NO_ASSIGNEE = '__none__'
 const TASK_COLS = 'id, title, status, priority, due_date, completed_at, assignee_id, board_id'
+const QUICK_COLS = 'id, title, status, priority, due_date, completed_at, assignee_id'
 
 function personLabel(p: MondayMemberProfile | null): string {
   return p?.name || p?.email || 'Sem responsável'
@@ -36,8 +41,9 @@ function personLabel(p: MondayMemberProfile | null): string {
 
 /**
  * Resumo diario por responsavel, cruzando todos os projetos que o usuario acessa
- * (RLS de monday_tasks). "Feito hoje/ontem" = tarefas concluidas (completed_at) no
- * dia, no fuso BRT; "a entregar" = tarefas abertas (nao concluidas).
+ * (RLS de monday_tasks) e tambem as tarefas rapidas (RLS de monday_quick_tasks).
+ * "Feito hoje/ontem" = tarefas concluidas (completed_at) no dia, no fuso BRT;
+ * "a entregar" = tarefas abertas (nao concluidas).
  */
 export async function getDailyReport(): Promise<DailyReport> {
   const supabase = await createServerClient()
@@ -47,54 +53,36 @@ export async function getDailyReport(): Promise<DailyReport> {
   // Limite folgado p/ concluidas (48h cobre "ontem" em qualquer fuso); bucket exato em JS.
   const sinceIso = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString()
 
-  const [openRes, doneRes] = await Promise.all([
-    supabase
-      .from('monday_tasks')
-      .select(TASK_COLS)
-      .eq('archived', false)
-      .neq('status', 'done'),
+  const [openRes, doneRes, quickOpenRes, quickDoneRes] = await Promise.all([
+    supabase.from('monday_tasks').select(TASK_COLS).eq('archived', false).neq('status', 'done'),
     supabase
       .from('monday_tasks')
       .select(TASK_COLS)
       .eq('archived', false)
       .eq('status', 'done')
       .gte('completed_at', sinceIso),
+    supabase
+      .from('monday_quick_tasks')
+      .select(QUICK_COLS)
+      .eq('archived', false)
+      .neq('status', 'done'),
+    supabase
+      .from('monday_quick_tasks')
+      .select(QUICK_COLS)
+      .eq('archived', false)
+      .eq('status', 'done')
+      .gte('completed_at', sinceIso),
   ])
 
-  const tasks = [
-    ...((openRes.data ?? []) as TaskRow[]),
-    ...((doneRes.data ?? []) as TaskRow[]),
+  const tasks = [...((openRes.data ?? []) as TaskRow[]), ...((doneRes.data ?? []) as TaskRow[])]
+  const quickTasks = [
+    ...((quickOpenRes.data ?? []) as QuickRow[]),
+    ...((quickDoneRes.data ?? []) as QuickRow[]),
   ]
-  if (!tasks.length) return { groups: [] }
+  if (!tasks.length && !quickTasks.length) return { groups: [] }
 
-  // board -> projeto
-  const boardIds = [...new Set(tasks.map((t) => t.board_id))]
-  const { data: boards } = await supabase
-    .from('monday_boards')
-    .select('id, project_id')
-    .in('id', boardIds)
-  const boardToProject = new Map(
-    ((boards ?? []) as { id: string; project_id: string }[]).map((b) => [b.id, b.project_id]),
-  )
-
-  const projectIds = [...new Set([...boardToProject.values()])]
-  const { data: projects } = await supabase
-    .from('monday_projects')
-    .select('id, name, key, color')
-    .in('id', projectIds)
-  const projectById = new Map(((projects ?? []) as ProjectRow[]).map((p) => [p.id, p]))
-
-  // responsaveis
-  const assigneeIds = [...new Set(tasks.map((t) => t.assignee_id).filter(Boolean))] as string[]
-  let profiles: MondayMemberProfile[] = []
-  if (assigneeIds.length) {
-    const { data } = await supabase
-      .from('profiles')
-      .select('id, name, email')
-      .in('id', assigneeIds)
-    profiles = (data ?? []) as MondayMemberProfile[]
-  }
-  const profileById = new Map(profiles.map((p) => [p.id, p]))
+  const { boardToProject, projectById } = await resolveProjects(supabase, tasks)
+  const profileById = await resolveProfiles(supabase, [...tasks, ...quickTasks])
 
   // Agrupa por responsavel, jogando cada tarefa no balde certo.
   const groupsById = new Map<string, DailyPersonGroup>()
@@ -114,35 +102,59 @@ export async function getDailyReport(): Promise<DailyReport> {
     return g
   }
 
-  for (const t of tasks) {
-    const projectId = boardToProject.get(t.board_id)
-    const project = projectId ? projectById.get(projectId) : undefined
-    if (!project) continue // projeto fora do alcance (RLS) — ignora
-
-    const item: DailyTaskItem = {
-      id: t.id,
-      title: t.title,
-      status: t.status,
-      priority: t.priority,
-      due_date: t.due_date,
-      completed_at: t.completed_at,
-      overdue: t.status !== 'done' && !!t.due_date && t.due_date < todayBRT,
-      projectId: project.id,
-      projectName: project.name,
-      projectKey: project.key,
-      projectColor: project.color,
-    }
-
-    const g = groupFor(t.assignee_id)
-    if (t.status === 'done') {
-      if (!t.completed_at) continue
-      const day = brtDate(new Date(t.completed_at))
+  function place(item: DailyTaskItem, assigneeId: string | null) {
+    const g = groupFor(assigneeId)
+    if (item.status === 'done') {
+      if (!item.completed_at) return
+      const day = brtDate(new Date(item.completed_at))
       if (day === todayBRT) g.doneToday.push(item)
       else if (day === yesterdayBRT) g.doneYesterday.push(item)
       // concluida em outro dia -> ignora
     } else {
       g.toDeliver.push(item)
     }
+  }
+
+  for (const t of tasks) {
+    const projectId = boardToProject.get(t.board_id)
+    const project = projectId ? projectById.get(projectId) : undefined
+    if (!project) continue // projeto fora do alcance (RLS) — ignora
+
+    place(
+      {
+        id: t.id,
+        title: t.title,
+        status: t.status,
+        priority: t.priority,
+        due_date: t.due_date,
+        completed_at: t.completed_at,
+        overdue: t.status !== 'done' && !!t.due_date && t.due_date < todayBRT,
+        projectId: project.id,
+        projectName: project.name,
+        projectKey: project.key,
+        projectColor: project.color,
+      },
+      t.assignee_id,
+    )
+  }
+
+  for (const t of quickTasks) {
+    place(
+      {
+        id: t.id,
+        title: t.title,
+        status: t.status,
+        priority: t.priority,
+        due_date: t.due_date,
+        completed_at: t.completed_at,
+        overdue: t.status !== 'done' && !!t.due_date && t.due_date < todayBRT,
+        projectId: QUICK_PSEUDO_PROJECT.id,
+        projectName: QUICK_PSEUDO_PROJECT.name,
+        projectKey: QUICK_PSEUDO_PROJECT.key,
+        projectColor: QUICK_PSEUDO_PROJECT.color,
+      },
+      t.assignee_id,
+    )
   }
 
   const byCompletedDesc = (a: DailyTaskItem, b: DailyTaskItem) =>
@@ -158,6 +170,9 @@ export async function getDailyReport(): Promise<DailyReport> {
     return PRIORITY_ORDER.indexOf(b.priority) - PRIORITY_ORDER.indexOf(a.priority) // maior prioridade
   }
 
+  // "Sem responsavel" vai por ultimo: U+FFFF ordena depois de qualquer nome real.
+  const LAST = '￿'
+
   const groups = [...groupsById.values()]
     .filter((g) => g.doneToday.length + g.doneYesterday.length + g.toDeliver.length > 0)
     .map((g) => ({
@@ -167,9 +182,8 @@ export async function getDailyReport(): Promise<DailyReport> {
       toDeliver: g.toDeliver.sort(byDeliver),
     }))
     .sort((a, b) => {
-      // pessoas por nome; "Sem responsavel" por ultimo
-      const an = a.assigneeId ? personLabel(a.person) : '￿'
-      const bn = b.assigneeId ? personLabel(b.person) : '￿'
+      const an = a.assigneeId ? personLabel(a.person) : LAST
+      const bn = b.assigneeId ? personLabel(b.person) : LAST
       return an.localeCompare(bn, 'pt-BR')
     })
 
@@ -177,62 +191,43 @@ export async function getDailyReport(): Promise<DailyReport> {
 }
 
 const HISTORY_LIMIT = 500
-const HISTORY_TASK_COLS =
-  'id, title, status, priority, due_date, completed_at, assignee_id, board_id'
 
 /**
- * Timeline de TODAS as tarefas concluidas (nao arquivadas) dos projetos que o
- * usuario acessa (RLS), da mais recente p/ a mais antiga, agrupadas por dia (BRT).
- * Limitada a HISTORY_LIMIT p/ nao pesar; `capped` avisa quando ha mais alem disso.
+ * Timeline de TODAS as tarefas concluidas (nao arquivadas) — de projeto e rapidas —
+ * da mais recente p/ a mais antiga, agrupadas por dia (BRT). Cada consulta pega no
+ * maximo HISTORY_LIMIT; o corte final e aplicado depois do merge, e `capped` avisa
+ * quando ha mais alem disso.
  */
 export async function getCompletedHistory(): Promise<HistoryReport> {
   const supabase = await createServerClient()
 
-  const { data: doneData } = await supabase
-    .from('monday_tasks')
-    .select(HISTORY_TASK_COLS)
-    .eq('archived', false)
-    .eq('status', 'done')
-    .not('completed_at', 'is', null)
-    .order('completed_at', { ascending: false })
-    .limit(HISTORY_LIMIT)
+  const [doneRes, quickDoneRes] = await Promise.all([
+    supabase
+      .from('monday_tasks')
+      .select(TASK_COLS)
+      .eq('archived', false)
+      .eq('status', 'done')
+      .not('completed_at', 'is', null)
+      .order('completed_at', { ascending: false })
+      .limit(HISTORY_LIMIT),
+    supabase
+      .from('monday_quick_tasks')
+      .select(QUICK_COLS)
+      .eq('archived', false)
+      .eq('status', 'done')
+      .not('completed_at', 'is', null)
+      .order('completed_at', { ascending: false })
+      .limit(HISTORY_LIMIT),
+  ])
 
-  const tasks = (doneData ?? []) as TaskRow[]
-  if (!tasks.length) return { days: [], total: 0, capped: false }
+  const tasks = (doneRes.data ?? []) as TaskRow[]
+  const quickTasks = (quickDoneRes.data ?? []) as QuickRow[]
+  if (!tasks.length && !quickTasks.length) return { days: [], total: 0, capped: false }
 
-  // board -> projeto
-  const boardIds = [...new Set(tasks.map((t) => t.board_id))]
-  const { data: boards } = await supabase
-    .from('monday_boards')
-    .select('id, project_id')
-    .in('id', boardIds)
-  const boardToProject = new Map(
-    ((boards ?? []) as { id: string; project_id: string }[]).map((b) => [b.id, b.project_id]),
-  )
+  const { boardToProject, projectById } = await resolveProjects(supabase, tasks)
+  const profileById = await resolveProfiles(supabase, [...tasks, ...quickTasks])
 
-  const projectIds = [...new Set([...boardToProject.values()])]
-  const { data: projects } = await supabase
-    .from('monday_projects')
-    .select('id, name, key, color')
-    .in('id', projectIds)
-  const projectById = new Map(((projects ?? []) as ProjectRow[]).map((p) => [p.id, p]))
-
-  // responsaveis
-  const assigneeIds = [...new Set(tasks.map((t) => t.assignee_id).filter(Boolean))] as string[]
-  let profiles: MondayMemberProfile[] = []
-  if (assigneeIds.length) {
-    const { data } = await supabase
-      .from('profiles')
-      .select('id, name, email')
-      .in('id', assigneeIds)
-    profiles = (data ?? []) as MondayMemberProfile[]
-  }
-  const profileById = new Map(profiles.map((p) => [p.id, p]))
-
-  // Agrupa por dia BRT preservando a ordem desc (tasks ja vem ordenada por completed_at).
-  const dayOrder: string[] = []
-  const byDay = new Map<string, HistoryTaskItem[]>()
-  let total = 0
+  const merged: HistoryTaskItem[] = []
 
   for (const t of tasks) {
     if (!t.completed_at) continue
@@ -240,8 +235,7 @@ export async function getCompletedHistory(): Promise<HistoryReport> {
     const project = projectId ? projectById.get(projectId) : undefined
     if (!project) continue // projeto fora do alcance (RLS) — ignora
 
-    const person = t.assignee_id ? profileById.get(t.assignee_id) ?? null : null
-    const item: HistoryTaskItem = {
+    merged.push({
       id: t.id,
       title: t.title,
       status: t.status,
@@ -253,10 +247,43 @@ export async function getCompletedHistory(): Promise<HistoryReport> {
       projectName: project.name,
       projectKey: project.key,
       projectColor: project.color,
-      assigneeName: person?.name ?? person?.email ?? null,
-    }
+      assigneeName: assigneeNameFrom(profileById, t.assignee_id),
+    })
+  }
 
-    const day = brtDate(new Date(t.completed_at))
+  for (const t of quickTasks) {
+    if (!t.completed_at) continue
+    merged.push({
+      id: t.id,
+      title: t.title,
+      status: t.status,
+      priority: t.priority,
+      due_date: t.due_date,
+      completed_at: t.completed_at,
+      overdue: false,
+      projectId: QUICK_PSEUDO_PROJECT.id,
+      projectName: QUICK_PSEUDO_PROJECT.name,
+      projectKey: QUICK_PSEUDO_PROJECT.key,
+      projectColor: QUICK_PSEUDO_PROJECT.color,
+      assigneeName: assigneeNameFrom(profileById, t.assignee_id),
+    })
+  }
+
+  // Cada consulta veio ordenada, mas o merge das duas precisa reordenar.
+  merged.sort((a, b) => (b.completed_at ?? '').localeCompare(a.completed_at ?? ''))
+
+  const capped =
+    merged.length > HISTORY_LIMIT ||
+    tasks.length >= HISTORY_LIMIT ||
+    quickTasks.length >= HISTORY_LIMIT
+  const visible = merged.slice(0, HISTORY_LIMIT)
+
+  // Agrupa por dia BRT preservando a ordem desc.
+  const dayOrder: string[] = []
+  const byDay = new Map<string, HistoryTaskItem[]>()
+
+  for (const item of visible) {
+    const day = brtDate(new Date(item.completed_at!))
     let list = byDay.get(day)
     if (!list) {
       list = []
@@ -264,9 +291,8 @@ export async function getCompletedHistory(): Promise<HistoryReport> {
       dayOrder.push(day)
     }
     list.push(item)
-    total++
   }
 
   const days: HistoryDay[] = dayOrder.map((day) => ({ day, items: byDay.get(day)! }))
-  return { days, total, capped: tasks.length >= HISTORY_LIMIT }
+  return { days, total: visible.length, capped }
 }

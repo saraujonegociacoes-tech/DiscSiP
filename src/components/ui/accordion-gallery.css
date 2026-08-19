@@ -1,0 +1,326 @@
+/*
+ * AccordionGallery (react-bits) adaptado: no lugar das imagens, cada painel
+ * carrega conteudo React. Os tamanhos sao controlados por GSAP (flex-grow),
+ * aqui fica so a pintura — toda ela em tokens do Blue Desk, seguindo o tema
+ * claro/escuro da pagina como qualquer outro card.
+ *
+ * Profundidade em dois canais, separados por CUSTO:
+ *
+ *   • `--ag-depth` (0 = em foco, 1 = ao fundo), animada pelo GSAP a cada quadro,
+ *     controla apenas OPACIDADE de camadas (__dim e __lift) — trabalho de
+ *     composicao, que a GPU faz de graca;
+ *   • borda, sombra e desfoque sao estados presos a classe `--active`, com
+ *     transicao do CSS. Sao propriedades de PINTURA: derivar as tres de
+ *     `--ag-depth` obrigava o navegador a recompor sombra de tres camadas,
+ *     `color-mix` e filtro de todos os paineis 60 vezes por segundo.
+ */
+/*
+ * Tipada de proposito: sem @property, `--ag-depth` seria um texto solto e um
+ * calc() invalido derrubaria a declaracao inteira.
+ *
+ * `inherits: true` e obrigatorio, nao preferencia. O GSAP escreve a variavel no
+ * PAINEL, mas quem a consome sao as camadas filhas (__dim, __lift). Com
+ * `inherits: false` elas nao enxergam o valor do pai e caem no initial-value 1:
+ * o painel em foco ficava escurecido como os outros e a camada de luz nunca
+ * aparecia.
+ */
+@property --ag-depth {
+  syntax: '<number>';
+  inherits: true;
+  initial-value: 1;
+}
+
+.accordion-gallery {
+  --ag-accent: var(--primary);
+  --ag-gap: 12px;
+  --ag-radius: 16px;
+
+  display: flex;
+  flex-direction: row;
+  gap: var(--ag-gap);
+  width: 100%;
+  max-width: 100%;
+  perspective: 1600px;
+  perspective-origin: 50% 50%;
+}
+
+.ag-panel {
+  --ag-depth: 1;
+  /* Posicao do ponteiro, escrita pelo componente. 50%/50% enquanto ninguem passa. */
+  --ag-mx: 50%;
+  --ag-my: 50%;
+
+  position: relative;
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  border-radius: var(--ag-radius);
+  cursor: pointer;
+  display: block;
+  text-align: left;
+  text-decoration: none;
+  outline: none;
+  transform-style: preserve-3d;
+  transform-origin: center center;
+  background: var(--gradient-card);
+  -webkit-tap-highlight-color: transparent;
+
+  /*
+   * Sem `will-change: transform` de proposito. Ele promove TODO painel a uma
+   * camada de composicao permanente, e texto em camada propria perde a
+   * suavizacao subpixel — a fila inteira fica com a fonte mais fina e cinzenta.
+   * O GSAP anima igual sem a dica; a promocao acontece so durante a transicao.
+   */
+
+  /*
+   * Borda, sombra e desfoque sao ESTADOS (fundo / foco), nao uma rampa continua:
+   * a classe `--active` troca os valores e a transicao do CSS faz a passagem, no
+   * mesmo tempo da animacao do GSAP.
+   *
+   * A versao anterior derivava os tres de `--ag-depth` com `calc()`. Como o GSAP
+   * reescreve essa variavel a cada quadro, o navegador recompunha sombra (tres
+   * camadas), `color-mix` da borda e o filtro de todos os paineis 60 vezes por
+   * segundo — trabalho de pintura, o mais caro que existe. Assim so restam duas
+   * transicoes disparadas uma vez.
+   */
+  border: 1px solid color-mix(in srgb, var(--border) 45%, transparent);
+  box-shadow:
+    inset 0 1px 0 0 oklch(1 0 0 / 0.04),
+    0 4px 14px -6px oklch(0 0 0 / 0.32);
+
+  transition:
+    box-shadow 0.55s ease,
+    border-color 0.3s ease,
+    filter 0.4s ease;
+}
+
+/*
+ * O desfoque de profundidade fica FORA do painel em foco, em vez de ser
+ * blur(0px) nele. Um `filter`, mesmo neutro, promove o elemento a uma camada
+ * propria e o texto passa a ser suavizado em escala de cinza no lugar do
+ * subpixel — era isso que deixava o card principal com cara de lavado.
+ */
+.ag-panel:not(.ag-panel--active) {
+  filter: blur(0.4px);
+}
+
+/*
+ * Luz vinda do canto superior esquerdo: levanta o painel em foco em vez de so
+ * escurecer os outros. Sem isso o "destaque" era ausencia de escurecimento.
+ *
+ * A luz e NA COR DA MARCA, nao branca. Filme branco sobre uma superficie de croma
+ * baixo puxa a cor para o cinza — foi assim que o card em foco ficou mais apagado
+ * que os laterais, que nao tinham camada nenhuma por cima. Com `--primary` a
+ * camada acrescenta luminancia E croma: o card acende em vez de desbotar.
+ */
+.ag-panel__lift {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 1;
+  background:
+    radial-gradient(
+      120% 85% at 0% 0%,
+      color-mix(in srgb, var(--primary) 30%, transparent) 0%,
+      transparent 62%
+    ),
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--primary) 12%, transparent) 0%,
+      transparent 45%
+    );
+  opacity: calc(1 - var(--ag-depth));
+}
+
+.ag-panel:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+/* Linha de luz mais forte no topo, sombra que cresce e um halo na cor do status —
+   e o que separa o card em foco do resto da fila. */
+.ag-panel--active {
+  cursor: default;
+  border-color: color-mix(in srgb, var(--ag-accent) 52%, var(--border));
+  box-shadow:
+    inset 0 1px 0 0 oklch(1 0 0 / 0.15),
+    0 24px 60px -16px oklch(0 0 0 / 0.66),
+    0 26px 64px -26px color-mix(in srgb, var(--ag-accent) 42%, transparent);
+}
+
+/*
+ * Escurecimento do que esta ao fundo. Camada propria (e nao `opacity` no painel)
+ * para o card nao ficar translucido sobre o fundo da pagina.
+ *
+ * A cor e a MESMA familia do fundo da pagina (croma 0.07, matiz 268), nao um
+ * cinza neutro: um veu de croma baixo por cima de um card azul lava o azul, e a
+ * fila inteira sai acinzentada. Assim os painieis ao fundo afundam no fundo em
+ * vez de desbotar.
+ */
+.ag-panel__dim {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 4;
+  background: oklch(0.12 0.07 268 / 0.5);
+  opacity: var(--ag-depth);
+}
+
+/*
+ * A cor do status entra como uma barra fina no topo mais o derrame de luz do
+ * `__wash` logo abaixo — nao como uma lavagem no painel inteiro. Cobrir tudo
+ * tingia o card (o amarelo de "Fazendo" virava oliva) e comia o contraste do texto.
+ */
+.ag-panel__accent {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(
+    90deg,
+    var(--ag-accent) 0%,
+    color-mix(in srgb, var(--ag-accent) 35%, transparent) 100%
+  );
+  z-index: 5;
+}
+
+/* Luz derramando da barra de status. Elipse no canto, nao faixa de largura
+   inteira: a faixa cobria o topo por igual e chapava o card de amarelo/roxo. */
+.ag-panel__wash {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 1;
+  background: radial-gradient(
+    85% 50% at 10% 0%,
+    color-mix(in srgb, var(--ag-accent) 20%, transparent) 0%,
+    transparent 70%
+  );
+}
+
+/* Spotlight: clarao suave seguindo o ponteiro. So acende no hover, e some com
+   uma transicao mais longa do que a de entrada — sair nao pode "estalar". */
+.ag-panel__glare {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 1;
+  opacity: 0;
+  background: radial-gradient(
+    380px circle at var(--ag-mx) var(--ag-my),
+    oklch(1 0 0 / 0.07) 0%,
+    oklch(1 0 0 / 0.03) 35%,
+    transparent 65%
+  );
+  transition: opacity 0.5s ease;
+}
+
+.ag-panel:hover .ag-panel__glare {
+  opacity: 1;
+  transition: opacity 0.2s ease;
+}
+
+.ag-panel:hover:not(.ag-panel--active) {
+  border-color: color-mix(in srgb, var(--ag-accent) 26%, var(--border));
+}
+
+/* ─── Painel fechado: titulo na vertical, centralizado ─────────────────── */
+.ag-panel__spine {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  padding: 24px 8px;
+  z-index: 2;
+  pointer-events: none;
+}
+
+.ag-panel__spine-dot {
+  flex: 0 0 auto;
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--ag-accent);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--ag-accent) 16%, transparent);
+}
+
+.ag-panel__spine-text {
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+  max-height: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+  font-size: 0.875rem;
+  letter-spacing: 0.015em;
+  color: var(--card-foreground);
+}
+
+.ag-panel__spine-meta {
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+  white-space: nowrap;
+  font-size: 0.6875rem;
+  letter-spacing: 0.04em;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted-foreground);
+}
+
+/* ─── Painel aberto ────────────────────────────────────────────────────── */
+.ag-panel__body {
+  position: absolute;
+  inset: 0;
+  padding: 24px 26px 22px;
+  overflow: auto;
+  z-index: 2;
+  opacity: 0;
+  color: var(--card-foreground);
+}
+
+/* Empilha em telas estreitas: accordion horizontal nao cabe no celular. */
+@media (max-width: 640px) {
+  .accordion-gallery {
+    flex-direction: column;
+    perspective: none;
+    height: auto !important;
+  }
+  .ag-panel,
+  .ag-panel:not(.ag-panel--active) {
+    min-height: 60px;
+    transform: none !important;
+    filter: none; /* empilhado nao ha profundidade a sugerir — so custo */
+  }
+  .ag-panel--active {
+    min-height: 340px;
+  }
+  .ag-panel__spine {
+    flex-direction: row;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 12px;
+    padding: 0 18px;
+  }
+  .ag-panel__spine-text,
+  .ag-panel__spine-meta {
+    writing-mode: horizontal-tb;
+    transform: none;
+  }
+  .ag-panel__spine-meta {
+    margin-left: auto;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ag-panel {
+    transition: none;
+  }
+  .ag-panel__glare {
+    display: none;
+  }
+}

@@ -234,3 +234,36 @@ export interface CalendarTaskItem {
   assigneeId: string | null
   assigneeName: string | null
 }
+
+// ─── Tarefas rapidas (dinamicas, sem projeto/board/group) ───────────────────
+export interface MondayQuickTask {
+  id: string
+  owner_id: string
+  title: string
+  description: string | null
+  /** Rotulo livre p/ agrupar ("Suporte", "Financeiro"...). */
+  category: string | null
+  status: MondayTaskStatus
+  priority: MondayTaskPriority
+  assignee_id: string | null
+  due_date: string | null
+  completed_at: string | null
+  archived: boolean
+  position: number
+  created_at: string
+  updated_at: string
+}
+
+export type MondayQuickTaskWithAssignee = MondayQuickTask & {
+  assignee: MondayMemberProfile | null
+}
+
+export interface QuickTaskInput {
+  title: string
+  description: string | null
+  category: string | null
+  status: MondayTaskStatus
+  priority: MondayTaskPriority
+  assignee_id: string | null
+  due_date: string | null
+}
