@@ -1,75 +1,62 @@
 'use server'
 
 import { createServerClient } from '@/lib/supabase/server'
-import type {
-  CalendarTaskItem,
-  MondayMemberProfile,
-  MondayProject,
-  MondayTask,
-} from '@/lib/monday/types'
+import { QUICK_PSEUDO_PROJECT } from '@/lib/monday/domain'
+import { assigneeNameFrom, resolveProfiles, resolveProjects } from '@/lib/monday/task-joins'
+import type { CalendarTaskItem, MondayQuickTask, MondayTask } from '@/lib/monday/types'
 
 type TaskRow = Pick<
   MondayTask,
   'id' | 'title' | 'status' | 'priority' | 'due_date' | 'assignee_id' | 'board_id'
 >
-type ProjectRow = Pick<MondayProject, 'id' | 'name' | 'key' | 'color'>
+type QuickRow = Pick<
+  MondayQuickTask,
+  'id' | 'title' | 'status' | 'priority' | 'due_date' | 'assignee_id'
+>
 
 const TASK_COLS = 'id, title, status, priority, due_date, assignee_id, board_id'
+const QUICK_COLS = 'id, title, status, priority, due_date, assignee_id'
 
 /**
  * Todas as tarefas com prazo (due_date) dos projetos que o usuario acessa (RLS de
- * monday_tasks). Alimenta a visao de calendario de entregas — o agrupamento por dia
- * e a navegacao entre meses acontecem no cliente (o due_date e uma data pura, sem fuso).
+ * monday_tasks) MAIS as tarefas rapidas com prazo (RLS de monday_quick_tasks).
+ * Alimenta a visao de calendario de entregas — o agrupamento por dia e a navegacao
+ * entre meses acontecem no cliente (o due_date e uma data pura, sem fuso).
+ *
+ * A tarefa rapida nao tem projeto: entra com o QUICK_PSEUDO_PROJECT e pula o
+ * caminho board -> projeto, entao a integracao custa 1 index scan e nenhum join.
  */
 export async function getDeliveryCalendar(): Promise<{ tasks: CalendarTaskItem[] }> {
   const supabase = await createServerClient()
 
-  const { data: taskData } = await supabase
-    .from('monday_tasks')
-    .select(TASK_COLS)
-    .eq('archived', false)
-    .not('due_date', 'is', null)
+  const [taskRes, quickRes] = await Promise.all([
+    supabase
+      .from('monday_tasks')
+      .select(TASK_COLS)
+      .eq('archived', false)
+      .not('due_date', 'is', null),
+    supabase
+      .from('monday_quick_tasks')
+      .select(QUICK_COLS)
+      .eq('archived', false)
+      .not('due_date', 'is', null),
+  ])
 
-  const tasks = (taskData ?? []) as TaskRow[]
-  if (!tasks.length) return { tasks: [] }
+  const tasks = (taskRes.data ?? []) as TaskRow[]
+  const quickTasks = (quickRes.data ?? []) as QuickRow[]
+  if (!tasks.length && !quickTasks.length) return { tasks: [] }
 
-  // board -> projeto
-  const boardIds = [...new Set(tasks.map((t) => t.board_id))]
-  const { data: boards } = await supabase
-    .from('monday_boards')
-    .select('id, project_id')
-    .in('id', boardIds)
-  const boardToProject = new Map(
-    ((boards ?? []) as { id: string; project_id: string }[]).map((b) => [b.id, b.project_id]),
-  )
-
-  const projectIds = [...new Set([...boardToProject.values()])]
-  const { data: projects } = await supabase
-    .from('monday_projects')
-    .select('id, name, key, color')
-    .in('id', projectIds)
-  const projectById = new Map(((projects ?? []) as ProjectRow[]).map((p) => [p.id, p]))
-
-  // responsaveis
-  const assigneeIds = [...new Set(tasks.map((t) => t.assignee_id).filter(Boolean))] as string[]
-  let profiles: MondayMemberProfile[] = []
-  if (assigneeIds.length) {
-    const { data } = await supabase
-      .from('profiles')
-      .select('id, name, email')
-      .in('id', assigneeIds)
-    profiles = (data ?? []) as MondayMemberProfile[]
-  }
-  const profileById = new Map(profiles.map((p) => [p.id, p]))
+  const { boardToProject, projectById } = await resolveProjects(supabase, tasks)
+  const profileById = await resolveProfiles(supabase, [...tasks, ...quickTasks])
 
   const items: CalendarTaskItem[] = []
+
   for (const t of tasks) {
     if (!t.due_date) continue
     const projectId = boardToProject.get(t.board_id)
     const project = projectId ? projectById.get(projectId) : undefined
     if (!project) continue // projeto fora do alcance (RLS) — ignora
 
-    const person = t.assignee_id ? profileById.get(t.assignee_id) ?? null : null
     items.push({
       id: t.id,
       title: t.title,
@@ -81,7 +68,24 @@ export async function getDeliveryCalendar(): Promise<{ tasks: CalendarTaskItem[]
       projectKey: project.key,
       projectColor: project.color,
       assigneeId: t.assignee_id,
-      assigneeName: person?.name ?? person?.email ?? null,
+      assigneeName: assigneeNameFrom(profileById, t.assignee_id),
+    })
+  }
+
+  for (const t of quickTasks) {
+    if (!t.due_date) continue
+    items.push({
+      id: t.id,
+      title: t.title,
+      status: t.status,
+      priority: t.priority,
+      due_date: t.due_date,
+      projectId: QUICK_PSEUDO_PROJECT.id,
+      projectName: QUICK_PSEUDO_PROJECT.name,
+      projectKey: QUICK_PSEUDO_PROJECT.key,
+      projectColor: QUICK_PSEUDO_PROJECT.color,
+      assigneeId: t.assignee_id,
+      assigneeName: assigneeNameFrom(profileById, t.assignee_id),
     })
   }
 

@@ -4,6 +4,7 @@ import { CalendarCheck, CalendarDays, LayoutGrid } from 'lucide-react'
 import { getCurrentProfile } from '@/app/actions/auth'
 import { getProjectsWithStats } from '@/app/actions/monday-projects'
 import { MondayShell } from '@/components/monday/monday-shell'
+import { ProjectsTabs } from '@/components/monday/projects-tabs'
 import { CreateProjectDialog } from '@/components/monday/projects/create-project-dialog'
 import { ProjectsList } from '@/components/monday/projects/projects-list'
 import { SeedDemoButton } from '@/components/monday/projects/seed-demo-button'
@@ -23,6 +24,8 @@ export default async function ProjectsPage() {
   return (
     <MondayShell>
       <div className="mx-auto max-w-7xl space-y-6">
+        <ProjectsTabs />
+
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-semibold tracking-tight">Projetos</h1>

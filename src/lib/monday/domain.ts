@@ -70,3 +70,32 @@ export function initials(name?: string | null, email?: string | null): string {
   if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase()
   return (parts[0][0] + parts[1][0]).toUpperCase()
 }
+
+/**
+ * "Projeto" sintetico das tarefas rapidas. A Daily, o Calendario e o Historico
+ * mostram tudo agrupado por projeto; como a tarefa rapida nao tem projeto nenhum,
+ * esses campos sao preenchidos com esta constante — em JS, sem query alguma
+ * (a tarefa rapida pula todo o caminho board -> projeto).
+ */
+export const QUICK_PSEUDO_PROJECT = {
+  id: '__quick__',
+  name: 'Tarefas rápidas',
+  key: 'RÁPIDA',
+  color: '#00C2A8',
+} as const
+
+/**
+ * Categorias distintas de uma lista de tarefas rapidas, ja ordenadas.
+ *
+ * Derivar da lista que a pagina JA carregou substitui uma segunda consulta ao
+ * banco: as duas varriam a mesma tabela sob a mesma RLS, e a segunda so existia
+ * para fazer um `distinct` que o JS resolve em uma passada.
+ */
+export function quickTaskCategories(tasks: { category: string | null }[]): string[] {
+  const set = new Set<string>()
+  for (const t of tasks) {
+    const c = t.category?.trim()
+    if (c) set.add(c)
+  }
+  return [...set].sort((a, b) => a.localeCompare(b, 'pt-BR'))
+}
