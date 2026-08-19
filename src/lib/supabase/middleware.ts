@@ -1,8 +1,10 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
-// Rotas públicas (não exigem sessão).
-const PUBLIC_ROUTES = ['/login', '/cadastro', '/verifique-email']
+// Rotas públicas (não exigem sessão). O fluxo de redefinição de senha entra aqui só
+// pelo /esqueci-senha: as outras duas etapas (/auth/recuperar e /auth/redefinir-senha)
+// vivem sob /auth/, que o matcher já exclui do middleware.
+const PUBLIC_ROUTES = ['/login', '/cadastro', '/verifique-email', '/esqueci-senha']
 
 // Tudo que o papel `ceo` alcança. Lista de PERMISSÃO (o oposto dos gates por área abaixo)
 // porque `ceo` é uma trava lateral, não um nível: ele só tem o painel executivo e a ajuda.

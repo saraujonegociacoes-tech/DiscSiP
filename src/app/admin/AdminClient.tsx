@@ -1,18 +1,30 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Plus } from 'lucide-react'
+import { Plus, Trash2 } from 'lucide-react'
 import { AppShell } from '@/components/bluedesk/AppShell'
 import { PageHeader } from '@/components/bluedesk/PageHeader'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import { cn } from '@/lib/utils'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import {
   updateProfile,
   createDepartment,
   updateDepartment,
   deleteDepartment,
+  deleteUser,
+  getDeletionPreview,
+  type DeletionPreview,
 } from '@/app/actions/admin'
 import type { Profile, Department, Role } from '@/lib/types/database'
 
@@ -37,9 +49,12 @@ type Tab = 'users' | 'departments'
 interface Props {
   profiles: Profile[]
   departments: Department[]
+  // Id de quem esta com o /admin aberto, so para nao oferecer "Excluir" na propria
+  // linha (a Server Action recusa de qualquer jeito — isto evita o botao sem saida).
+  currentUserId: string | null
 }
 
-export function AdminClient({ profiles, departments }: Props) {
+export function AdminClient({ profiles, departments, currentUserId }: Props) {
   const [tab, setTab] = useState<Tab>('users')
 
   return (
@@ -65,7 +80,7 @@ export function AdminClient({ profiles, departments }: Props) {
         </div>
 
         {tab === 'users' ? (
-          <UsersTab profiles={profiles} departments={departments} />
+          <UsersTab profiles={profiles} departments={departments} currentUserId={currentUserId} />
         ) : (
           <DepartmentsTab departments={departments} />
         )}
@@ -76,7 +91,7 @@ export function AdminClient({ profiles, departments }: Props) {
 
 // ─── Usuários ────────────────────────────────────────────────────────────────
 
-function UsersTab({ profiles, departments }: Props) {
+function UsersTab({ profiles, departments, currentUserId }: Props) {
   const pending = profiles.filter((p) => p.role === 'pending')
   const others = profiles.filter((p) => p.role !== 'pending')
 
@@ -89,7 +104,13 @@ function UsersTab({ profiles, departments }: Props) {
           </h2>
           <div className="space-y-2">
             {pending.map((p) => (
-              <UserRow key={p.id} profile={p} departments={departments} highlight />
+              <UserRow
+                key={p.id}
+                profile={p}
+                departments={departments}
+                currentUserId={currentUserId}
+                highlight
+              />
             ))}
           </div>
         </section>
@@ -104,7 +125,12 @@ function UsersTab({ profiles, departments }: Props) {
         ) : (
           <div className="space-y-2">
             {others.map((p) => (
-              <UserRow key={p.id} profile={p} departments={departments} />
+              <UserRow
+                key={p.id}
+                profile={p}
+                departments={departments}
+                currentUserId={currentUserId}
+              />
             ))}
           </div>
         )}
@@ -116,10 +142,12 @@ function UsersTab({ profiles, departments }: Props) {
 function UserRow({
   profile,
   departments,
+  currentUserId,
   highlight,
 }: {
   profile: Profile
   departments: Department[]
+  currentUserId: string | null
   highlight?: boolean
 }) {
   const router = useRouter()
@@ -130,6 +158,7 @@ function UserRow({
   )
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const [confirmingDelete, setConfirmingDelete] = useState(false)
 
   const dirty =
     role !== profile.role ||
@@ -164,14 +193,28 @@ function UserRow({
           <p className="truncate text-sm font-medium text-foreground">{profile.name}</p>
           <p className="truncate text-xs text-muted-foreground">{profile.email ?? '—'}</p>
         </div>
-        <Button
-          size="sm"
-          onClick={handleSave}
-          disabled={saving || !dirty}
-          className="shrink-0 bg-primary hover:bg-primary/90"
-        >
-          {saving ? 'Salvando...' : 'Salvar'}
-        </Button>
+        <div className="flex shrink-0 items-center gap-2">
+          <Button
+            size="sm"
+            onClick={handleSave}
+            disabled={saving || !dirty}
+            className="bg-primary hover:bg-primary/90"
+          >
+            {saving ? 'Salvando...' : 'Salvar'}
+          </Button>
+          {profile.id !== currentUserId && (
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => setConfirmingDelete(true)}
+              title="Excluir usuário"
+              aria-label={`Excluir ${profile.name}`}
+              className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+            >
+              <Trash2 className="h-4 w-4" />
+            </Button>
+          )}
+        </div>
       </div>
 
       <div className="grid grid-cols-3 gap-2">
@@ -211,7 +254,167 @@ function UserRow({
       </div>
 
       {error && <p className="mt-2 text-xs text-destructive">{error}</p>}
+
+      <DeleteUserDialog
+        profile={profile}
+        open={confirmingDelete}
+        onOpenChange={setConfirmingDelete}
+      />
     </div>
+  )
+}
+
+// ─── Exclusão de usuário ──────────────────────────────────────────────────────────
+//
+// Diálogo de confirmação em duas travas: o admin vê o impacto REAL (levantado no
+// servidor, não estimado aqui) e só então consegue habilitar o botão, digitando o
+// e-mail da pessoa. Exclusão de conta não tem desfazer — um "tem certeza?" comum
+// vira reflexo depois da terceira vez.
+function DeleteUserDialog({
+  profile,
+  open,
+  onOpenChange,
+}: {
+  profile: Profile
+  open: boolean
+  onOpenChange: (open: boolean) => void
+}) {
+  const router = useRouter()
+  const [preview, setPreview] = useState<DeletionPreview | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+  const [error, setError] = useState('')
+  const [typed, setTyped] = useState('')
+
+  // Quem não tem e-mail no perfil confirma pelo nome — a trava não pode ficar
+  // impossível de satisfazer.
+  const expected = profile.email ?? profile.name
+  const confirmed = typed.trim().toLowerCase() === expected.toLowerCase()
+
+  useEffect(() => {
+    if (!open) return
+    // Estado zerado a cada abertura: sem isso, reabrir depois de um erro mostraria a
+    // mensagem velha com o campo já preenchido — ou seja, um clique só para excluir.
+    setPreview(null)
+    setError('')
+    setTyped('')
+    setLoading(true)
+
+    let active = true
+    getDeletionPreview(profile.id).then((result) => {
+      if (!active) return
+      setLoading(false)
+      if (result.error) setError(result.error)
+      else setPreview(result.preview ?? null)
+    })
+    return () => {
+      active = false
+    }
+  }, [open, profile.id])
+
+  const blocked = (preview?.ownedProjects.length ?? 0) > 0
+
+  const handleDelete = async () => {
+    setDeleting(true)
+    setError('')
+    const result = await deleteUser(profile.id)
+    setDeleting(false)
+    if (result.error) {
+      setError(result.error)
+      return
+    }
+    onOpenChange(false)
+    router.refresh()
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Excluir {profile.name}?</DialogTitle>
+          <DialogDescription>
+            A conta é apagada de vez e a pessoa perde o acesso na hora. Não há como desfazer.
+          </DialogDescription>
+        </DialogHeader>
+
+        {loading ? (
+          <div className="h-24 animate-pulse rounded-lg border border-border bg-card/60" />
+        ) : preview ? (
+          <div className="space-y-3 text-sm">
+            {blocked ? (
+              <div className="rounded-lg border border-warning/50 bg-warning/10 p-3">
+                <p className="font-medium text-foreground">
+                  Não dá para excluir ainda: é dono de {preview.ownedProjects.length} projeto(s).
+                </p>
+                <p className="mt-1 text-muted-foreground">
+                  Excluir levaria junto os quadros, tarefas e comentários de todo mundo
+                  nesses projetos. Transfira a propriedade primeiro (botão &ldquo;Transferir&rdquo;,
+                  na página do projeto).
+                </p>
+                <ul className="mt-2 list-inside list-disc text-xs text-muted-foreground">
+                  {preview.ownedProjects.slice(0, 5).map((name) => (
+                    <li key={name}>{name}</li>
+                  ))}
+                  {preview.ownedProjects.length > 5 && (
+                    <li>e mais {preview.ownedProjects.length - 5}</li>
+                  )}
+                </ul>
+              </div>
+            ) : (
+              <>
+                <div className="rounded-lg border border-border bg-card/60 p-3">
+                  <p className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                    O histórico fica
+                  </p>
+                  <p className="text-muted-foreground">
+                    {preview.callLogs} ligação(ões) e {preview.assignedTasks} tarefa(s)
+                    continuam nos painéis — só deixam de ter autor.
+                  </p>
+                </div>
+                <div className="rounded-lg border border-destructive/40 bg-destructive/10 p-3">
+                  <p className="mb-1 text-xs font-medium uppercase tracking-wide text-destructive">
+                    Some junto
+                  </p>
+                  <p className="text-muted-foreground">
+                    {preview.quickTasks} tarefa(s) rápida(s) da lista pessoal, as
+                    notificações e os vínculos com campanhas e projetos.
+                  </p>
+                </div>
+
+                <div className="space-y-2 pt-1">
+                  <Label htmlFor={`confirm-${profile.id}`} className="text-xs">
+                    Digite <span className="font-medium text-foreground">{expected}</span> para
+                    confirmar
+                  </Label>
+                  <Input
+                    id={`confirm-${profile.id}`}
+                    value={typed}
+                    onChange={(e) => setTyped(e.target.value)}
+                    autoComplete="off"
+                    placeholder={expected}
+                  />
+                </div>
+              </>
+            )}
+          </div>
+        ) : null}
+
+        {error && <p className="text-sm text-destructive">{error}</p>}
+
+        <DialogFooter>
+          <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={deleting}>
+            Cancelar
+          </Button>
+          <Button
+            variant="destructive"
+            onClick={handleDelete}
+            disabled={deleting || loading || blocked || !confirmed}
+          >
+            {deleting ? 'Excluindo...' : 'Excluir definitivamente'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   )
 }
 
