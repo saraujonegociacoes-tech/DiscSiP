@@ -779,3 +779,87 @@ export interface CreateMinutaInput {
   primeiroVencimento: string | null // ISO date
   observacoes: string
 }
+
+// ── Central de Aparelhos (inventário de TI) — transversal ────────────────────
+// App-native/CRUD (migration 20260820_inventario_aparelhos.sql, tabelas `inv_*`).
+// Três entidades ligadas em cadeia: PESSOA ← APARELHO ← CHIP. Nenhuma exige a
+// outra — chip pode estar solto (sem aparelho) e aparelho pode estar em estoque
+// (sem pessoa).
+//
+// Diferente dos painéis por vertical, o acesso NÃO é por departamento: é por
+// papel (leem supervisor/manager/admin; escrevem manager/admin). Todo
+// departamento tem celular da empresa.
+
+export type InvStatus = 'em_uso' | 'estoque' | 'manutencao'
+export type InvChipTipo = 'pre' | 'pos'
+
+export interface InvPessoa {
+  id: string
+  nome: string
+  departamento: string | null
+  // Vínculo OPCIONAL com um usuário do Blue Desk. Nulo é o caso normal: quem tem
+  // celular da empresa nem sempre usa o sistema.
+  profileId: string | null
+  profileNome: string | null // resolvido na leitura, não é coluna
+  observacoes: string | null
+  createdAt: string // ISO
+}
+
+export interface InvChip {
+  id: string
+  numero: string
+  operadora: string | null
+  tipo: InvChipTipo
+  aparelhoId: string | null
+  // 1 ou 2 — a posição no aparelho. Nulo quando o chip está solto; anda sempre
+  // junto de `aparelhoId` (constraint inv_chips_slot_pareado no banco).
+  slot: 1 | 2 | null
+  observacoes: string | null
+  createdAt: string // ISO
+}
+
+export interface InvAparelho {
+  id: string
+  modelo: string
+  imei: string | null
+  pessoaId: string | null
+  status: InvStatus
+  observacoes: string | null
+  createdAt: string // ISO
+  // Montados na leitura (getInventario) a partir das outras duas tabelas.
+  chips: InvChip[] // no máximo 2, ordenados por slot
+}
+
+export interface InvInventarioData {
+  referenceAt: string // "agora" (ISO) — data da foto
+  pessoas: InvPessoa[]
+  aparelhos: InvAparelho[]
+  chips: InvChip[] // TODOS os chips, inclusive os soltos
+  // Usuários do Blue Desk oferecidos no vínculo opcional da pessoa. Vem vazio
+  // para quem não pode escrever — o select nem aparece.
+  profiles: { id: string; nome: string }[]
+}
+
+// Entradas dos formulários. `id` ausente = criação; presente = edição.
+export interface InvPessoaInput {
+  nome: string
+  departamento: string
+  profileId: string | null
+  observacoes: string
+}
+
+export interface InvAparelhoInput {
+  modelo: string
+  imei: string
+  pessoaId: string | null
+  status: InvStatus
+  observacoes: string
+}
+
+export interface InvChipInput {
+  numero: string
+  operadora: string
+  tipo: InvChipTipo
+  aparelhoId: string | null
+  observacoes: string
+}
