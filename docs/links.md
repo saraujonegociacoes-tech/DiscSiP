@@ -13,6 +13,7 @@ manter o padrão. O README do projeto fica na raiz do repo (`../README.md`).
 | Aquecimento WhatsApp | `warmup-docs/` | [`updates/aquecimento-whatsapp-indice.md`](warmup-docs/updates/aquecimento-whatsapp-indice.md) |
 | Projetos (Desenvolvimento / TI) | `projetos-docs/` | [`updates/projetos-blue-desk.md`](projetos-docs/updates/projetos-blue-desk.md) |
 | Minutas Processuais (Jurídico) | `minutas-docs/` | [`updates/painel-minutas-processuais.md`](minutas-docs/updates/painel-minutas-processuais.md) |
+| Central de Aparelhos (inventário, transversal) | `inventario-docs/` | [`updates/central-de-aparelhos.md`](inventario-docs/updates/central-de-aparelhos.md) |
 | RBAC / Acessos (transversal) | `rbac-docs/` | [`updates/acessos-e-papel-tester.md`](rbac-docs/updates/acessos-e-papel-tester.md) |
 | Painel do CEO (executivo) | `projetopainelceo-docs/` | [`updates/painel-ceo-indice.md`](projetopainelceo-docs/updates/painel-ceo-indice.md) |
 | Performance / Bundle (transversal) | `performance-docs/` | [`updates/auditoria-performance-2026-08.md`](performance-docs/updates/auditoria-performance-2026-08.md) |
@@ -147,6 +148,27 @@ CS** (aba dentro de `/cs`, tabelas `cs_*`) — não confundir.
   ⚠️ **Pendente:** `Migrations_minutas/20260803b_proc_can_access_tester.sql` — inclui o papel
   `tester` no `proc_can_access()`. Sem ela o tester passa no gate da página mas a RLS devolve zero
   linhas, e o `/minutas` abre **vazio**.
+
+---
+
+# Central de Aparelhos (inventário) · `inventario-docs/`
+
+Inventário dos celulares da empresa, dos chips e de quem está com cada aparelho (rota
+`/aparelhos`, tabelas `inv_*`). **App-native/CRUD**, no molde das Minutas Processuais.
+**Transversal, não é vertical de departamento** — todo departamento tem celular da empresa, então
+o gate é por PAPEL (leem supervisor/gerente/admin; escrevem gerente/admin) e a área fica **fora**
+de `VERTICAL_GATES` no middleware.
+
+## `updates/`
+- [`central-de-aparelhos.md`](inventario-docs/updates/central-de-aparelhos.md) — a área, o modelo
+  (`inv_pessoas` + `inv_aparelhos` + `inv_chips`), acesso/RLS (leitura e escrita **separadas**, ao
+  contrário do `for all` das Minutas) e as 4 abas. Traz o que mudou do protótipo HTML de origem e
+  duas decisões que valem além desta área: o **limite de 2 chips é regra de banco** (`slot` +
+  unique, não contagem no app — que teria corrida) e o **tester sai de graça** por construir os
+  gates sobre `current_profile_role()`, em vez de repetir a lista de papéis e esquecer dele como
+  aconteceu no `/minutas`.
+  ⚠️ **Pendente:** aplicar `Migrations_inventario/20260820_inventario_aparelhos.sql`. Até lá o
+  painel abre **vazio** (degrada de propósito, não quebra).
 
 ---
 

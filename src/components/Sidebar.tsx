@@ -16,6 +16,7 @@ import {
   FolderKanban,
   Scale,
   Crown,
+  Smartphone,
   type LucideIcon,
 } from 'lucide-react'
 import { useSoftphoneStore } from '@/store/softphoneStore'
@@ -52,6 +53,11 @@ const OPERATION_ITEMS: NavItem[] = [
   { href: '/softphone', label: 'Discador', icon: PhoneCall, roles: ['agent', 'supervisor', 'manager', 'admin'], depts: ['comercial'] },
   { href: '/aquecimento', label: 'Warmup Whatsapp', icon: Flame, roles: ['supervisor', 'manager', 'admin'], depts: ['comercial'] },
   { href: '/campaigns', label: 'Campanhas', icon: Megaphone, roles: ['supervisor', 'manager', 'admin'], depts: ['comercial'] },
+  // Central de Aparelhos: TRANSVERSAL de propósito — sem `depts`, porque todo
+  // departamento tem celular da empresa. Fora dela ficam agente (não precisa
+  // consultar o parque) e ceo (trava lateral, só /ceo e /ajuda). O supervisor
+  // entra em modo leitura; quem cadastra é manager/admin (RLS: inv_can_write).
+  { href: '/aparelhos', label: 'Central de Aparelhos', icon: Smartphone, roles: ['supervisor', 'manager', 'admin'] },
   { href: '/admin', label: 'Admin', icon: Shield, roles: ['admin'] },
   // Painel do CEO: papel `ceo` (dono da área) + admin, pra suporte. Único item que o ceo
   // enxerga além da ajuda — o middleware devolve qualquer outra rota pra cá.

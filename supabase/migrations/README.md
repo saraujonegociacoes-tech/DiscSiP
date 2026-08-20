@@ -43,6 +43,7 @@ achar rápido "de quem é esta migration", espelhando os nomes de [`docs/`](../.
 | `Migrations_projetopainelceo/` | Painel do CEO — inclui os schemas Financeiro e Negociação, que existem **para** ele | `docs/projetopainelceo-docs/` |
 | `Migrations_projetos/` | Projetos / tarefas (`monday_*`) — inclui o feed de notificações in-app, que nasceu das @menções em comentários | `docs/projetos-docs/` |
 | `Migrations_minutas/` | Minutas Processuais (Jurídico, `proc_*`) | `docs/minutas-docs/` |
+| `Migrations_inventario/` | Central de Aparelhos (inventário de TI, `inv_*`) — transversal, gate por papel | `docs/inventario-docs/` |
 | `Migrations_warmup/` | Aquecimento de números WhatsApp | `docs/warmup-docs/` |
 | `Migrations_rbac/` | Plataforma: papéis e departamentos (transversal a todos) | `docs/rbac-docs/` |
 

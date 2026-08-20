@@ -39,6 +39,7 @@ export function BoardView({ projectId, boardId, members, initialTasks, currentUs
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editingTask, setEditingTask] = useState<MondayTaskWithTags | null>(null)
   const [createStatus, setCreateStatus] = useState<MondayTaskStatus>('todo')
+  const [dialogInstance, setDialogInstance] = useState(0)
   const [detailOpen, setDetailOpen] = useState(false)
   const [detailTask, setDetailTask] = useState<MondayTaskWithTags | null>(null)
   const [mounted, setMounted] = useState(false)
@@ -101,10 +102,20 @@ export function BoardView({ projectId, boardId, members, initialTasks, currentUs
     })
   }
 
+  // O TaskDialog fica montado o tempo todo (so o conteudo do Radix desmonta) e le a
+  // tarefa uma unica vez, no useState de cada campo. Sem remontar, o formulario abriria
+  // com os campos da abertura anterior — vazio ao editar a primeira tarefa, e com os
+  // dados da tarefa errada ao trocar de card. Trocar a key a cada abertura faz os
+  // campos nascerem da tarefa atual; fechar nao remonta, preservando a animacao de saida.
+  function openDialog() {
+    setDialogInstance((n) => n + 1)
+    setDialogOpen(true)
+  }
+
   function openCreate(status: MondayTaskStatus) {
     setEditingTask(null)
     setCreateStatus(status)
-    setDialogOpen(true)
+    openDialog()
   }
 
   // Clique no card abre a VISUALIZACAO (com comentarios); a edicao sai de dentro dela.
@@ -114,11 +125,12 @@ export function BoardView({ projectId, boardId, members, initialTasks, currentUs
   }
 
   function openEditFromDetail() {
+    // detailTaskCurrent, nao detailTask: o detalhe pode estar aberto desde antes de um
+    // revalidate, e a edicao deve partir do que o servidor tem agora.
+    if (!detailTaskCurrent) return
     setDetailOpen(false)
-    if (detailTask) {
-      setEditingTask(detailTask)
-      setDialogOpen(true)
-    }
+    setEditingTask(detailTaskCurrent)
+    openDialog()
   }
 
   // Mantem o detalhe em sincronia com o servidor (ex.: apos comentar/editar).
@@ -177,6 +189,7 @@ export function BoardView({ projectId, boardId, members, initialTasks, currentUs
       />
 
       <TaskDialog
+        key={dialogInstance}
         open={dialogOpen}
         onOpenChange={setDialogOpen}
         projectId={projectId}

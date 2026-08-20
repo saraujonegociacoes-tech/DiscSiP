@@ -140,5 +140,14 @@ export async function updateSession(request: NextRequest) {
     return redirectTo(homeFor(role, slug))
   }
 
+  // Central de Aparelhos: TRANSVERSAL, não é vertical — por isso fica fora de
+  // VERTICAL_GATES e não olha o departamento. Todo departamento tem celular da
+  // empresa; quem NÃO entra é o agente (o `ceo` já retornou lá em cima). Escrita é
+  // outra camada: supervisor entra em modo leitura e a RLS (inv_can_write) recusa
+  // qualquer gravação dele.
+  if (pathname.startsWith('/aparelhos') && !managerLevel(role) && role !== 'supervisor') {
+    return redirectTo(homeFor(role, slug))
+  }
+
   return supabaseResponse
 }
