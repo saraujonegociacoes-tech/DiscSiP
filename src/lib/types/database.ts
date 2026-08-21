@@ -270,24 +270,16 @@ export interface CsMatrixData {
   cards: CsMatrixCard[]
 }
 
-// PÁGINA 2 (Equipe): a RPC get_cs_team(p_start, p_end) (migrations 20260722 + 20260723_v2)
-// devolve, numa chamada só, o resumo por responsável no PERÍODO. Duas seções independentes:
+// PÁGINA 2 (Equipe): a RPC get_cs_team(p_start, p_end) devolve, numa chamada só, DUAS
+// seções independentes — ATIVIDADE por pessoa e NEGOCIAÇÕES.
 //
-// 1) MOVIMENTO (coorte = cards ATIVOS): moveu de fase no período × comentou no período,
-//    ignorando entrada/saída de fases is_negotiation/exclude_from_movement. "Atualizou" =
-//    qualquer comentário. + cards recebidos (troca de responsável).
-export interface CsTeamMovementAgent {
-  agentId: string | null
-  agentName: string // "Sem responsável" quando agentId é null
-  received: number // cards recebidos no período (troca de responsável)
-  movedWithUpdate: number // moveu de fase E comentou
-  movedNoUpdate: number // moveu de fase E não comentou
-  onlyUpdate: number // não moveu E comentou
-  idle: number // não moveu E não comentou (sem mover/atualizar)
-}
-export type CsTeamMovementTotals = Omit<CsTeamMovementAgent, 'agentId' | 'agentName'>
+// ⚠ O bloco de MOVIMENTO (recebidos + buckets moveu×comentou) foi REMOVIDO na migration
+// 20260819, por decisão do dono: "não vamos mais trabalhar com movido / com atualização e
+// etc. Apenas atualizado." As chaves `movement`/`movementTotals` não existem mais no jsonb.
+// O que sobrou de útil dele — cards recebidos e tamanho da carteira — virou coluna da
+// tabela de atividade. Negociações é a ÚNICA seção que segue com completa/parcial/incompleta.
 
-// 2) NEGOCIAÇÕES FEITAS NO PERÍODO (card com mudança real nos 5 campos no período),
+// 1) NEGOCIAÇÕES FEITAS NO PERÍODO (card com mudança real nos 5 campos no período),
 //    classificadas pela completude ATUAL. Completa=5 · Parcial=3–4 com Q.D · Incompleta=resto.
 //    `cards` alimenta o drill-down (campos faltando + link do Pipefy).
 //    ⚠ O eixo NÃO é o assignee do card (como no movimento acima): é o campo da fase de
@@ -317,11 +309,61 @@ export type CsTeamNegotiationTotals = Pick<
   'total' | 'completa' | 'parcial' | 'incompleta'
 >
 
+// 2) ATIVIDADE NO PERÍODO por QUEM COMENTOU (migration 20260819_cs_atividade_por_autor).
+//    Eixo INDEPENDENTE da responsabilidade do card: comentário do Charles num card da
+//    Larissa conta pro Charles. Decisão do dono 2026-08-19, depois de o painel mostrar 3
+//    atualizações pro Charles num mês em que ele fez 52 (a RPC creditava o dono do card).
+//
+//    ⚠ 1 COMENTÁRIO = 1 ATUALIZAÇÃO — `updates` conta COMENTÁRIOS, não cards. Por isso
+//    `cardsList[].comments` desce até o comentário individual: o drill precisa mostrar
+//    exatamente os que foram contabilizados, nunca "o último comentário do card" (que
+//    pode ser de outra pessoa). Ver o comentário de granularidade na migration.
+//
+//    A chave `authorId` é o ID DO USUÁRIO NO PIPEFY, não o nome (muda) nem cs_agents.id.
+//    A linha junta dois mundos: `updates`/`cards` vêm do autor do comentário;
+//    `received`/`portfolio` vêm do assignee. O encontro é cs_agents.pipefy_user_id =
+//    author_pipefy_id, com LEFT JOIN dos dois lados — quem comenta e nunca é assignee
+//    aparece com carteira 0, e quem tem carteira e não comentou aparece com updates 0
+//    (essa linha é o que sobrou de útil do antigo bucket "Sem mover/atualizar").
+
+export interface CsActivityComment {
+  commentId: string
+  createdAt: string // ISO
+  text: string | null
+}
+
+export interface CsActivityCard {
+  pipefyCardId: string
+  title: string | null
+  currentPhase: string | null
+  responsibleName: string // dono do card — contexto, NÃO é quem comentou
+  updates: number // comentários DESTE autor neste card no período
+  comments: CsActivityComment[] // exatamente os `updates` comentários contabilizados
+}
+
+export interface CsTeamActivityAgent {
+  authorId: string | null
+  authorName: string // "Autor não identificado" quando authorId é null
+  updates: number // comentários da pessoa no período (a métrica; 0 se só tem carteira)
+  cards: number // cards distintos em que ela comentou
+  received: number // cards recebidos no período (troca de assignee) — eixo do responsável
+  portfolio: number // cards ATIVOS sob responsabilidade dela agora — eixo do responsável
+  cardsList: CsActivityCard[] // vazio quando updates = 0
+}
+
+export interface CsTeamActivityTotals {
+  updates: number
+  cards: number // DISTINCT no período todo (2 autores no mesmo card = 1), não a soma da coluna
+  people: number // quantas pessoas comentaram (≤ linhas da tabela, que inclui quem só tem carteira)
+  received: number
+  portfolio: number // total de cards ativos com responsável — não inclui os sem assignee
+}
+
 export interface CsTeamData {
   periodStart: string // ISO (início do período, inclusivo)
   periodEnd: string // ISO (fim do período, exclusivo)
-  movement: CsTeamMovementAgent[]
-  movementTotals: CsTeamMovementTotals
+  activity: CsTeamActivityAgent[]
+  activityTotals: CsTeamActivityTotals
   negotiations: CsTeamNegotiationAgent[]
   negotiationTotals: CsTeamNegotiationTotals
 }

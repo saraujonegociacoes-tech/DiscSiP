@@ -100,6 +100,42 @@ Retorno esperado (200): `{ "cs_card_id": "…", "agent_id": "…", "duplicate": 
 > ⚠ **service_role** (não anon). Vive só no Make. É ela que autoriza a escrita (a
 > função ignora RLS).
 
+> **Quem MOVEU o card não é obtível por aqui** — nem por nenhuma outra query. Ver a
+> seção seguinte.
+
+---
+
+## Quem moveu o card: NÃO É OBTÍVEL pela GraphQL (decisão 2026-08-14)
+
+Registro pra ninguém reabrir isso achando que é questão de ajustar a query. **Não é.**
+
+**Introspecção ao vivo (2026-08-14, pipe 305801110).** O type `PhaseDetail` — o que
+`phases_history` devolve — tem exatamente estes campos:
+
+```
+became_late · created_at · draft · duration · firstTimeIn · lastTimeIn · lastTimeOut · phase
+```
+
+**Nenhum usuário.** E no type `Card` o único campo de "quem" é `createdBy` (quem CRIOU o
+card). Ou seja: a API não expõe o autor de uma movimentação de fase. Por isso
+`cs_card_events.agent_id` guarda o **assignee** — era a única coisa disponível, e ele
+responde "de quem é o card", não "quem moveu".
+
+A única fonte em todo o Pipefy seria o webhook `card.move` (payload com `data.moved_by`),
+que inclusive já está ligado neste pipe (webhook id `300503311`, "Card moved" →
+`hook.us2.make.com/pt7gvg…`). **O dono decidiu em 2026-08-14 não seguir por esse caminho** —
+a métrica deve sair do que a GraphQL já entrega, não de uma segunda via de ingestão. Decisão
+registrada, não pendência.
+
+**Consequência pro painel, explícita:** a coluna de movimentação por pessoa **nunca**
+significa "quem moveu". Ela só pode significar "cards de fulano que se moveram" — é métrica
+de **carteira**, não de produtividade, e precisa estar rotulada assim na tela.
+
+> ⚠ **Não confundir com `author_name`.** `cs_card_comments.author_name` é o autor do
+> COMENTÁRIO e responde só "quem atualizou". Esse sim vem da GraphQL, está completo
+> (16.295 comentários, **zero** sem autor, desde 29/abr/2025) e serve pra atribuir
+> **atualização** por pessoa. Ele não é, e não substitui, `moved_by`.
+
 ---
 
 ## O que a RPC garante (feito no banco)
