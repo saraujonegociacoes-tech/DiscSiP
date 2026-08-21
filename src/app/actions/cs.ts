@@ -6,10 +6,11 @@ import type {
   CsMatrixData,
   CsMatrixCard,
   CsTeamData,
-  CsTeamMovementAgent,
-  CsTeamMovementTotals,
   CsTeamNegotiationAgent,
   CsTeamNegotiationTotals,
+  CsTeamActivityAgent,
+  CsActivityCard,
+  CsTeamActivityTotals,
   CsMinutasData,
   CsMinutaCard,
   CsPagamentoProjecaoData,
@@ -51,16 +52,9 @@ export async function getCsMatrix(period: LeadPeriod): Promise<CsMatrixData> {
 
 // PÁGINA 2 (Equipe): lê get_cs_team(p_start, p_end). Diferente da P1, esta página é uma
 // JANELA DE TEMPO (ciclo 11→10, filtrável) — passamos start+end. O RLS escopa igual.
-// A parte de série temporal (movimento/comentário/negociação por ciclo) nasce ~vazia e
-// enche conforme o Make acumula; a completude já vem do snapshot atual.
-
-const EMPTY_MOVE_TOTALS: CsTeamMovementTotals = {
-  received: 0,
-  movedWithUpdate: 0,
-  movedNoUpdate: 0,
-  onlyUpdate: 0,
-  idle: 0,
-}
+// Duas seções: ATIVIDADE por pessoa (quem comentou, + recebidos e carteira) e NEGOCIAÇÕES.
+// A atividade vale retroativo (o autor do comentário está gravado desde abr/2025); a
+// negociação depende do snapshot que o Make acumula.
 
 const EMPTY_NEG_TOTALS: CsTeamNegotiationTotals = {
   total: 0,
@@ -69,13 +63,52 @@ const EMPTY_NEG_TOTALS: CsTeamNegotiationTotals = {
   incompleta: 0,
 }
 
+const EMPTY_ACT_TOTALS: CsTeamActivityTotals = {
+  updates: 0,
+  cards: 0,
+  people: 0,
+  received: 0,
+  portfolio: 0,
+}
+
+// O jsonb da RPC é tipado como PARCIAL de propósito. A migration 20260819 foi aplicada em
+// duas versões (a 1ª sem `received`/`portfolio`), e a tela quebrou inteira num
+// `undefined.toLocaleString` porque o tipo prometia `number` e o banco mandava nada. Aqui é
+// a fronteira RPC → app: é este arquivo que tem que normalizar, pra `CsTeamActivityAgent`
+// poder seguir dizendo `number` sem mentir. Nunca confiar no shape que o banco devolve —
+// função e app versionam separado, e o banco sempre vai estar uma migration atrás em algum
+// momento.
+interface TeamRpcActivityRow {
+  authorId?: string | null
+  authorName?: string | null
+  updates?: number | null
+  cards?: number | null
+  received?: number | null
+  portfolio?: number | null
+  cardsList?: CsActivityCard[] | null
+}
+
 interface TeamRpc {
   periodStart?: string
   periodEnd?: string
-  movement?: CsTeamMovementAgent[]
-  movementTotals?: CsTeamMovementTotals
+  activity?: TeamRpcActivityRow[]
+  activityTotals?: Partial<CsTeamActivityTotals>
   negotiations?: CsTeamNegotiationAgent[]
   negotiationTotals?: CsTeamNegotiationTotals
+}
+
+const num = (v: number | null | undefined): number => (typeof v === 'number' ? v : 0)
+
+function normalizeActivity(rows: TeamRpcActivityRow[] | undefined): CsTeamActivityAgent[] {
+  return (rows ?? []).map((r) => ({
+    authorId: r.authorId ?? null,
+    authorName: r.authorName ?? 'Autor não identificado',
+    updates: num(r.updates),
+    cards: num(r.cards),
+    received: num(r.received),
+    portfolio: num(r.portfolio),
+    cardsList: r.cardsList ?? [],
+  }))
 }
 
 export async function getCsTeam(period: LeadPeriod): Promise<CsTeamData> {
@@ -87,8 +120,8 @@ export async function getCsTeam(period: LeadPeriod): Promise<CsTeamData> {
     return {
       periodStart: p.start,
       periodEnd: p.end,
-      movement: [],
-      movementTotals: EMPTY_MOVE_TOTALS,
+      activity: [],
+      activityTotals: EMPTY_ACT_TOTALS,
       negotiations: [],
       negotiationTotals: EMPTY_NEG_TOTALS,
     }
@@ -97,8 +130,14 @@ export async function getCsTeam(period: LeadPeriod): Promise<CsTeamData> {
   return {
     periodStart: d.periodStart ?? p.start,
     periodEnd: d.periodEnd ?? p.end,
-    movement: d.movement ?? [],
-    movementTotals: d.movementTotals ?? EMPTY_MOVE_TOTALS,
+    activity: normalizeActivity(d.activity),
+    activityTotals: {
+      updates: num(d.activityTotals?.updates),
+      cards: num(d.activityTotals?.cards),
+      people: num(d.activityTotals?.people),
+      received: num(d.activityTotals?.received),
+      portfolio: num(d.activityTotals?.portfolio),
+    },
     negotiations: d.negotiations ?? [],
     negotiationTotals: d.negotiationTotals ?? EMPTY_NEG_TOTALS,
   }

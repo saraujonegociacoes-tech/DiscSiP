@@ -158,6 +158,63 @@ Cliente · Responsável · tempo na fase · link do Pipefy, "Ver todos". **Expor
 
 ## Página 2 — Equipe (série temporal)  ·  ✅ construída (série acumulando)
 
+> **TERCEIRO EIXO — ATUALIZAÇÃO POR QUEM COMENTOU (2026-08-19, migration
+> `20260819_cs_atividade_por_autor` — ⏳ pendente o dono aplicar).**
+>
+> **O bug que originou:** o painel mostrava **3 atualizações** para o Charles num mês em que
+> ele fez **48 comentários em 32 cards**. Causa: `get_cs_team` fazia
+> `SELECT DISTINCT cs_card_id` sobre `cs_card_comments` — descartando o autor — e depois
+> creditava o card ao **dono** (`responsible_agent_id`). Dos 32 cards que ele comentou, 14
+> estavam sem responsável, 11 eram da Mayara, 6 da Larissa e só 1 era dele.
+>
+> **A seção nova ("Atualizações no período")** atribui por `cs_card_comments.author_pipefy_id`,
+> **independente da responsabilidade do card**: comentário do Charles num card da Larissa conta
+> pro Charles. Unidade = **1 comentário = 1 atualização** (não é "cards tocados").
+>
+> **Drill em 2 níveis, requisito explícito do dono:** clicar no número abre os cards; clicar no
+> card abre **exatamente os comentários daquela pessoa naquele card no período** — nunca "o
+> último comentário do card", porque pode haver comentário de outra pessoa depois. Cada linha do
+> drill é uma unidade da conta, com data+hora (a hora importa: mesma pessoa comenta várias vezes
+> no mesmo dia). Export = **uma linha por comentário**, mesma granularidade da métrica.
+>
+> **Migration de LEITURA pura** — não toca ingestão, não pede nada do Make, e **vale retroativo**:
+> `ingest_cs_card` já grava o autor desde a `20260722`. Cobertura medida em 2026-08-19: **16.295
+> comentários, ZERO sem `author_pipefy_id`, ZERO sem `author_name`, desde 29/abr/2025**.
+> Sem join em `cs_agents` de propósito — quem comenta e nunca é assignee (Laura Siqueira,
+> Gustavo Farias) não tem linha lá e sumiria. Mesmo padrão do `negotiator` na `20260731b`.
+>
+> **O bloco de MOVIMENTO foi REMOVIDO** na mesma sessão, decisão do dono depois de ver o
+> resultado: *"não vamos mais trabalhar com movido / com atualização e etc. Apenas atualizado."*
+> Saíram a tabela inteira e os 4 buckets (movido c/ atualização, movido s/ atualização, só
+> atualização, sem mover/atualizar), o KPI "Movimentados" e o export de movimento. As chaves
+> `movement`/`movementTotals` **não existem mais** no jsonb da RPC.
+> **Negociações é a única seção que continua com completa/parcial/incompleta.**
+>
+> **O que sobrou de útil do movimento virou coluna da tabela de atualizações:**
+> `Quem atualizou · Atualizações · Cards · Recebidos · Carteira`. Recebidos e Carteira vêm do
+> eixo do **assignee** (não do autor) — o encontro dos dois é
+> `cs_agents.pipefy_user_id = cs_card_comments.author_pipefy_id`, com LEFT JOIN dos dois lados:
+> quem comenta e nunca é assignee aparece com carteira 0, e quem tem carteira e não comentou
+> aparece com 0 atualizações (essa linha é o que restou do antigo bucket "Sem mover/atualizar").
+> **Carteira = cards NÃO-TERMINAIS** — card em Quitados/Distratos/Concluído/Arquivado/
+> Distribuição não é responsabilidade viva de ninguém.
+>
+> **Números esperados depois de aplicar** (simulação sobre os dados reais, ago/26 civil —
+> atualizações / cards / recebidos / carteira):
+> Mayara 89/60/12/189 · Janaina 53/31/0/19 · **Charles 52/34/2/5** · Larissa 50/31/0/109 ·
+> Juliane 28/24/4/8 · Gustavo 4/4/0/0 · Felipe 3/3/0/1 · Laura 3/3/0/0.
+> KPIs: 282 atualizações (8 pessoas · 166 cards) · 18 recebidos · 331 na carteira da equipe.
+> Invariante conferida: soma da coluna Atualizações = `count(*)` cru da tabela.
+>
+> ⚠ **"Carteira da equipe" (331) ≠ cards ativos (490).** A diferença são ~159 cards ativos
+> **sem assignee nenhum** no Pipefy — não entram na carteira de ninguém, por definição. Se esse
+> número incomodar, o problema é de operação (card sem responsável), não de cálculo.
+>
+> ⚠ **"Quem moveu" NÃO existe** e não vai existir: a GraphQL não expõe (type `PhaseDetail` sem
+> usuário), e o dono descartou o webhook `card.move` em 2026-08-14. Não reintroduzir coluna de
+> movimento por pessoa — ela seria por DONO do card, que é o bug que originou tudo isso. Ver
+> `make-integracao-cs.md`.
+
 > Migrations `20260722` + `20260722b` + `20260723_cs_team_v2` aplicadas; Make rodando e
 > capturando transições/comentários/trocas de responsável. A **completude** rende do snapshot
 > atual; **movimento/negociação** enchem conforme o Make acumula. Reformulação visual v2
