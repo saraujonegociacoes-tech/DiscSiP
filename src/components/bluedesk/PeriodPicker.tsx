@@ -4,14 +4,15 @@ import { useMemo, useState } from 'react'
 import { CalendarRange } from 'lucide-react'
 import {
   recentCycles,
+  recentDays,
   customPeriod,
   periodBounds,
   type LeadPeriod,
 } from '@/lib/period'
 import { BrDateInput } from './BrDateInput'
 
-// Seletor de período genérico (ciclo de meta 11→10 + intervalo livre). Default = ciclo
-// corrente. Usado pelo dashboard de leads e pelo histórico da discadora.
+// Seletor de período genérico (hoje/ontem + ciclo de meta 11→10 + intervalo livre).
+// Default = ciclo corrente. Usado pelo dashboard de leads e pelo histórico da discadora.
 export function PeriodPicker({
   value,
   onChange,
@@ -21,9 +22,10 @@ export function PeriodPicker({
   onChange: (p: LeadPeriod) => void
   disabled?: boolean
 }) {
+  const days = useMemo(() => recentDays(), [])
   const cycles = useMemo(() => recentCycles(6), [])
-  const inCycles = cycles.some((c) => c.key === value.key)
-  const [custom, setCustom] = useState(!inCycles)
+  const options = useMemo(() => [...days, ...cycles], [days, cycles])
+  const [custom, setCustom] = useState(!options.some((o) => o.key === value.key))
   const bounds = periodBounds(value)
   const [start, setStart] = useState(bounds.startDate)
   const [end, setEnd] = useState(bounds.endDate)
@@ -40,8 +42,8 @@ export function PeriodPicker({
       return
     }
     setCustom(false)
-    const cycle = cycles.find((c) => c.key === v)
-    if (cycle) onChange(cycle)
+    const found = options.find((o) => o.key === v)
+    if (found) onChange(found)
   }
 
   return (
@@ -54,12 +56,21 @@ export function PeriodPicker({
         className={inputCls}
         aria-label="Período"
       >
-        {cycles.map((c, i) => (
-          <option key={c.key} value={c.key}>
-            {c.label}
-            {i === 0 ? ' (ciclo atual)' : ''}
-          </option>
-        ))}
+        <optgroup label="Dia">
+          {days.map((d) => (
+            <option key={d.key} value={d.key}>
+              {d.label}
+            </option>
+          ))}
+        </optgroup>
+        <optgroup label="Ciclo 11→10">
+          {cycles.map((c, i) => (
+            <option key={c.key} value={c.key}>
+              {c.label}
+              {i === 0 ? ' (ciclo atual)' : ''}
+            </option>
+          ))}
+        </optgroup>
         <option value="custom">Personalizado…</option>
       </select>
 

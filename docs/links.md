@@ -64,6 +64,7 @@ Domínio de produto separado do discador (código/dados/RLS). Índice completo e
 - [`catalogo-metricas-dashboard-leads (1).md`](painelleads-docs/updates/catalogo-metricas-dashboard-leads%20(1).md) — catálogo de métricas
 - [`panoramavisual.md`](painelleads-docs/updates/panoramavisual.md) — análise da proposta visual
 - [`make-integracao-pipefy.md`](painelleads-docs/updates/make-integracao-pipefy.md) — cenário Pipefy → Make → Supabase
+- [`filtro-hoje-ontem.md`](painelleads-docs/updates/filtro-hoje-ontem.md) — **transversal**: recorte de Hoje/Ontem nos seletores de período de todos os painéis
 
 ## `fixes/`
 - [`correcao-ganhos-retroativos-e-funil-geral.md`](painelleads-docs/fixes/correcao-ganhos-retroativos-e-funil-geral.md) — ganhos/mortos passam a contar por data de venda (`finalized_at`), não `created_at`, com split ciclo × retroativo; funil "geral" novo (por `updated_at`). **Migrations não aplicadas ainda.**
