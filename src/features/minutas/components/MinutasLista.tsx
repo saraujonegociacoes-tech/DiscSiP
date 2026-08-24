@@ -9,7 +9,7 @@ import { updateParcela, deleteMinuta } from '@/app/actions/minutas'
 import type { ProcMinutasData, ProcParcelaStatus } from '@/lib/types/database'
 import { downloadCsv, type CsvValue } from '@/lib/csv'
 import { cn } from '@/lib/utils'
-import { recentCivilMonths, recentCycles, customPeriod, periodBounds, type LeadPeriod } from '@/lib/period'
+import { recentCivilMonths, recentCycles, recentDays, customPeriod, periodBounds, type LeadPeriod } from '@/lib/period'
 import {
   brl,
   nf,
@@ -82,6 +82,7 @@ export function MinutasLista({ data, onChanged }: { data: ProcMinutasData; onCha
   const [sort, setSort] = useState<{ key: SortKey; dir: SortDir }>({ key: 'vencimento', dir: 'asc' })
 
   // Período: null = todo o período (default — a aba não esconde nada até o usuário pedir).
+  const dias = useMemo(() => recentDays(), [])
   const meses = useMemo(() => recentCivilMonths(12), [])
   const ciclos = useMemo(() => recentCycles(12), [])
   const [period, setPeriod] = useState<LeadPeriod | null>(null)
@@ -146,7 +147,7 @@ export function MinutasLista({ data, onChanged }: { data: ProcMinutasData; onCha
       return
     }
     setCustom(false)
-    const found = [...meses, ...ciclos].find((o) => o.key === v)
+    const found = [...dias, ...meses, ...ciclos].find((o) => o.key === v)
     if (found) setPeriod(found)
   }
 
@@ -266,6 +267,13 @@ export function MinutasLista({ data, onChanged }: { data: ProcMinutasData; onCha
           <CalendarRange className="h-4 w-4 shrink-0 text-muted-foreground" />
           <select value={selectValue} onChange={handlePeriodo} className={inputCls} aria-label="Filtrar por período">
             <option value="todos">Todo o período</option>
+            <optgroup label="Dia">
+              {dias.map((o) => (
+                <option key={o.key} value={o.key}>
+                  {o.label}
+                </option>
+              ))}
+            </optgroup>
             <optgroup label="Mês civil">
               {meses.map((o, i) => (
                 <option key={o.key} value={o.key}>

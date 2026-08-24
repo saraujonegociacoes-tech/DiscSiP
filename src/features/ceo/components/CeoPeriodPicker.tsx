@@ -5,6 +5,7 @@ import { CalendarRange } from 'lucide-react'
 import {
   recentCivilMonths,
   recentCycles,
+  recentDays,
   customPeriod,
   periodBounds,
   type LeadPeriod,
@@ -35,12 +36,16 @@ export function CeoPeriodPicker({
   onChange: (p: LeadPeriod, mode: CeoPeriodMode) => void
   disabled?: boolean
 }) {
+  const days = useMemo(() => recentDays(), [])
   const months = useMemo(() => recentCivilMonths(12), [])
   const cycles = useMemo(() => recentCycles(12), [])
-  const options = mode === 'mes' ? months : cycles
+  // Hoje/ontem valem nos dois recortes — o dia não pertence a mês nem a ciclo.
+  const options = useMemo(
+    () => [...days, ...(mode === 'mes' ? months : cycles)],
+    [days, months, cycles, mode],
+  )
 
-  const inOptions = options.some((o) => o.key === value.key)
-  const [custom, setCustom] = useState(!inOptions)
+  const [custom, setCustom] = useState(!options.some((o) => o.key === value.key))
   const bounds = periodBounds(value)
   const [start, setStart] = useState(bounds.startDate)
   const [end, setEnd] = useState(bounds.endDate)
@@ -105,12 +110,21 @@ export function CeoPeriodPicker({
         className={inputCls}
         aria-label="Período"
       >
-        {options.map((o, i) => (
-          <option key={o.key} value={o.key}>
-            {o.label}
-            {i === 0 ? (mode === 'mes' ? ' (mês atual)' : ' (ciclo atual)') : ''}
-          </option>
-        ))}
+        <optgroup label="Dia">
+          {days.map((d) => (
+            <option key={d.key} value={d.key}>
+              {d.label}
+            </option>
+          ))}
+        </optgroup>
+        <optgroup label={mode === 'mes' ? 'Mês civil' : 'Ciclo 11→10'}>
+          {(mode === 'mes' ? months : cycles).map((o, i) => (
+            <option key={o.key} value={o.key}>
+              {o.label}
+              {i === 0 ? (mode === 'mes' ? ' (mês atual)' : ' (ciclo atual)') : ''}
+            </option>
+          ))}
+        </optgroup>
         <option value="custom">Personalizado…</option>
       </select>
 

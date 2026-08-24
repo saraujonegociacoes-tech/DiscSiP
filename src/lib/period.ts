@@ -147,3 +147,32 @@ export function periodBounds(p: LeadPeriod): { startDate: string; endDate: strin
     endDate: ymd(brtParts(new Date(new Date(p.end).getTime() - 86_400_000))),
   }
 }
+
+// ── Dia único (hoje / ontem) ────────────────────────────────────────────────
+// Ciclo e mês respondem "como foi o período"; os painéis também precisam de "como está
+// agora". Mesmas garantias: corte em BRT, `end` EXCLUSIVO, `key` estável. O prefixo `dia_`
+// na key evita colisão com a key de ciclo/mês que começa no mesmo dia.
+
+const DAY_NAMES = ['Hoje', 'Ontem'] as const
+
+// Dia BRT `daysAgo` dias atrás (0 = hoje, 1 = ontem). Rótulo nomeado nos dois primeiros
+// (ex.: "Hoje (24 ago)"), só a data nos demais.
+export function dayPeriod(daysAgo: number, now: Date = new Date()): LeadPeriod {
+  const { year, month, day } = brtParts(now)
+  const start = brtMidnightUtcISO(year, month, day - daysAgo)
+  const end = brtMidnightUtcISO(year, month, day - daysAgo + 1)
+  const s = brtParts(new Date(start))
+  const date = `${s.day} ${MONTHS_PT[s.month - 1]}`
+  const name = DAY_NAMES[daysAgo]
+  return {
+    start,
+    end,
+    key: `dia_${ymd(s)}`,
+    label: name ? `${name} (${date})` : date,
+  }
+}
+
+// Os recortes de dia dos seletores: hoje e ontem, nessa ordem.
+export function recentDays(now: Date = new Date()): LeadPeriod[] {
+  return DAY_NAMES.map((_, i) => dayPeriod(i, now))
+}
