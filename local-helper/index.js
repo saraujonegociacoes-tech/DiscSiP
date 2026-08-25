@@ -9,12 +9,26 @@ const PORT = 3001
 
 // Versão do helper. É o que o Blue Desk compara para saber se está desatualizado e
 // oferecer o botão "Atualizar". Suba este número a cada correção no helper.
-const HELPER_VERSION = '1.15'
+const HELPER_VERSION = '1.16'
 
 // Código de seleção de operadora (CSP) para discagem interurbana. Sem ele o MicroSIP
 // não completa chamadas para outros estados. Resultado: DIAL_PREFIX + DDD + número.
 // Configurável por env (default 021); muda só se trocar de operadora de longa distância.
 const DIAL_PREFIX = process.env.DIAL_PREFIX || '021'
+
+// Silêncio no toque: o agente não ouve NADA enquanto disca/toca (ringback das N linhas do
+// lote, caixa postal que atende antes do corte, toque de chamada recebida) e o som abre no
+// instante em que alguém ATENDE. Vale para lote, 1-a-1 e discagem manual.
+// AUTO_MUTE_RING=0 desliga e devolve o comportamento antigo (som sempre aberto).
+const AUTO_MUTE_RING = process.env.AUTO_MUTE_RING !== '0'
+
+// Entre uma chamada e outra o softphone fica MUDO (é o que faz o toque de uma chamada
+// RECEBIDA também não soar — o pedido era "som só quando atender"). Quem precisar ouvir a
+// campainha de entrada põe AUTO_MUTE_IDLE=0: aí o silêncio vale só do discar até o atendimento.
+const AUTO_MUTE_IDLE = AUTO_MUTE_RING && process.env.AUTO_MUTE_IDLE !== '0'
+
+// Quanto esperamos o worker do mute responder antes de cair no spawn avulso.
+const MUTE_WORKER_TIMEOUT_MS = Number(process.env.MUTE_WORKER_TIMEOUT_MS) || 700
 
 // Onde o helper busca a versão nova de si mesmo. Em runtime preferimos a origem que o
 // próprio Blue Desk manda no header Origin (persistida em helper-config.json) — assim não
@@ -258,6 +272,8 @@ async function enableMultiCall() {
     // Pela fila também (v1.15): reabrir o MicroSIP logo depois de gravar o ini era outra
     // chance de dois processos tocarem no arquivo ao mesmo tempo.
     queueMsip([])
+    // MicroSIP reiniciado = processo NOVO = sessao de audio nova, sem mute. Rearma o silencio.
+    reapplySpeakerState([1500, 3000])
   }
   console.log(`[${ts()}] MicroSIP: multi-call LIGADO (singleMode=0)${running ? ' + reiniciado' : ''}`)
   return { ok: true, restarted: running }
@@ -338,11 +354,9 @@ function runMsip(arg) {
 // sem mostrar janela. Usa Core Audio (ISimpleAudioVolume) via PowerShell + Add-Type — mesmo
 // padrão do hider, zero dependência. Estado desejado fica em speakerMuted e é reaplicado a cada
 // discagem (uma sessão nova pode nascer com a chamada). Awaitado: a UI só vira o botão se aplicou.
-let speakerMuted = false
-function setMicrosipSpeakerMuted(muted) {
-  return new Promise((resolve) => {
-    const script = `
-$ErrorActionPreference = 'Stop'
+// Fonte C# do mute por sessão de áudio. Fica separada do script que a usa porque é compilada
+// nos DOIS caminhos: o worker persistente (rápido) e o spawn avulso (fallback).
+const MUTE_CS = `
 Add-Type @"
 using System;
 using System.Runtime.InteropServices;
@@ -407,14 +421,24 @@ public static class AppMute {
   }
 }
 "@
+`
+
+const psEncode = (s) => Buffer.from(s, 'utf16le').toString('base64')
+
+// Spawn avulso: um powershell.exe por comando. Era o único caminho até a v1.15; segue aqui
+// como fallback de quando o worker persistente não sobe (ou morre no meio da operação).
+function muteOneShot(muted) {
+  return new Promise((resolve) => {
+    const script = `
+$ErrorActionPreference = 'Stop'
+${MUTE_CS}
 $n = [AppMute]::Set(${muted ? '$true' : '$false'})
 Write-Output ("HIT:" + $n)
 `
     try {
-      const encoded = Buffer.from(script, 'utf16le').toString('base64')
       const child = spawn(
         'powershell.exe',
-        ['-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden', '-EncodedCommand', encoded],
+        ['-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden', '-EncodedCommand', psEncode(script)],
         { windowsHide: true }
       )
       let out = ''
@@ -428,6 +452,197 @@ Write-Output ("HIT:" + $n)
       resolve({ ok: false, applied: 0 })
     }
   })
+}
+
+// ─── Worker persistente do mute ─────────────────────────────────────────────────
+// Por que um processo VIVO em vez de um powershell.exe por comando: o `Add-Type` compila C#
+// em runtime e custa ~1s por spawn (medido nesta máquina). Isso é irrelevante para o botão do
+// painel de áudio, mas FATAL para o desmute no atendimento — o agente perderia o "alô" e o
+// primeiro segundo da conversa, justamente o pedaço que decide a ligação. O worker compila o
+// tipo UMA vez, na largada do helper, e daí cada mute/desmute é uma linha no stdin dele:
+// milissegundos. Se cair, o próximo comando volta sozinho pelo spawn avulso.
+let muteWorker = null
+let workerReady = false
+let muteSeq = 0
+const mutePending = new Map()
+
+function startMuteWorker() {
+  if (muteWorker) return muteWorker
+  const script = `
+$ErrorActionPreference = 'Stop'
+${MUTE_CS}
+[Console]::Out.WriteLine("READY")
+[Console]::Out.Flush()
+while ($true) {
+  $line = [Console]::In.ReadLine()
+  if ($line -eq $null) { break }
+  if ($line -eq 'quit') { break }
+  # protocolo: "<id> <0|1>" -> "HIT:<id>:<n>". O id existe para a resposta casar com o pedido
+  # CERTO: pareando por ORDEM, um unico timeout desalinhava a fila para sempre.
+  $parts = $line.Split(' ')
+  try { $n = [AppMute]::Set($parts[1] -eq '1') } catch { $n = -1 }
+  [Console]::Out.WriteLine("HIT:" + $parts[0] + ":" + $n)
+  [Console]::Out.Flush()
+}
+`
+  try {
+    const child = spawn(
+      'powershell.exe',
+      ['-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden', '-EncodedCommand', psEncode(script)],
+      { windowsHide: true }
+    )
+    let buf = ''
+    child.stdout.on('data', (d) => {
+      buf += d.toString()
+      let i
+      while ((i = buf.indexOf('\n')) >= 0) {
+        const line = buf.slice(0, i).trim()
+        buf = buf.slice(i + 1)
+        if (line === 'READY') {
+          // Só a partir daqui o worker serve: antes, o `Add-Type` ainda está compilando e o
+          // comando ficaria parado no buffer do stdin — que era como o PRIMEIRO mute (o do
+          // boot) estourava o timeout e desalinhava a fila.
+          workerReady = true
+          continue
+        }
+        const m = line.match(/^HIT:(\d+):(-?\d+)$/)
+        if (!m) continue
+        const done = mutePending.get(m[1])
+        if (!done) continue
+        mutePending.delete(m[1])
+        const n = Number(m[2])
+        done({ ok: n >= 0, applied: Math.max(0, n) })
+      }
+    })
+    const die = () => {
+      if (muteWorker === child) muteWorker = null
+      workerReady = false
+      for (const [id, done] of mutePending) {
+        mutePending.delete(id)
+        done(null)
+      }
+    }
+    child.on('error', die)
+    child.on('close', die)
+    child.stdin.on('error', () => {})
+    child.stderr.on('data', () => {})
+    child.unref()
+    muteWorker = child
+    return child
+  } catch {
+    return null
+  }
+}
+
+// Resolve com null quando o worker não está disponível ou demorou — aí quem chama usa o avulso.
+function muteViaWorker(muted) {
+  return new Promise((resolve) => {
+    const w = startMuteWorker()
+    // Worker ainda compilando (ou caído): não vale esperar — resolve null e quem chama vai de
+    // spawn avulso, que é lento mas responde. O worker segue esquentando para os próximos.
+    if (!w || !workerReady || !w.stdin || !w.stdin.writable) return resolve(null)
+    const id = String(++muteSeq)
+    let settled = false
+    const finish = (r) => {
+      if (settled) return
+      settled = true
+      mutePending.delete(id)
+      resolve(r)
+    }
+    mutePending.set(id, finish)
+    setTimeout(() => finish(null), MUTE_WORKER_TIMEOUT_MS)
+    try {
+      w.stdin.write(`${id} ${muted ? '1' : '0'}\n`)
+    } catch {
+      finish(null)
+    }
+  })
+}
+
+// Estado do alto-falante = mute MANUAL (botão do painel) OU mute AUTOMÁTICO (silêncio de
+// toque). São flags separadas de propósito: o automático não pode desfazer a escolha do
+// agente, e o botão do painel continua refletindo só essa escolha.
+let speakerMuted = false
+let autoMuted = false
+
+async function setMicrosipSpeakerMuted(muted) {
+  const viaWorker = await muteViaWorker(muted)
+  return viaWorker || muteOneShot(muted)
+}
+
+// Aplica o estado efetivo na(s) sessão(ões) de áudio do microsip.exe.
+function applySpeakerState() {
+  return setMicrosipSpeakerMuted(speakerMuted || autoMuted)
+}
+
+// Sessão de áudio NOVA nasce sem mute, e ela só aparece quando a chamada já está saindo — por
+// isso o estado é reaplicado algumas vezes depois de discar, em vez de uma só. Cada reaplicação
+// lê as flags do momento: se alguém já atendeu no meio do caminho, ela ABRE o som em vez de
+// mutar. É o que deixa a ordem "disca / atende / reaplica" segura.
+function reapplySpeakerState(delays) {
+  delays.forEach((ms) => setTimeout(() => applySpeakerState(), ms))
+}
+
+// ─── Guarda do silêncio enquanto TOCA ───────────────────────────────────────────
+// O mute vale por SESSÃO de áudio do Windows, e a sessão do MicroSIP só nasce quando ele abre
+// o áudio de verdade — o que pode ser segundos depois do disparo, e de novo a cada chamada.
+// Sessão nova nasce SEM mute. Apostar em instantes fixos ("reaplica em 250ms e 1700ms") acerta
+// no lote de hoje e erra no de amanhã; então, em vez de apostar, reaplicamos ENQUANTO toca.
+// Custa uma linha no worker (~45ms) por passada e para sozinho: no atendimento (autoMuted vira
+// false), quando nada mais está tocando, ou no teto do corte de toque.
+// Sem worker pronto a guarda não roda — ali cada passada seria um powershell.exe novo.
+let ringGuard = null
+function startRingGuard() {
+  if (!AUTO_MUTE_RING || ringGuard) return
+  const started = Date.now()
+  // Quantas sessoes a ultima passada mutou. Serve para o log so falar quando MUDA — que e
+  // exatamente o instante interessante: a sessao da chamada nasceu e o silencio pegou nela.
+  let ultimoAplicado = -1
+  ringGuard = setInterval(() => {
+    const tocando =
+      (parallelSession &&
+        !parallelSession.finished &&
+        Object.values(parallelSession.calls).some((s) => s === 'calling')) ||
+      (lastSingleCall && !lastSingleCall.answered && !lastSingleCall.ended)
+    if (!autoMuted || !tocando || Date.now() - started > RING_CUTOFF_MS + 10000) {
+      clearInterval(ringGuard)
+      ringGuard = null
+      return
+    }
+    if (!workerReady) return
+    applySpeakerState().then((r) => {
+      if (r.applied === ultimoAplicado && !process.env.RING_GUARD_DEBUG) return
+      ultimoAplicado = r.applied
+      console.log(`[${ts()}] Guarda de toque: silencio reaplicado em ${r.applied} sessao/oes`)
+    })
+  }, 700)
+}
+
+// Liga/desliga o silêncio de toque. No-op quando já está no estado pedido — a rajada de N
+// linhas chama isto N vezes e não custa nada.
+function setRingSilence(on, motivo) {
+  if (!AUTO_MUTE_RING || autoMuted === on) return Promise.resolve({ ok: true, applied: 0 })
+  autoMuted = on
+  return applySpeakerState().then((r) => {
+    // `applied` = quantas sessões de áudio do microsip.exe foram tocadas. ZERO quer dizer que o
+    // MicroSIP não tinha áudio aberto naquele instante: o mute não pegou em nada, e quem cobre
+    // esse buraco é a guarda de toque. Fica no log porque é o número que diz se o silêncio
+    // realmente aconteceu — sem ele, "não funcionou" vira adivinhação.
+    console.log(
+      `[${ts()}] Som ${on ? 'MUDO' : 'ABERTO'} (${motivo}) — ${r.applied} sessao/oes` +
+        `${r.applied === 0 ? ' [nenhuma sessao de audio do MicroSIP no momento]' : ''}` +
+        `${speakerMuted ? ' [mute manual do agente segue ligado]' : ''}`
+    )
+    return r
+  })
+}
+
+// Há conversa em curso? Serve para NÃO remutar no meio dela quando as outras linhas do lote
+// terminam de cair (elas caem logo depois de o vencedor atender).
+function anyLiveCall() {
+  if (parallelSession && Object.values(parallelSession.calls).some((s) => s === 'answered')) return true
+  if (lastSingleCall && lastSingleCall.answered && !lastSingleCall.ended) return true
+  return false
 }
 
 // ─── Discagem paralela / preditiva ───────────────────────────────────────────────
@@ -496,12 +711,21 @@ function handleSingleAnswer(evNumber) {
   if (!lastSingleCall || lastSingleCall.answered) return
   if (!sameNumber(evNumber, lastSingleCall.dial)) return
   lastSingleCall.answered = true
+  setRingSilence(false, `${lastSingleCall.dial} atendeu`)
   const ms = Date.now() - lastSingleCall.at
   recordAnswerTime(ms)
   console.log(
     `[${ts()}] ${lastSingleCall.dial} atendeu em ${(ms / 1000).toFixed(1)}s` +
       `${ms >= RING_CUTOFF_MS ? ' (acima do corte de toque — provavel caixa postal)' : ''}`
   )
+}
+
+// Fecha a chamada avulsa. Existe para o `anyLiveCall` saber que não há mais conversa em curso
+// — é o que autoriza o silêncio a voltar quando a ligação termina.
+function handleSingleEnd(evNumber) {
+  if (!lastSingleCall || lastSingleCall.ended) return
+  if (!sameNumber(evNumber, lastSingleCall.dial)) return
+  lastSingleCall.ended = true
 }
 
 // Hider PERSISTENTE da janela do MicroSIP. Em multi-call o MicroSIP REEXIBE a janela a cada
@@ -620,6 +844,9 @@ function handleParallelAnswer(evNumber) {
   parallelSession.winner = num
   parallelSession.answeredAt = new Date().toISOString()
   parallelSession.calls[num] = 'answered'
+  // Som ANTES do hangup: o desmute é uma linha no worker (ms), enquanto o /hangupcalling ainda
+  // espera a vez na fila do microsip.exe. Nesta ordem o agente ouve o "alô" inteiro.
+  setRingSilence(false, `${num} atendeu`)
   runMsip('/hangupcalling')
   console.log(
     `[${ts()}] PARALELO #${parallelSession.id}: ${num} ATENDEU` +
@@ -690,6 +917,22 @@ function exitForUpdate() {
   process.exit(respawned ? 0 : UPDATE_EXIT_CODE)
 }
 
+// Compara versoes "X.Y.Z" numericamente: true so se `remote` for ESTRITAMENTE maior. A UI ja
+// fazia isso (isVersionNewer no SoftphoneClient); o helper NAO fazia, e essa era a diferenca
+// que mordeu: com `!==`, uma copia velha em public/helper (1.7) DERRUBOU um helper 1.16 para
+// 1.7 no boot — sobrescrevendo o proprio index.js e levando junto tudo da 1.8 a 1.15.
+// Atualizacao so anda para FRENTE.
+function isVersionNewer(remote, current) {
+  const a = String(remote).split('.').map((n) => parseInt(n, 10) || 0)
+  const b = String(current).split('.').map((n) => parseInt(n, 10) || 0)
+  for (let i = 0; i < Math.max(a.length, b.length); i++) {
+    const x = a[i] || 0
+    const y = b[i] || 0
+    if (x !== y) return x > y
+  }
+  return false
+}
+
 async function fetchLatest(base) {
   const url = `${base.replace(/\/$/, '')}/helper/index.js`
   const res = await fetch(url, { signal: AbortSignal.timeout(8000) })
@@ -719,6 +962,11 @@ app.get('/ping', (req, res) => {
     microsip: MICROSIP,
     ini: microsipIniPath(),
     multiCall: multiCallEnabled(),
+    // Silêncio de toque ligado? (AUTO_MUTE_RING=0 desliga.) `speakerMuted` aqui é o estado
+    // EFETIVO — manual do agente ou automático.
+    ringSilence: AUTO_MUTE_RING,
+    ringSilenceIdle: AUTO_MUTE_IDLE,
+    speakerMuted: speakerMuted || autoMuted,
     // De QUAL pasta este helper está rodando. Com várias cópias do repo (worktrees), cada uma
     // com seu local-helper, "o helper está no ar" não diz nada — o que importa é qual subiu.
     dir: __dirname,
@@ -748,8 +996,16 @@ app.post('/update', async (req, res) => {
   }
   try {
     const { code, version } = await fetchLatest(base)
-    if (version === HELPER_VERSION) {
-      return res.json({ ok: true, updated: false, version: HELPER_VERSION })
+    if (!isVersionNewer(version, HELPER_VERSION)) {
+      // Cobre os dois casos: ja atualizado E origem servindo codigo mais VELHO (public/helper
+      // desatualizado, deploy antigo, cache). Downgrade nunca — ele apaga o index.js atual.
+      return res.json({
+        ok: true,
+        updated: false,
+        version: HELPER_VERSION,
+        remote: version,
+        reason: version === HELPER_VERSION ? 'ja-atualizado' : 'origem-mais-velha',
+      })
     }
     applyUpdate(code)
     console.log(`[${ts}] Atualizando ${HELPER_VERSION} -> ${version}. Reiniciando...`)
@@ -801,6 +1057,10 @@ app.post('/mute', async (req, res) => {
   }
   if (device === 'speaker') {
     speakerMuted = !!muted
+    // Desmutar no botao vale AGORA, mesmo sob silencio de toque: sem isto o botao nao faria
+    // som nenhum entre chamadas (o automatico mantem o softphone mudo enquanto ninguem
+    // atende). A proxima discagem rearma o silencio sozinha.
+    if (!speakerMuted) autoMuted = false
     const r = await setMicrosipSpeakerMuted(speakerMuted)
     console.log(`[${ts}] Alto-falante ${speakerMuted ? 'MUDO' : 'aberto'} (Windows, ${r.applied} sessao/oes)`)
     // ok=false significa que o PowerShell nao rodou (Core Audio falhou) — a UI nao deve mentir
@@ -812,14 +1072,29 @@ app.post('/mute', async (req, res) => {
 // Eventos vindos do MicroSIP (configurados no microsip.ini: cmdCallStart / cmdCallEnd).
 // São GET porque o curl do MicroSIP usa GET por padrão.
 app.get('/event/call-start', (req, res) => {
-  recordEvent('call-start', req.query.number)
-  handleParallelAnswer(req.query.number)
-  handleSingleAnswer(req.query.number)
+  const number = req.query.number
+  recordEvent('call-start', number)
+  // Casou com o lote ou com a discagem avulsa? Nesses casos quem abre o som são os próprios
+  // handlers — inclusive para NÃO abrir no lote descartado por atendimento instantâneo
+  // (máquina), que segue mudo de propósito.
+  const doLote = !!(parallelSession && !parallelSession.resolved && matchParallelNumber(number))
+  const daAvulsa = !!(lastSingleCall && !lastSingleCall.answered && sameNumber(number, lastSingleCall.dial))
+  handleParallelAnswer(number)
+  handleSingleAnswer(number)
+  // Rede de seguranca para a chamada RECEBIDA (e para qualquer conexao que nao casou): sem
+  // isto o agente atenderia no MicroSIP e nao ouviria nada, porque o silencio de toque mantem
+  // o softphone mudo enquanto ninguem atende.
+  if (!doLote && !daAvulsa) setRingSilence(false, 'chamada conectada')
   res.json({ ok: true })
 })
 app.get('/event/call-end', (req, res) => {
   recordEvent('call-end', req.query.number)
   handleParallelEnd(req.query.number, 'ended')
+  handleSingleEnd(req.query.number)
+  // Conversa acabou -> volta ao silêncio, para o próximo toque já nascer mudo. Só quando não
+  // há mais NENHUMA linha atendida: num lote as perdedoras caem logo depois de o vencedor
+  // atender, e remutar ali mataria o áudio da conversa que acabou de começar.
+  if (!anyLiveCall()) setRingSilence(AUTO_MUTE_IDLE, AUTO_MUTE_IDLE ? 'sem chamada em curso' : 'chamada encerrada')
   res.json({ ok: true })
 })
 // Ligacao deu ocupado (486/600/603). O MicroSIP roteia esses casos para cmdCallBusy,
@@ -827,6 +1102,8 @@ app.get('/event/call-end', (req, res) => {
 app.get('/event/call-busy', (req, res) => {
   recordEvent('call-busy', req.query.number)
   handleParallelEnd(req.query.number, 'busy')
+  handleSingleEnd(req.query.number)
+  if (!anyLiveCall()) setRingSilence(AUTO_MUTE_IDLE, AUTO_MUTE_IDLE ? 'sem chamada em curso' : 'chamada encerrada')
   res.json({ ok: true })
 })
 
@@ -851,7 +1128,7 @@ app.post('/call', (req, res) => {
   // ser confundida com o lote anterior, senão o call-start dela dispararia /hangupcalling.
   parallelSession = null
   // Marca o instante da discagem para medir o tempo-até-atender desta chamada avulsa.
-  lastSingleCall = { dial, at: Date.now(), answered: false }
+  lastSingleCall = { dial, at: Date.now(), answered: false, ended: false }
 
   // Caminho preferido: chamar o microsip.exe com o número (auto-disca) — SEMPRE pela fila.
   //
@@ -863,9 +1140,12 @@ app.post('/call', (req, res) => {
   // principal gravava o histórico no ini para o modal aparecer e CONGELAR a fila de comandos
   // do MicroSIP. Ver o comentário do queueMsip.
   if (MICROSIP) {
+    // Silencio ANTES de discar: o toque desta chamada nao chega ao agente. Abre no atendimento.
+    setRingSilence(true, `discando ${dial}`)
     queueMsip([dial])
-    // Se o agente deixou o alto-falante mudo, reaplica na sessao de audio desta chamada nova.
-    if (speakerMuted) setTimeout(() => setMicrosipSpeakerMuted(true), 800)
+    // A sessao de audio desta chamada nasce sem mute (e nasce quando ela comeca a tocar, nao
+    // agora) — a guarda cuida disso enquanto durar o toque.
+    startRingGuard()
     console.log(`[${ts}] Discando ${dial} via ${MICROSIP}`)
     return res.json({ ok: true, number: dial, method: 'microsip-exe' })
   }
@@ -923,6 +1203,10 @@ app.post('/dial-parallel', (req, res) => {
   }
   const sid = parallelSession.id
 
+  // Silêncio do lote: o ringback das N linhas — e a caixa postal que atender antes do corte —
+  // não chega ao agente. O som volta sozinho no call-start do vencedor (handleParallelAnswer).
+  setRingSilence(true, `lote #${sid} discando ${dials.length}`)
+
   // Dispara as N discagens. O espaçamento entre os microsip.exe é responsabilidade da fila
   // única (queueMsip) — a mesma que serializa os comandos de controle. O `onSpawn` grava o
   // instante REAL do disparo desta linha, que é a base do tempo-até-atender.
@@ -931,8 +1215,9 @@ app.post('/dial-parallel', (req, res) => {
       if (parallelSession && parallelSession.id === sid) parallelSession.dialedAt[dial] = Date.now()
     })
   })
-  // Reaplica o mute manual do alto-falante (Windows) apos as N sessoes nascerem.
-  if (speakerMuted) setTimeout(() => setMicrosipSpeakerMuted(true), 800 + dials.length * MSIP_MIN_GAP_MS)
+  // As N sessoes de audio nascem ao longo dos proximos segundos e cada uma nasce SEM mute —
+  // a guarda reaplica o silencio enquanto o lote estiver tocando.
+  startRingGuard()
   console.log(`[${ts()}] PARALELO #${sid}: discando ${dials.length} -> ${dials.join(', ')}`)
 
   // 3) CORTE DE TOQUE (anti caixa postal): passado o tempo de toque, o que ainda estiver
@@ -1043,10 +1328,15 @@ async function maybeAutoUpdate() {
   if (!base) return
   try {
     const { code, version } = await fetchLatest(base)
-    if (version !== HELPER_VERSION) {
+    if (isVersionNewer(version, HELPER_VERSION)) {
       console.log(`Versao nova encontrada (${HELPER_VERSION} -> ${version}). Atualizando...`)
       applyUpdate(code)
       exitForUpdate()
+    } else if (version !== HELPER_VERSION) {
+      console.log(
+        `A origem serve a v${version}, mais VELHA que esta (v${HELPER_VERSION}) — ignorada. ` +
+          `Se era para publicar, rode "npm run sync:helper" no Blue Desk.`
+      )
     }
   } catch {
     // sem rede / Blue Desk fora do ar / origem ainda não conhecida — segue com a versão atual
@@ -1115,6 +1405,11 @@ async function main() {
     else console.log(' microsip.ini nao encontrado — nao da para conferir o modo multi-chamada')
     console.log(` Corte de toque: ${RING_CUTOFF_MS / 1000}s (linha que so toca e derrubada antes da caixa postal)`)
     console.log(
+      AUTO_MUTE_RING
+        ? ` Som: MUDO enquanto disca/toca — abre sozinho quando ATENDEM${AUTO_MUTE_IDLE ? ' (e entre chamadas tambem fica mudo; AUTO_MUTE_IDLE=0 libera o toque de entrada)' : ''} — AUTO_MUTE_RING=0 desliga`
+        : ' Som: sempre aberto (AUTO_MUTE_RING=0) — o agente ouve o toque/ringback'
+    )
+    console.log(
       process.env.HELPER_NO_HIDE
         ? ' Janela do MicroSIP: VISIVEL (HELPER_NO_HIDE=1) — para configurar o softphone'
         : ' Janela do MicroSIP: escondida (padrao; HELPER_NO_HIDE=1 mostra)'
@@ -1125,6 +1420,10 @@ async function main() {
     listenOnIPv6()
     startMicrosipHider()
     ensureMultiCallAtStartup()
+    // Sobe o worker do mute JA na largada: e a compilacao do C# (~1s) que ele tira do caminho
+    // do atendimento. E deixa o softphone em silencio desde o inicio.
+    startMuteWorker()
+    setRingSilence(AUTO_MUTE_IDLE, 'helper iniciado')
   })
 
   // Porta ocupada = quase sempre OUTRA instância do helper já rodando. Em vez do
