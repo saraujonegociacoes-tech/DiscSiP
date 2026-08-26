@@ -800,6 +800,8 @@ export interface ProcAcordo {
   valorParcela: number | null
   primeiroVencimento: string | null // ISO date
   observacoes: string | null
+  dadosBancarios: string | null // banco/agência/conta/favorecido — opcional
+  pix: string | null // chave PIX do favorecido — opcional
   createdAt: string // ISO
   parcelas: ProcParcela[]
 }
@@ -820,6 +822,21 @@ export interface CreateMinutaInput {
   valorParcela: number | null
   primeiroVencimento: string | null // ISO date
   observacoes: string
+  dadosBancarios: string // opcional — '' quando não informado
+  pix: string // opcional — '' quando não informado
+}
+
+// Patch do diálogo "Editar minuta": campos de identificação/referência do ACORDO.
+// Recorrência e nº de parcelas ficam de fora — quem muda o plano de pagamento é a
+// edição das PARCELAS (updateParcela / addParcela / deleteParcela), que preserva o
+// que já foi pago em vez de regerar tudo.
+export interface UpdateMinutaInput {
+  cliente: string
+  numeroProcesso: string
+  titulo: string
+  observacoes: string
+  dadosBancarios: string
+  pix: string
 }
 
 // ── Central de Aparelhos (inventário de TI) — transversal ────────────────────

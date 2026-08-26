@@ -9,6 +9,7 @@ import type {
   ProcParcela,
   ProcParcelaStatus,
   Recorrencia,
+  UpdateMinutaInput,
 } from '@/lib/types/database'
 
 // Server actions da área Jurídico / Minutas Processuais (domínio SEPARADO das "Minutas" do
@@ -33,6 +34,8 @@ type AcordoRow = {
   valor_parcela: number | string | null
   primeiro_vencimento: string | null
   observacoes: string | null
+  dados_bancarios: string | null
+  pix: string | null
   created_at: string
 }
 
@@ -118,6 +121,10 @@ export async function getMinutas(): Promise<ProcMinutasData> {
     valorParcela: num(r.valor_parcela),
     primeiroVencimento: r.primeiro_vencimento ? r.primeiro_vencimento.slice(0, 10) : null,
     observacoes: r.observacoes,
+    // Colunas de 20260826: `?? null` porque a migration pode ainda não ter sido aplicada
+    // (select '*' devolve a linha sem elas) — a tela degrada pra "sem dados bancários".
+    dadosBancarios: r.dados_bancarios ?? null,
+    pix: r.pix ?? null,
     createdAt: r.created_at,
     parcelas: parcelasByAcordo.get(r.id) ?? [],
   }))
@@ -141,9 +148,39 @@ export async function createMinuta(input: CreateMinutaInput): Promise<MinutaActi
     p_valor_parcela: input.valorParcela,
     p_primeiro_vencimento: input.primeiroVencimento,
     p_observacoes: input.observacoes,
+    p_dados_bancarios: input.dadosBancarios,
+    p_pix: input.pix,
   })
   if (error) {
     console.error('[minutas] createMinuta falhou:', error.message)
+    return { ok: false, error: error.message }
+  }
+  return { ok: true }
+}
+
+// Edita os campos de identificação/referência do ACORDO (diálogo "Editar minuta").
+// UPDATE direto na tabela, não RPC: a policy `proc_acordos_rw` é `for all`, então a RLS
+// já barra quem não passa em proc_can_access(). Campo em branco vira NULL — '' e "não
+// informado" são a mesma coisa aqui, e NULL é o que o resto do código já testa.
+export async function updateMinuta(
+  acordoId: string,
+  input: UpdateMinutaInput,
+): Promise<MinutaActionResult> {
+  const supabase = await createServerClient()
+  const nn = (s: string): string | null => s.trim() || null
+  const { error } = await supabase
+    .from('proc_acordos')
+    .update({
+      cliente: nn(input.cliente),
+      numero_processo: nn(input.numeroProcesso),
+      titulo: nn(input.titulo),
+      observacoes: nn(input.observacoes),
+      dados_bancarios: nn(input.dadosBancarios),
+      pix: nn(input.pix),
+    })
+    .eq('id', acordoId)
+  if (error) {
+    console.error('[minutas] updateMinuta falhou:', error.message)
     return { ok: false, error: error.message }
   }
   return { ok: true }
@@ -172,6 +209,84 @@ export async function updateParcela(id: string, patch: ParcelaPatch): Promise<Mi
     console.error('[minutas] updateParcela falhou:', error.message)
     return { ok: false, error: error.message }
   }
+  return { ok: true }
+}
+
+// Acerta `proc_acordos.parcela_total` com a contagem REAL de parcelas do acordo. Chamada
+// depois de acrescentar/remover parcela na edição — senão a coluna "Parcela 4/3" mente.
+//
+// Deliberadamente NÃO é um trigger no banco: a carga da planilha grava de propósito um total
+// MAIOR que o nº de linhas (um "Parcela 02/03" declara 3 mesmo quando só 2 linhas vieram —
+// ver docs/minutas-docs). Um trigger achataria esse total toda vez que a carga rodasse. Aqui
+// a intenção é inequívoca: o usuário mexeu no plano de parcelas pela tela.
+async function syncParcelaTotal(
+  supabase: Awaited<ReturnType<typeof createServerClient>>,
+  acordoId: string,
+): Promise<void> {
+  const { count, error } = await supabase
+    .from('proc_parcelas')
+    .select('id', { count: 'exact', head: true })
+    .eq('acordo_id', acordoId)
+  if (error || count == null) {
+    console.error('[minutas] syncParcelaTotal falhou:', error?.message)
+    return
+  }
+  await supabase
+    .from('proc_acordos')
+    .update({ parcela_total: Math.max(count, 1) })
+    .eq('id', acordoId)
+}
+
+export type NovaParcelaInput = {
+  valor: number | null
+  vencimento: string | null
+  dataPagamento: string | null
+  observacoes: string | null
+}
+
+// Acrescenta uma parcela ao acordo. O `num` é o próximo livre (maior + 1) — a tabela tem
+// `unique (acordo_id, num)`, então reaproveitar número sobrescreveria parcela existente.
+export async function addParcela(
+  acordoId: string,
+  input: NovaParcelaInput,
+): Promise<MinutaActionResult> {
+  const supabase = await createServerClient()
+  const { data: existentes, error: readErr } = await supabase
+    .from('proc_parcelas')
+    .select('num')
+    .eq('acordo_id', acordoId)
+  if (readErr) {
+    console.error('[minutas] addParcela (leitura) falhou:', readErr.message)
+    return { ok: false, error: readErr.message }
+  }
+  const proximo = Math.max(0, ...(existentes ?? []).map((r) => Number(r.num))) + 1
+
+  const { error } = await supabase.from('proc_parcelas').insert({
+    acordo_id: acordoId,
+    num: proximo,
+    valor: input.valor,
+    vencimento: input.vencimento,
+    data_pagamento: input.dataPagamento,
+    observacoes: input.observacoes,
+  })
+  if (error) {
+    console.error('[minutas] addParcela falhou:', error.message)
+    return { ok: false, error: error.message }
+  }
+  await syncParcelaTotal(supabase, acordoId)
+  return { ok: true }
+}
+
+// Remove UMA parcela (não o acordo). Os `num` das demais ficam como estão: renumerar
+// mudaria o rótulo "Parcela 3/5" de linhas que a pessoa não pediu pra mexer.
+export async function deleteParcela(id: string, acordoId: string): Promise<MinutaActionResult> {
+  const supabase = await createServerClient()
+  const { error } = await supabase.from('proc_parcelas').delete().eq('id', id)
+  if (error) {
+    console.error('[minutas] deleteParcela falhou:', error.message)
+    return { ok: false, error: error.message }
+  }
+  await syncParcelaTotal(supabase, acordoId)
   return { ok: true }
 }
 

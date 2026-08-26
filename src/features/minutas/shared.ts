@@ -6,6 +6,24 @@ import type { ProcAcordo, ProcParcela, ProcParcelaStatus, Recorrencia } from '@/
 export const nf = (n: number) => n.toLocaleString('pt-BR')
 export const brl = (n: number) => n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 
+// ── Dinheiro digitado ────────────────────────────────────────────────────────
+// Campo de valor é <input type="text">, não `number`: o nativo recusa vírgula em locale
+// pt-BR e some com o separador de milhar. Aceita "5.013,96", "5013,96" e "5013.96".
+// Entrada vazia/ilegível → null (ausência de valor, não zero).
+export function parseMoney(s: string): number | null {
+  const t = s.trim()
+  if (!t) return null
+  const norm = /,[0-9]{1,2}$/.test(t) ? t.replace(/\./g, '').replace(',', '.') : t.replace(/,/g, '')
+  const n = Number(norm.replace(/[^0-9.\-]/g, ''))
+  return Number.isFinite(n) ? n : null
+}
+
+// Número → texto pra PREENCHER o campo de valor ("5.013,96"). Sem "R$": o símbolo no meio
+// do input atrapalha quem edita.
+export function moneyToInput(n: number | null): string {
+  return n == null ? '' : n.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}
+
 const MONTHS_PT = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez']
 
 // ISO 'YYYY-MM-DD' → 'DD/MM/YYYY'. '—' quando nulo.

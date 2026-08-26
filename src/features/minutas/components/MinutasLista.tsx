@@ -2,11 +2,11 @@
 
 import { useMemo, useState } from 'react'
 import {
-  Download, FileText, Check, RotateCcw, Trash2, Loader2,
+  Download, FileText, Check, RotateCcw, Trash2, Loader2, Pencil, Landmark, ClipboardCheck,
   ChevronUp, ChevronDown, ChevronsUpDown, CalendarRange,
 } from 'lucide-react'
 import { updateParcela, deleteMinuta } from '@/app/actions/minutas'
-import type { ProcMinutasData, ProcParcelaStatus } from '@/lib/types/database'
+import type { ProcAcordo, ProcMinutasData, ProcParcelaStatus } from '@/lib/types/database'
 import { downloadCsv, type CsvValue } from '@/lib/csv'
 import { cn } from '@/lib/utils'
 import { recentCivilMonths, recentCycles, recentDays, customPeriod, periodBounds, type LeadPeriod } from '@/lib/period'
@@ -23,12 +23,18 @@ import {
   type MinutaRow,
 } from '../shared'
 import { MinutaForm } from './MinutaForm'
+import { MinutaEditDialog } from './MinutaEditDialog'
+import { MinutaPagamentoDialog } from './MinutaPagamentoDialog'
 import { BrDateInput } from '@/components/bluedesk/BrDateInput'
 
 // PÁGINA 3 — controle/CRUD das minutas. Uma linha por PARCELA (achatado de acordo×parcela),
 // com filtro por situação, filtro por período, ordenação por coluna, marcação de pagamento,
-// exclusão da minuta e export CSV. É o hub de edição; as outras abas (Visão Geral,
+// edição da minuta, exclusão e export CSV. É o hub de edição; as outras abas (Visão Geral,
 // Calendário) são leitura.
+//
+// ⚠️ Marcar como paga ABRE UM DIÁLOGO pedindo a data (MinutaPagamentoDialog) em vez de gravar
+// `hoje`. Carimbar hoje enviesava todo relatório recortado por data de pagamento — ver o
+// comentário do diálogo.
 
 type StatusFilter = 'todas' | ProcParcelaStatus
 const STATUS_TABS: { key: StatusFilter; label: string }[] = [
@@ -79,6 +85,10 @@ function dataRef(r: MinutaRow): string | null {
 export function MinutasLista({ data, onChanged }: { data: ProcMinutasData; onChanged: () => void }) {
   const [status, setStatus] = useState<StatusFilter>('pendente')
   const [busy, setBusy] = useState<string | null>(null)
+  // Diálogos: `editando` é o ACORDO inteiro (a minuta), `pagando` é a LINHA (parcela).
+  const [editando, setEditando] = useState<ProcAcordo | null>(null)
+  const [pagando, setPagando] = useState<MinutaRow | null>(null)
+  const [copiado, setCopiado] = useState<string | null>(null)
   const [sort, setSort] = useState<{ key: SortKey; dir: SortDir }>({ key: 'vencimento', dir: 'asc' })
 
   // Período: null = todo o período (default — a aba não esconde nada até o usuário pedir).
@@ -158,9 +168,29 @@ export function MinutasLista({ data, onChanged }: { data: ProcMinutasData; onCha
     if (res.ok) onChanged()
   }
 
+  // Marcar como paga PERGUNTA a data (o relatório recorta por ela). Estornar limpa direto:
+  // não há data a escolher, e o ↺ volta a parcela pro fluxo de em aberto.
   function togglePago(r: MinutaRow) {
-    const next = r.parcela.status === 'pago' ? null : todayBRT()
-    run(`pay-${r.parcela.id}`, () => updateParcela(r.parcela.id, { dataPagamento: next }))
+    if (r.parcela.status !== 'pago') {
+      setPagando(r)
+      return
+    }
+    run(`pay-${r.parcela.id}`, () => updateParcela(r.parcela.id, { dataPagamento: null }))
+  }
+
+  // Dados bancários / PIX ficam a um clique: quem paga precisa da chave, não de abrir a
+  // minuta. Copia o PIX quando existe (é o que se cola no banco), senão os dados bancários.
+  async function copiarPagamento(a: ProcAcordo) {
+    const texto = a.pix?.trim() || a.dadosBancarios?.trim()
+    if (!texto) return
+    try {
+      await navigator.clipboard.writeText(texto)
+      setCopiado(a.id)
+      window.setTimeout(() => setCopiado((c) => (c === a.id ? null : c)), 1500)
+    } catch {
+      // Clipboard bloqueada (contexto não seguro / permissão negada): o `title` do botão já
+      // mostra o conteúdo, então dá pra copiar à mão. Não vale interromper com alerta.
+    }
   }
 
   function excluir(r: MinutaRow) {
@@ -179,6 +209,7 @@ export function MinutasLista({ data, onChanged }: { data: ProcMinutasData; onCha
     const head = [
       'Cliente', 'Número do processo', 'Título', 'Recorrência', 'Parcela', 'Total parcelas',
       'Valor', 'Vencimento', 'Data de pagamento', 'Situação', 'Observações',
+      'Dados bancários', 'PIX',
     ]
     const rows: CsvValue[][] = filtered.map((r) => [
       nomeCliente(r.acordo),
@@ -192,6 +223,8 @@ export function MinutasLista({ data, onChanged }: { data: ProcMinutasData; onCha
       fmtDate(r.parcela.dataPagamento),
       STATUS_META[r.parcela.status].label,
       r.parcela.observacoes ?? '',
+      r.acordo.dadosBancarios ?? '',
+      r.acordo.pix ?? '',
     ])
     downloadCsv(`minutas-processuais-${todayBRT()}`, head, rows)
   }
@@ -372,6 +405,7 @@ export function MinutasLista({ data, onChanged }: { data: ProcMinutasData; onCha
                   {filtered.map((r) => {
                     const s = STATUS_META[r.parcela.status]
                     const rowBusy = busy === `pay-${r.parcela.id}` || busy === `del-${r.acordo.id}`
+                    const temPagamento = Boolean(r.acordo.dadosBancarios?.trim() || r.acordo.pix?.trim())
                     return (
                       <tr key={r.parcela.id} className={cn('border-t border-border/60 hover:bg-primary/5', rowBusy && 'opacity-50')}>
                         <th scope="row" className="max-w-[200px] truncate px-3 py-1.5 text-left text-xs font-medium text-foreground" title={nomeCliente(r.acordo)}>
@@ -404,11 +438,40 @@ export function MinutasLista({ data, onChanged }: { data: ProcMinutasData; onCha
                         </td>
                         <td className="px-3 py-1.5">
                           <div className="flex items-center justify-end gap-1">
+                            {temPagamento && (
+                              <button
+                                type="button"
+                                onClick={() => copiarPagamento(r.acordo)}
+                                title={[
+                                  r.acordo.dadosBancarios?.trim(),
+                                  r.acordo.pix?.trim() && `PIX: ${r.acordo.pix.trim()}`,
+                                ]
+                                  .filter(Boolean)
+                                  .join('\n')}
+                                aria-label="Copiar dados de pagamento"
+                                className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-primary/10 hover:text-primary"
+                              >
+                                {copiado === r.acordo.id ? (
+                                  <ClipboardCheck className="h-3.5 w-3.5 text-success" />
+                                ) : (
+                                  <Landmark className="h-3.5 w-3.5" />
+                                )}
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => setEditando(r.acordo)}
+                              disabled={rowBusy}
+                              title="Editar minuta (dados, parcelas e datas de pagamento)"
+                              className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-primary/10 hover:text-primary"
+                            >
+                              <Pencil className="h-3.5 w-3.5" />
+                            </button>
                             <button
                               type="button"
                               onClick={() => togglePago(r)}
                               disabled={rowBusy}
-                              title={r.parcela.status === 'pago' ? 'Estornar pagamento' : 'Marcar como paga (hoje)'}
+                              title={r.parcela.status === 'pago' ? 'Estornar pagamento' : 'Marcar como paga (escolher a data)'}
                               className={cn(
                                 'rounded-md p-1.5 transition-colors',
                                 r.parcela.status === 'pago'
@@ -450,11 +513,25 @@ export function MinutasLista({ data, onChanged }: { data: ProcMinutasData; onCha
           <p className="mt-2 text-[11px] text-muted-foreground">
             Uma linha por parcela. Clique no título da coluna pra ordenar (2º clique inverte);
             sem valor/data vai sempre pro fim. O período filtra pela data de pagamento nas parcelas
-            pagas e pelo vencimento nas em aberto — mesma regra da Visão Geral. ✓ marca a parcela
-            como paga (hoje) · ↺ estorna · 🗑 exclui a minuta inteira.
+            pagas e pelo vencimento nas em aberto — mesma regra da Visão Geral. 🏦 copia os dados
+            de pagamento · ✏️ edita a minuta e as parcelas · ✓ marca como paga{' '}
+            <span className="text-foreground">pedindo a data em que foi paga</span> · ↺ estorna ·
+            🗑 exclui a minuta inteira.
           </p>
         </div>
       )}
+
+      {/* Diálogos: montados fora da tabela pra não remontarem a cada re-render das linhas. */}
+      <MinutaEditDialog
+        acordo={editando}
+        onClose={() => setEditando(null)}
+        onSaved={onChanged}
+      />
+      <MinutaPagamentoDialog
+        row={pagando}
+        onClose={() => setPagando(null)}
+        onSaved={onChanged}
+      />
     </div>
   )
 }

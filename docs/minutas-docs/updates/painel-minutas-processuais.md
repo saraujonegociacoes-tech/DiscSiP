@@ -51,7 +51,9 @@ recorrentes. Ver [`../../links.md`](../../links.md) (índice mestre).
 Migration [`20260731b_minutas_processuais.sql`](../../../supabase/migrations/Migrations_minutas/20260731b_minutas_processuais.sql):
 
 - **`proc_acordos`** — a minuta em si: `cliente`, `numero_processo`, `titulo`, `recorrencia`,
-  `intervalo_dias`, `parcela_total`, `valor_parcela`, `primeiro_vencimento`, `observacoes`.
+  `intervalo_dias`, `parcela_total`, `valor_parcela`, `primeiro_vencimento`, `observacoes` +
+  `dados_bancarios` e `pix` (opcionais, migration `20260826` — ver
+  [`minutas-edicao-e-data-de-pagamento.md`](minutas-edicao-e-data-de-pagamento.md)).
 - **`proc_parcelas`** — 1 linha por parcela: `acordo_id`, `num`, `valor`, `vencimento`,
   `data_pagamento` (preenchida = paga), `observacoes`. `unique (acordo_id, num)`.
 - **Status é derivado** na leitura (não gravado): `pago` se `data_pagamento` preenchida; senão
@@ -76,9 +78,13 @@ Esqueleto clonado do `CsClient` (abas sincronizadas com `?aba=`). Componentes em
    (pago × a pagar) e insights.
 2. **Calendário** — clone do `delivery-calendar` do Monday: um chip por parcela no dia do
    vencimento, cor por situação (pago/pendente/vencida); clicar num dia abre a agenda daquele dia.
+   Desde 26/ago tem **toggle mês civil / ciclo 11→10** e **total lançado na janela** (tudo ancorado
+   no vencimento).
 3. **Minutas** — tabela/CRUD: filtro por situação, **filtro de período**, **ordenação por
-   coluna**, **Nova minuta** (formulário que gera as parcelas), marcar paga/estornar, excluir a
-   minuta e export CSV.
+   coluna**, **Nova minuta** (formulário que gera as parcelas), **editar a minuta**, marcar
+   paga/estornar, excluir a minuta e export CSV.
+   ⚠️ Marcar como paga **pergunta a data em que foi paga** (não carimba hoje) — ver
+   [`minutas-edicao-e-data-de-pagamento.md`](minutas-edicao-e-data-de-pagamento.md).
 
 ### Ordenação e período (aba Minutas)
 

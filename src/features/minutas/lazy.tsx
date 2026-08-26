@@ -7,7 +7,7 @@ import { ChartSkeleton } from '@/components/bluedesk/ChartSkeleton'
 // motivos de features/leads/lazy.tsx). Só um painel fica montado por vez (Radix Tabs), então
 // não havia razão para o código dos três vir junto:
 //   · Visão Geral  → Recharts (o maior chunk do app).
-//   · Calendário   → date-fns + locale pt-BR.
+//   · Calendário   → date-fns (grade de dias).
 // A Lista (CRUD) fica no barrel estático: é a aba que o time do Jurídico usa para trabalhar e
 // não depende de biblioteca pesada.
 export const MinutasVisaoGeral = dynamic(

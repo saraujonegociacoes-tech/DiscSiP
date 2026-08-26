@@ -151,6 +151,15 @@ CS** (aba dentro de `/cs`, tabelas `cs_*`) — não confundir.
   ⚠️ **Pendente:** `Migrations_minutas/20260803b_proc_can_access_tester.sql` — inclui o papel
   `tester` no `proc_can_access()`. Sem ela o tester passa no gate da página mas a RLS devolve zero
   linhas, e o `/minutas` abre **vazio**.
+- [`minutas-edicao-e-data-de-pagamento.md`](minutas-docs/updates/minutas-edicao-e-data-de-pagamento.md) —
+  **edição da minuta** (dados do acordo + parcelas, com acrescentar/remover), **dados bancários e
+  PIX** (colunas opcionais novas), **total lançado + toggle mês civil/ciclo no calendário** e a
+  correção do **viés do "Pago na janela"**: o ✓ gravava `data_pagamento = hoje`, então a data era
+  "quando clicaram", não "quando pagaram" — quitação antiga marcada com atraso inflava o mês
+  corrente. **O cálculo estava certo; o dado é que estava errado.** Agora a tela pergunta a data.
+  ⚠️ **Pendente:** aplicar `Migrations_minutas/20260826_minutas_edicao_dados_bancarios.sql` (sem ela
+  "Nova minuta" quebra — `proc_create_acordo` ganhou 2 parâmetros) e **corrigir à mão as datas de
+  pagamento já gravadas erradas** (não dá pra inferir: a informação nunca foi coletada).
 
 ---
 

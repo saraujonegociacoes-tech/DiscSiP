@@ -13,7 +13,7 @@ import {
 } from '@/components/ui/dialog'
 import { createMinuta } from '@/app/actions/minutas'
 import type { CreateMinutaInput, Recorrencia } from '@/lib/types/database'
-import { RECORRENCIAS, brl } from '../shared'
+import { RECORRENCIAS, brl, parseMoney } from '../shared'
 import { BrDateInput } from '@/components/bluedesk/BrDateInput'
 
 // Formulário "Nova minuta": cria o acordo e gera as parcelas (RPC proc_create_acordo). A
@@ -23,15 +23,6 @@ import { BrDateInput } from '@/components/bluedesk/BrDateInput'
 const inputCls =
   'w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground shadow-card outline-none focus:border-primary disabled:opacity-50'
 const labelCls = 'mb-1 block text-xs font-medium text-muted-foreground'
-
-function parseMoney(s: string): number | null {
-  const t = s.trim()
-  if (!t) return null
-  // aceita "5.013,96", "5013.96" ou "5013,96"
-  const norm = /,[0-9]{1,2}$/.test(t) ? t.replace(/\./g, '').replace(',', '.') : t.replace(/,/g, '')
-  const n = Number(norm.replace(/[^0-9.\-]/g, ''))
-  return Number.isFinite(n) ? n : null
-}
 
 export function MinutaForm({ onCreated }: { onCreated: () => void }) {
   const [open, setOpen] = useState(false)
@@ -47,6 +38,8 @@ export function MinutaForm({ onCreated }: { onCreated: () => void }) {
   const [valor, setValor] = useState('')
   const [primeiroVencimento, setPrimeiroVencimento] = useState('')
   const [observacoes, setObservacoes] = useState('')
+  const [dadosBancarios, setDadosBancarios] = useState('')
+  const [pix, setPix] = useState('')
 
   const isAvulsa = recorrencia === 'avulsa'
   const isPersonalizada = recorrencia === 'personalizada'
@@ -81,6 +74,8 @@ export function MinutaForm({ onCreated }: { onCreated: () => void }) {
     setValor('')
     setPrimeiroVencimento('')
     setObservacoes('')
+    setDadosBancarios('')
+    setPix('')
     setError(null)
   }
 
@@ -102,6 +97,8 @@ export function MinutaForm({ onCreated }: { onCreated: () => void }) {
       valorParcela: valorNum,
       primeiroVencimento: primeiroVencimento || null,
       observacoes: observacoes.trim(),
+      dadosBancarios: dadosBancarios.trim(),
+      pix: pix.trim(),
     }
     const res = await createMinuta(input)
     setSaving(false)
@@ -198,6 +195,32 @@ export function MinutaForm({ onCreated }: { onCreated: () => void }) {
             <div>
               <label className={labelCls}>1º vencimento</label>
               <BrDateInput className={inputCls} value={primeiroVencimento} onChange={setPrimeiroVencimento} />
+            </div>
+          </div>
+
+          {/* Dados de pagamento — os dois OPCIONAIS. Antes essa informação vinha
+              enterrada nas observações (a planilha de origem misturava CNPJ, agência e
+              chave PIX no campo livre); aqui cada uma tem seu campo. */}
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div>
+              <label className={labelCls}>Dados bancários (opcional)</label>
+              <textarea
+                className={inputCls}
+                rows={2}
+                value={dadosBancarios}
+                onChange={(e) => setDadosBancarios(e.target.value)}
+                placeholder="Banco, agência, conta, favorecido"
+              />
+            </div>
+            <div>
+              <label className={labelCls}>Chave PIX (opcional)</label>
+              <textarea
+                className={inputCls}
+                rows={2}
+                value={pix}
+                onChange={(e) => setPix(e.target.value)}
+                placeholder="CPF/CNPJ, e-mail, telefone ou chave aleatória"
+              />
             </div>
           </div>
 
