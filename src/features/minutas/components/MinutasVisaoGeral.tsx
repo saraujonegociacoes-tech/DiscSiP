@@ -33,6 +33,13 @@ import {
 
 // PÁGINA 1 — Visão Geral. KPIs de "pago × a pagar" na janela escolhida (ciclo 11→10 ou mês
 // civil), buckets por proximidade de vencimento (carteira em aberto), série mensal e insights.
+//
+// ⚠️ "Pago na janela" recorta pela DATA DE PAGAMENTO, e é isso que se quer: o mês tem que
+// mostrar o que saiu do caixa nele. O número já foi inflado por um bug de UI — até 26/ago/2026
+// a lista carimbava `data_pagamento = hoje` ao marcar a parcela, então quitação antiga marcada
+// com atraso caía no mês errado. A origem foi corrigida (MinutaPagamentoDialog pede a data), mas
+// PARCELAS MARCADAS ANTES DISSO seguem com a data do clique até serem corrigidas no diálogo
+// "Editar minuta" — não é este cálculo que precisa mudar, é o dado.
 
 const brlShort = (n: number): string => {
   const abs = Math.abs(n)
@@ -165,8 +172,12 @@ export function MinutasVisaoGeral({ data }: { data: ProcMinutasData }) {
 
       {/* KPIs */}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Stat label="A pagar na janela" value={brl(kpis.aPagarVal)} sub={`${nf(kpis.aPagarCount)} parcela(s)`} />
-        <Stat label="Pago na janela" value={brl(kpis.pagoVal)} sub={`${nf(kpis.pagoCount)} parcela(s)`} tone="text-success" />
+        {/* As duas primeiras leem DATAS DIFERENTES — dizer qual evita a leitura errada de que
+            "A pagar + Pago" seria o total da janela. "A pagar" é o que VENCE nela; "Pago" é o
+            que foi QUITADO nela (parcela de junho paga em junho conta em junho, mesmo que só
+            tenha sido marcada depois — é o que a data de pagamento editável garante). */}
+        <Stat label="A pagar na janela" value={brl(kpis.aPagarVal)} sub={`${nf(kpis.aPagarCount)} parcela(s) · por vencimento`} />
+        <Stat label="Pago na janela" value={brl(kpis.pagoVal)} sub={`${nf(kpis.pagoCount)} parcela(s) · por data de pagamento`} tone="text-success" />
         <Stat label="Vencidas (carteira)" value={brl(kpis.vencVal)} sub={`${nf(kpis.vencCount)} parcela(s)`} tone={kpis.vencCount > 0 ? 'text-status-stuck' : undefined} />
         <Stat label="Carteira a receber" value={brl(kpis.carteiraVal)} sub={`${nf(kpis.carteiraCount)} parcela(s) em aberto`} />
       </div>
