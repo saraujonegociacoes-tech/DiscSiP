@@ -19,12 +19,19 @@ const DIAL_PREFIX = process.env.DIAL_PREFIX || '021'
 // Silêncio no toque: o agente não ouve NADA enquanto disca/toca (ringback das N linhas do
 // lote, caixa postal que atende antes do corte, toque de chamada recebida) e o som abre no
 // instante em que alguém ATENDE. Vale para lote, 1-a-1 e discagem manual.
-// AUTO_MUTE_RING=0 desliga e devolve o comportamento antigo (som sempre aberto).
-const AUTO_MUTE_RING = process.env.AUTO_MUTE_RING !== '0'
+//
+// ⚠️ DESLIGADO POR PADRÃO desde 27/08. Em máquina onde os hooks do MicroSIP (cmdCallStart) não
+// foram aplicados, o helper nunca recebe o "atenderam" — o som é mutado ao discar e NUNCA
+// reabre: a ligação inteira fica muda, e o botão do painel não resolve porque a próxima
+// discagem rearma o silêncio. Isso aconteceu em produção. Enquanto não houver uma checagem que
+// se recuse a mutar quando os hooks estão ausentes, o padrão é o comportamento antigo (som
+// sempre aberto) e o silêncio é OPT-IN: suba com AUTO_MUTE_RING=1 para testar.
+const AUTO_MUTE_RING = process.env.AUTO_MUTE_RING === '1'
 
 // Entre uma chamada e outra o softphone fica MUDO (é o que faz o toque de uma chamada
 // RECEBIDA também não soar — o pedido era "som só quando atender"). Quem precisar ouvir a
 // campainha de entrada põe AUTO_MUTE_IDLE=0: aí o silêncio vale só do discar até o atendimento.
+// Só tem efeito com AUTO_MUTE_RING=1 (o silêncio está desligado por padrão).
 const AUTO_MUTE_IDLE = AUTO_MUTE_RING && process.env.AUTO_MUTE_IDLE !== '0'
 
 // Quanto esperamos o worker do mute responder antes de cair no spawn avulso.
@@ -962,8 +969,8 @@ app.get('/ping', (req, res) => {
     microsip: MICROSIP,
     ini: microsipIniPath(),
     multiCall: multiCallEnabled(),
-    // Silêncio de toque ligado? (AUTO_MUTE_RING=0 desliga.) `speakerMuted` aqui é o estado
-    // EFETIVO — manual do agente ou automático.
+    // Silêncio de toque ligado? (desligado por padrão; AUTO_MUTE_RING=1 liga.) `speakerMuted`
+    // aqui é o estado EFETIVO — manual do agente ou automático.
     ringSilence: AUTO_MUTE_RING,
     ringSilenceIdle: AUTO_MUTE_IDLE,
     speakerMuted: speakerMuted || autoMuted,
@@ -1406,8 +1413,8 @@ async function main() {
     console.log(` Corte de toque: ${RING_CUTOFF_MS / 1000}s (linha que so toca e derrubada antes da caixa postal)`)
     console.log(
       AUTO_MUTE_RING
-        ? ` Som: MUDO enquanto disca/toca — abre sozinho quando ATENDEM${AUTO_MUTE_IDLE ? ' (e entre chamadas tambem fica mudo; AUTO_MUTE_IDLE=0 libera o toque de entrada)' : ''} — AUTO_MUTE_RING=0 desliga`
-        : ' Som: sempre aberto (AUTO_MUTE_RING=0) — o agente ouve o toque/ringback'
+        ? ` Som: MUDO enquanto disca/toca — abre sozinho quando ATENDEM${AUTO_MUTE_IDLE ? ' (e entre chamadas tambem fica mudo; AUTO_MUTE_IDLE=0 libera o toque de entrada)' : ''} — AUTO_MUTE_RING=1 (opt-in); sem os hooks do MicroSIP a ligacao fica muda`
+        : ' Som: sempre aberto (padrao) — o agente ouve o toque/ringback; AUTO_MUTE_RING=1 liga o silencio de toque'
     )
     console.log(
       process.env.HELPER_NO_HIDE
@@ -1421,9 +1428,19 @@ async function main() {
     startMicrosipHider()
     ensureMultiCallAtStartup()
     // Sobe o worker do mute JA na largada: e a compilacao do C# (~1s) que ele tira do caminho
-    // do atendimento. E deixa o softphone em silencio desde o inicio.
+    // do atendimento (e do botao do painel de audio).
     startMuteWorker()
-    setRingSilence(AUTO_MUTE_IDLE, 'helper iniciado')
+    if (AUTO_MUTE_RING) {
+      setRingSilence(AUTO_MUTE_IDLE, 'helper iniciado')
+    } else {
+      // Silencio desligado: a sessao de audio do microsip.exe pode ter ficado MUDA de uma
+      // execucao anterior (o mute vale por sessao do Windows e sobrevive ao restart do helper).
+      // Sem isto, a maquina que travou muda continuaria muda ate reiniciar o MicroSIP. Abrir o
+      // som na largada e o que faz o desligamento do silencio realmente resgatar a maquina.
+      applySpeakerState().then((r) =>
+        console.log(`[${ts()}] Som ABERTO (helper iniciado, silencio de toque desligado) — ${r.applied} sessao/oes`)
+      )
+    }
   })
 
   // Porta ocupada = quase sempre OUTRA instância do helper já rodando. Em vez do

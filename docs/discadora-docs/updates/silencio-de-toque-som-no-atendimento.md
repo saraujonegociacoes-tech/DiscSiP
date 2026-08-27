@@ -4,6 +4,12 @@
 > do atendimento e fecha quando a conversa acaba.
 > Mapa do helper: [`../reference/helper-anatomia.md`](../reference/helper-anatomia.md).
 >
+> 🔴 **DESLIGADO POR PADRÃO desde 27/08/2026.** Em produção, numa máquina sem os hooks do
+> MicroSIP aplicados, a ligação ficava muda do começo ao fim — o helper nunca recebia o
+> "atenderam". O silêncio virou **opt-in** (`AUTO_MUTE_RING=1`). O que está descrito abaixo
+> continua valendo, mas **só com a variável ligada**. Ver
+> [`../fixes/silencio-de-toque-desligado-por-padrao.md`](../fixes/silencio-de-toque-desligado-por-padrao.md).
+>
 > ⚠️ **Leia junto:** [`../fixes/correcao-downgrade-automatico-do-helper.md`](../fixes/correcao-downgrade-automatico-do-helper.md).
 > A primeira tentativa de rodar esta versão em produção morreu porque o auto-update **rebaixou o
 > helper de 1.16 para 1.7 e apagou o arquivo**. A correção faz parte da mesma v1.16.
@@ -108,8 +114,8 @@ pegou em nada. Sem esse número, "não funcionou" vira adivinhação.
 
 | Variável | Efeito |
 |---|---|
-| `AUTO_MUTE_RING=0` | desliga tudo — volta ao comportamento da v1.15 (som sempre aberto, mute só no botão) |
-| `AUTO_MUTE_IDLE=0` | mantém o silêncio **só do discar até o atendimento**; entre chamadas o som fica aberto — é o modo para quem precisa **ouvir a campainha de chamada recebida** |
+| `AUTO_MUTE_RING=1` | **liga** o silêncio de toque — ele é opt-in desde 27/08/2026. Sem a variável, o som fica sempre aberto (comportamento da v1.15, mute só no botão) |
+| `AUTO_MUTE_IDLE=0` | (só com `AUTO_MUTE_RING=1`) mantém o silêncio **só do discar até o atendimento**; entre chamadas o som fica aberto — é o modo para quem precisa **ouvir a campainha de chamada recebida** |
 | `MUTE_WORKER_TIMEOUT_MS` | quanto esperar o worker antes de cair no spawn avulso (padrão 700) |
 | `RING_GUARD_DEBUG=1` | loga **toda** passada da guarda de toque, não só quando o número de sessões muda |
 
@@ -132,3 +138,10 @@ auto-update (rebaixa: não; sobe: sim).
 
 ⏳ **Pendente:** teste em ligação real. Até 21/08 a v1.16 **nunca chegou a atender uma chamada**
 — o auto-update a derrubou para 1.7 antes disso.
+
+**27/08 — o primeiro contato com produção reprovou:** em máquina sem os hooks do MicroSIP a
+ligação ficou muda inteira, porque o desmute depende do `cmdCallStart` que não existia ali. O
+teste em porta separada não pegou isso justamente porque **simulava** os eventos por `curl` —
+ele provou a lógica do mute, não a premissa de que o evento chega. O silêncio está desligado por
+padrão até que o helper se recuse a mutar quando os hooks estão ausentes; detalhes e o roteiro de
+verificação em [`../fixes/silencio-de-toque-desligado-por-padrao.md`](../fixes/silencio-de-toque-desligado-por-padrao.md).
