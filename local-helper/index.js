@@ -9,7 +9,7 @@ const PORT = 3001
 
 // Versão do helper. É o que o Blue Desk compara para saber se está desatualizado e
 // oferecer o botão "Atualizar". Suba este número a cada correção no helper.
-const HELPER_VERSION = '1.16'
+const HELPER_VERSION = '1.17'
 
 // Código de seleção de operadora (CSP) para discagem interurbana. Sem ele o MicroSIP
 // não completa chamadas para outros estados. Resultado: DIAL_PREFIX + DDD + número.
@@ -26,6 +26,11 @@ const DIAL_PREFIX = process.env.DIAL_PREFIX || '021'
 // discagem rearma o silêncio. Isso aconteceu em produção. Enquanto não houver uma checagem que
 // se recuse a mutar quando os hooks estão ausentes, o padrão é o comportamento antigo (som
 // sempre aberto) e o silêncio é OPT-IN: suba com AUTO_MUTE_RING=1 para testar.
+//
+// 📦 A v1.16 saiu com este padrão corrigido mas SEM bump de versão, então o auto-update não a
+// distribuiu: as máquinas seguiram com a 1.16 antiga, que muta ao discar. A v1.17 existe para
+// isso chegar sozinho em todo mundo — e ela também ABRE som e microfone no boot (ver main()),
+// que é o que resgata quem ficou mudo.
 const AUTO_MUTE_RING = process.env.AUTO_MUTE_RING === '1'
 
 // Entre uma chamada e outra o softphone fica MUDO (é o que faz o toque de uma chamada
@@ -1416,6 +1421,7 @@ async function main() {
         ? ` Som: MUDO enquanto disca/toca — abre sozinho quando ATENDEM${AUTO_MUTE_IDLE ? ' (e entre chamadas tambem fica mudo; AUTO_MUTE_IDLE=0 libera o toque de entrada)' : ''} — AUTO_MUTE_RING=1 (opt-in); sem os hooks do MicroSIP a ligacao fica muda`
         : ' Som: sempre aberto (padrao) — o agente ouve o toque/ringback; AUTO_MUTE_RING=1 liga o silencio de toque'
     )
+    console.log(' Microfone: aberto na largada — o cliente ouve o agente (o painel ainda pode mutar)')
     console.log(
       process.env.HELPER_NO_HIDE
         ? ' Janela do MicroSIP: VISIVEL (HELPER_NO_HIDE=1) — para configurar o softphone'
@@ -1430,6 +1436,15 @@ async function main() {
     // Sobe o worker do mute JA na largada: e a compilacao do C# (~1s) que ele tira do caminho
     // do atendimento (e do botao do painel de audio).
     startMuteWorker()
+    // Resgate do MICROFONE (v1.17). O mute do mic e estado do PROPRIO MicroSIP: sobrevive ao
+    // restart do helper e ninguem o reabre sozinho. Um agente que ficou mudo continuaria sem
+    // ser ouvido pelo cliente ate lembrar de mexer no painel — e "nao me escutam" e o tipo de
+    // falha que ninguem associa ao helper. Abrir SEMPRE na largada, inclusive com o silencio de
+    // toque ligado: o silencio de toque so mexe no alto-falante, nunca no microfone, entao aqui
+    // nao ha conflito entre os dois.
+    if (runMsip('msip:micunmute')) {
+      console.log(`[${ts()}] Microfone ABERTO (helper iniciado)`)
+    }
     if (AUTO_MUTE_RING) {
       setRingSilence(AUTO_MUTE_IDLE, 'helper iniciado')
     } else {

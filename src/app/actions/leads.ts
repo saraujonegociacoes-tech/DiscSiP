@@ -334,7 +334,18 @@ async function dashboardFromRpc(
     p_start: period.start,
     p_end: period.end,
   })
-  if (error || !data) return null
+  if (error || !data) {
+    // Este retorno derruba a página no `dashboardFromScan`, que varre v_lead_progress de mil
+    // em mil linhas, SEQUENCIALMENTE e sem teto — dezenas de idas ao banco enfileiradas. Era
+    // uma degradação MUDA: nada no console do navegador, nada no log, e a página só ficava
+    // "às vezes muito lenta". Agora o motivo aparece no log do servidor, que é o único lugar
+    // onde dá para descobrir se isso está acontecendo em produção.
+    console.error(
+      '[leads] get_leads_dashboard indisponivel — caindo no scan paginado (LENTO).',
+      error ? `Motivo: ${error.message}` : 'A RPC devolveu vazio.'
+    )
+    return null
+  }
   const d = data as unknown as DashboardRpc
   const k = d.kpis ?? { total: 0, open: 0, won: 0, dead: 0, avgHoursToFirstContact: null }
   const { channelBreakdown, channelFillRate } = buildChannels(
@@ -621,7 +632,16 @@ export async function getLeadsData(periodInput: LeadPeriod): Promise<LeadsData> 
   const period = sanitizePeriod(periodInput) // saneia o período vindo do cliente
   const supabase = await createServerClient()
   const [base, sale, reach] = await Promise.all([
-    (async () => (await dashboardFromRpc(supabase, period)) ?? dashboardFromScan(supabase, period))(),
+    (async () => {
+      const viaRpc = await dashboardFromRpc(supabase, period)
+      if (viaRpc) return viaRpc
+      // Cronometrado porque "a página demora" não diz QUANTO o scan custou. Este número é o
+      // que decide se vale correr atrás da migration da RPC.
+      const t0 = Date.now()
+      const scanned = await dashboardFromScan(supabase, period)
+      console.error(`[leads] scan paginado concluido em ${Date.now() - t0}ms`)
+      return scanned
+    })(),
     wonBySaleDate(supabase, period),
     reachFunnel(supabase, period),
   ])

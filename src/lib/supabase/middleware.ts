@@ -60,9 +60,33 @@ export async function updateSession(request: NextRequest) {
     }
   )
 
+  // Toda navegação do app paga DUAS idas ao Supabase aqui: validar o token e ler
+  // papel/departamento. Elas eram SEQUENCIAIS — a query do perfil esperava o getUser() só
+  // para descobrir o id do usuário —, então cada clique carregava o dobro de latência de
+  // rede antes de a página começar a ser montada. Isso valia para o app inteiro, inclusive
+  // para os prefetches que o Next dispara ao passar o mouse nos links da sidebar.
+  //
+  // O id já está no cookie da sessão. Lemos ele LOCALMENTE (getSession não vai à rede) e
+  // disparamos as duas chamadas EM PARALELO.
+  //
+  // ⚠️ getSession() NÃO autoriza nada — o cookie é do cliente e poderia ser forjado. Ele serve
+  // só para ADIANTAR qual perfil buscar. Quem decide se existe sessão válida continua sendo o
+  // getUser(), validado no servidor; e o perfil adiantado só é aceito se o id bater com o que
+  // o getUser() confirmou (ver `profileRes` abaixo). Sem sessão no cookie, cai no caminho
+  // sequencial de antes.
   const {
-    data: { user },
-  } = await supabase.auth.getUser()
+    data: { session },
+  } = await supabase.auth.getSession()
+  const likelyId = session?.user?.id ?? null
+
+  const [userRes, prefetchedProfile] = await Promise.all([
+    supabase.auth.getUser(),
+    likelyId
+      ? supabase.from('profiles').select('role, departments(slug)').eq('id', likelyId).single()
+      : Promise.resolve(null),
+  ])
+
+  const user = userRes.data.user
 
   const { pathname } = request.nextUrl
   const isPublic = PUBLIC_ROUTES.some((r) => pathname === r || pathname.startsWith(`${r}/`))
@@ -81,11 +105,13 @@ export async function updateSession(request: NextRequest) {
   }
 
   // Com sessão: papel + slug do departamento numa query só (embed da FK profiles→departments).
-  const { data: profile } = await supabase
-    .from('profiles')
-    .select('role, departments(slug)')
-    .eq('id', user.id)
-    .single()
+  // Usa o resultado adiantado lá de cima SÓ se ele for mesmo do usuário que o getUser()
+  // validou. Se o cookie apontava para outro id (ou não havia cookie), busca agora — é o
+  // caminho sequencial de antes, mantido como rede de segurança.
+  const { data: profile } =
+    prefetchedProfile && likelyId === user.id
+      ? prefetchedProfile
+      : await supabase.from('profiles').select('role, departments(slug)').eq('id', user.id).single()
 
   const role: string = profile?.role ?? ''
   const dep = (profile as { departments?: { slug?: string } | { slug?: string }[] } | null)?.departments
