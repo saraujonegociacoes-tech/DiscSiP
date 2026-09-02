@@ -29,6 +29,13 @@ export interface LeadKpis {
   conversionRate: number // 0..1 (ganhos / recebidos)
   deadRate: number // 0..1 (mortos / recebidos)
   avgHoursToFirstContact: number | null
+  // Classe "Reaproveitado": leads que ENTRARAM em Remarketing dentro do período — não
+  // "recebidos no período que são reaproveitados", que dava ~0 todo ciclo porque
+  // reaproveitamento é re-trabalho de base ANTIGA (ver migration 20260902). O split
+  // ciclo × retroativo é a leitura interessante aqui: escancara que o volume é retroativo.
+  reaproveitados: number
+  reaproveitadosCycle: number
+  reaproveitadosRetro: number
 }
 
 export interface FunnelStage {
@@ -195,7 +202,14 @@ function kpisFromCounts(
   dead: number,
   avgFtc: number | null,
   wonCycle: number = won,
-  wonRetro: number = 0
+  wonRetro: number = 0,
+  // Sempre zero aqui: os reaproveitados chegam por get_leads_reaproveitados e são mesclados
+  // depois (ver getLeadsData), igual ao won/dead por data de venda. Ficam FORA do
+  // PROGRESS_COLS de propósito — se o código subir antes da migration 20260901, o fallback
+  // paginado pediria uma coluna que ainda não existe e a página inteira quebraria.
+  reaproveitados: number = 0,
+  reaproveitadosCycle: number = 0,
+  reaproveitadosRetro: number = 0
 ): LeadKpis {
   return {
     totalLeads: total,
@@ -207,6 +221,9 @@ function kpisFromCounts(
     conversionRate: total > 0 ? won / total : 0,
     deadRate: total > 0 ? dead / total : 0,
     avgHoursToFirstContact: avgFtc,
+    reaproveitados,
+    reaproveitadosCycle,
+    reaproveitadosRetro,
   }
 }
 
@@ -624,6 +641,31 @@ async function reachFunnel(
   return data as unknown as ReachFunnel
 }
 
+interface Reaproveitados {
+  total: number
+  cycle: number
+  retro: number
+}
+
+// Classe "Reaproveitado" (RPC get_leads_reaproveitados — migrations 20260901 + 20260902):
+// leads que ENTRARAM na fase Remarketing dentro do período, com split ciclo × retroativo.
+// NÃO é "recebidos do período que são reaproveitados" — esse recorte dava 2 num ciclo de
+// 2832, porque reaproveitamento é re-trabalho de base antiga (ver 20260902). Fica FORA do
+// get_leads_dashboard de propósito — mesma decisão do wonBySaleDate/reachFunnel: mesclar por
+// cima evita reescrever aquela RPC grande. null se a migration ainda não rodou → o KPI some
+// da tela (degradação graciosa).
+async function reaproveitados(
+  supabase: SupabaseClient,
+  period: LeadPeriod
+): Promise<Reaproveitados | null> {
+  const { data, error } = await supabase.rpc('get_leads_reaproveitados', {
+    p_start: period.start,
+    p_end: period.end,
+  })
+  if (error || !data) return null
+  return data as unknown as Reaproveitados
+}
+
 // Tudo que deriva dos leads do período. RPC (contado no banco) ou fallback paginado, com o
 // won/dead de topo corrigido por data de venda (ver wonBySaleDate) e o funil de acionamento
 // contado por entrada real de fase (ver reachFunnel). Ranking/canal continuam vindo do
@@ -631,7 +673,7 @@ async function reachFunnel(
 export async function getLeadsData(periodInput: LeadPeriod): Promise<LeadsData> {
   const period = sanitizePeriod(periodInput) // saneia o período vindo do cliente
   const supabase = await createServerClient()
-  const [base, sale, reach] = await Promise.all([
+  const [base, sale, reach, reuse] = await Promise.all([
     (async () => {
       const viaRpc = await dashboardFromRpc(supabase, period)
       if (viaRpc) return viaRpc
@@ -644,6 +686,7 @@ export async function getLeadsData(periodInput: LeadPeriod): Promise<LeadsData> 
     })(),
     wonBySaleDate(supabase, period),
     reachFunnel(supabase, period),
+    reaproveitados(supabase, period),
   ])
   let out = base
   // Funil por entrada de fase sobrescreve o cumulativo do dashboard (barras + drill do
@@ -666,6 +709,19 @@ export async function getLeadsData(periodInput: LeadPeriod): Promise<LeadsData> 
         wonRetro: sale.wonRetro,
         conversionRate: out.kpis.totalLeads > 0 ? sale.won / out.kpis.totalLeads : 0,
         deadRate: out.kpis.totalLeads > 0 ? sale.dead / out.kpis.totalLeads : 0,
+      },
+    }
+  }
+  // Reaproveitados: só sobrescreve se a RPC respondeu. No fallback paginado o número já vem
+  // contado de dashboardFromScan, então não zeramos o que ele achou.
+  if (reuse) {
+    out = {
+      ...out,
+      kpis: {
+        ...out.kpis,
+        reaproveitados: reuse.total,
+        reaproveitadosCycle: reuse.cycle,
+        reaproveitadosRetro: reuse.retro,
       },
     }
   }

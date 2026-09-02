@@ -8,6 +8,7 @@
     "sync:helper": "node scripts/sync-helper.mjs",
     "import:leads": "node scripts/import-leads.mjs",
     "backup:leads": "node scripts/backup-leads.mjs",
+    "backfill:leads-phases": "node scripts/backfill-leads-phases.mjs",
     "import:cs-cards": "node scripts/import-cs-cards.mjs",
     "probe:webrtc": "node scripts/serve-probe.mjs",
     "probe:financeiro": "node scripts/probe-financeiro-fields.mjs",

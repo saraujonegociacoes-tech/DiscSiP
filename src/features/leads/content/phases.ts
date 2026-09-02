@@ -30,6 +30,16 @@ export const WON_ORDER = 9
 // Fases improdutivas (lead morto). Qualquer lead nelas conta como perdido.
 export const DEAD_PHASES = ['Quitação/Negociação', 'Empréstimo', 'Sem Finalidade']
 
+// Remarketing: estacionamento de RE-TRABALHO. Não é caminho produtivo (não tem degrau no
+// funil, então não entra em PRODUCTIVE_PHASES) e não é lead morto (o Pipefy marca a fase
+// como done=false e os cards saem dela de volta pro acionamento) — por isso também não
+// entra em DEAD_PHASES. No banco é kind='produtiva' com funnel_order NULL.
+// Quem passa por aqui vira REAPROVEITADO e fica assim PARA SEMPRE, mesmo depois de voltar
+// ao acionamento (leads.reaproveitado → v_lead_progress.is_reaproveitado). A regra de qual
+// fase marca é dado, não código: lead_phases.marks_reaproveitado.
+// Ver supabase/migrations/Migrations_painelleads/20260901_leads_remarketing_reaproveitado.sql.
+export const REUSE_PHASE = 'Remarketing'
+
 export function phaseKindLabel(kind: LeadPhaseKind | null): string {
   if (kind === 'produtiva') return 'Produtiva'
   if (kind === 'morta') return 'Lead morto'

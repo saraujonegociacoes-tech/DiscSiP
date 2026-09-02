@@ -200,6 +200,9 @@ export interface LeadProgressRow {
   title: string | null
   sla_hours: number | null
   is_stuck: boolean
+  // Classe "Reaproveitado": o lead já passou pela fase Remarketing alguma vez. É PEGAJOSO
+  // — continua true depois que ele volta pro acionamento. Ver 20260901_leads_remarketing_reaproveitado.sql.
+  is_reaproveitado: boolean
 }
 
 // KPIs por agente, all-time (view v_agent_kpis). Para recorte por período, agregamos
