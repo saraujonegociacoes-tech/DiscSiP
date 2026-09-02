@@ -1,9 +1,10 @@
 'use client'
 
 import { useCallback, useEffect, useState, useTransition } from 'react'
-import { Users, Wallet, TrendingUp, Building2, Loader2, AlertTriangle, Check, Pencil } from 'lucide-react'
+import { Users, Wallet, TrendingUp, Building2, Loader2, AlertTriangle } from 'lucide-react'
 import { KpiCard } from '@/components/bluedesk/KpiCard'
 import { CeoPeriodPicker, type CeoPeriodMode } from './CeoPeriodPicker'
+import { ValorEditavel } from './ValorEditavel'
 import { currentCivilMonth, type LeadPeriod } from '@/lib/period'
 import { getCeoSaudeEquipe, setCeoCustoGeral, setCeoPessoaCusto } from '@/app/actions/ceo'
 import { cn } from '@/lib/utils'
@@ -41,98 +42,11 @@ const brl0 = (n: number) =>
   n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 })
 const nf = (n: number) => n.toLocaleString('pt-BR')
 
-// Campo de dinheiro que aceita o que o usuário digita em pt-BR ("4.200,00" ou "4200").
-// Devolve null quando vazio — e null tem significado: apaga o custo próprio da pessoa,
-// que volta a herdar o geral.
-function parseBrl(s: string): number | null {
-  const t = s.trim()
-  if (t === '') return null
-  const n = Number(t.replace(/\./g, '').replace(',', '.').replace(/[^\d.-]/g, ''))
-  return Number.isFinite(n) && n >= 0 ? n : null
-}
-
-/** Campo de custo com salvar embutido. Só re-renderiza a si mesmo enquanto edita. */
-function CustoInput({
-  valor,
-  herdado,
-  onSave,
-  compact,
-}: {
-  valor: number
-  /** true = está usando o custo geral, não tem custo próprio cadastrado. */
-  herdado?: boolean
-  onSave: (v: number | null) => Promise<void>
-  compact?: boolean
-}) {
-  const [editando, setEditando] = useState(false)
-  const [txt, setTxt] = useState('')
-  const [salvando, setSalvando] = useState(false)
-  const [ok, setOk] = useState(false)
-
-  async function salvar() {
-    setSalvando(true)
-    await onSave(parseBrl(txt))
-    setSalvando(false)
-    setEditando(false)
-    setOk(true)
-    setTimeout(() => setOk(false), 1500)
-  }
-
-  if (!editando) {
-    return (
-      <button
-        type="button"
-        onClick={() => {
-          setTxt(valor ? String(valor).replace('.', ',') : '')
-          setEditando(true)
-        }}
-        className={cn(
-          'group inline-flex items-center gap-1.5 rounded-lg px-2 py-1 tabular-nums transition-colors hover:bg-primary/10',
-          compact ? 'text-xs' : 'text-sm',
-          herdado ? 'text-muted-foreground' : 'text-foreground',
-        )}
-        title={herdado ? 'Herdando o custo geral — clique para definir um próprio' : 'Clique para editar'}
-      >
-        {brl(valor)}
-        {herdado && <span className="text-[10px] uppercase tracking-wide">(geral)</span>}
-        {ok ? (
-          <Check className="h-3 w-3 text-success" />
-        ) : (
-          <Pencil className="h-3 w-3 opacity-0 transition-opacity group-hover:opacity-60" />
-        )}
-      </button>
-    )
-  }
-
-  return (
-    <span className="inline-flex items-center gap-1">
-      <input
-        autoFocus
-        value={txt}
-        onChange={(e) => setTxt(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter') void salvar()
-          if (e.key === 'Escape') setEditando(false)
-        }}
-        placeholder="0,00"
-        inputMode="decimal"
-        className={cn(
-          'w-28 rounded-lg border border-primary bg-background px-2 py-1 tabular-nums text-foreground outline-none',
-          compact ? 'text-xs' : 'text-sm',
-        )}
-        aria-label="Custo mensal"
-      />
-      <button
-        type="button"
-        onClick={() => void salvar()}
-        disabled={salvando}
-        className="rounded-lg bg-gradient-primary px-2 py-1 text-xs font-medium text-primary-foreground disabled:opacity-50"
-      >
-        {salvando ? '…' : 'ok'}
-      </button>
-    </span>
-  )
-}
+// O campo de dinheiro editável (clica no número, digita, Enter) morava aqui. Em 02/set o
+// card "Diária" da aba Financeiro precisou do mesmo gesto para a meta esperada, e ele
+// virou `ValorEditavel` em arquivo próprio — mesmo comportamento, agora em dois lugares.
+// `herdado` continua significando o que significava: o valor mostrado é o custo geral,
+// esta pessoa não tem um próprio.
 
 /** Cartão de um departamento: o total dele, separado dos outros. */
 function DeptCard({ d, ativo, onClick }: { d: CeoSaudeDepartamento; ativo: boolean; onClick: () => void }) {
@@ -231,10 +145,12 @@ function PessoasDoDepto({
                 </td>
                 <td className="px-2 py-2 text-right tabular-nums text-foreground">{brl(p.receita)}</td>
                 <td className="px-2 py-2 text-right">
-                  <CustoInput
+                  <ValorEditavel
                     compact
                     valor={p.custo}
                     herdado={!p.custoProprio}
+                    ariaLabel="Custo mensal"
+                    dicaHerdado="Herdando o custo geral — clique para definir um próprio"
                     onSave={(v) => onSaveCusto(p.nome, v)}
                   />
                 </td>
@@ -361,7 +277,7 @@ export function CeoSaudeEquipe() {
             {/* Custo geral — o valor que vale para quem não tem custo próprio. */}
             <div className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-2xl border border-border bg-gradient-card px-5 py-4 shadow-card">
               <span className="text-sm font-semibold text-foreground">Custo geral padrão</span>
-              <CustoInput valor={data.custoGeral} onSave={salvarGeral} />
+              <ValorEditavel valor={data.custoGeral} ariaLabel="Custo geral padrão" onSave={salvarGeral} />
               <span className="text-xs text-muted-foreground">
                 por mês, aplicado a quem não tem custo próprio
                 {(totais?.semCusto ?? 0) > 0 && (

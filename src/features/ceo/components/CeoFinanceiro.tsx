@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   AreaChart,
   Area,
@@ -18,14 +18,22 @@ import {
   AlertTriangle,
   ExternalLink,
   Tag,
+  Target,
+  CalendarDays,
+  Trophy,
 } from 'lucide-react'
 import { KpiCard } from '@/components/bluedesk/KpiCard'
 import { useChartTheme } from '@/components/bluedesk/useChartTheme'
 import { CeoPeriodPicker, type CeoPeriodMode } from './CeoPeriodPicker'
-import { currentCivilMonth, type LeadPeriod } from '@/lib/period'
-import { getCeoFinanceiro } from '@/app/actions/ceo'
+import { ValorEditavel } from './ValorEditavel'
+import { businessDaysLeft, currentCivilMonth, type LeadPeriod } from '@/lib/period'
+import { getCeoFinanceiro, getCeoMeta, setCeoMeta } from '@/app/actions/ceo'
 import { cn } from '@/lib/utils'
-import type { CeoFinanceiroData, CeoFinanceiroBucket } from '@/lib/types/database'
+import type {
+  CeoFinanceiroData,
+  CeoFinanceiroBucket,
+  CeoMetaConfig,
+} from '@/lib/types/database'
 
 // ABA 1 do painel do CEO — FINANCEIRO (entradas do mês), o carro-chefe.
 // Fonte: get_ceo_financeiro (20260731_financeiro_schema.sql →
@@ -138,10 +146,200 @@ function Breakdown({
   )
 }
 
+// Nome do departamento como o CEO fala dele: o Pipefy grava "Departamento - Negociação".
+// Mesmo enxugamento que a aba Saúde da Equipe já fazia — o prefixo se repete em toda
+// linha e não distingue nada.
+const deptoCurto = (nome: string) => nome.replace(/^Departamento - /, '')
+
+// ── Card DIÁRIA — o número que a operação persegue hoje ─────────────────────
+// Existe por um pedido que se repete no grupo toda manhã: a supervisão manda a projeção
+// do dia por departamento e o CEO responde "atualiza os números aqui, junto com a
+// diária". Isso saía de três prints (realizado, quebra por departamento, meta) montados
+// à mão. Com este card, a aba inteira vira UM print.
+//
+// A conta, exatamente como o dono a define:
+//     meta_atual  = meta_esperada − realizado no período
+//     diária      = meta_atual ÷ dias úteis restantes no período
+//
+// Três decisões que o código toma e a tela precisa deixar visíveis:
+//
+//  · HOJE CONTA como dia útil restante (ver businessDaysLeft em lib/period.ts). Ainda dá
+//    para faturar hoje; tirar o dia corrente inflaria a diária justo na hora em que ela
+//    é pedida.
+//  · Dia útil é SEG–SEX, sem tabela de feriados (o repo não tem uma). Num mês com
+//    feriado a diária sai um pouco otimista, e é melhor isso do que uma lista incompleta
+//    errando em silêncio.
+//  · Sem dia útil restante (período encerrado, ou só fim de semana até o fim dele) NÃO se
+//    divide por zero: o card troca de assunto e mostra o que faltou, não uma diária
+//    impossível.
+function MetaDiaria({
+  meta,
+  atingido,
+  period,
+  mode,
+  byDepartment,
+  onSave,
+}: {
+  meta: number
+  /** O realizado do período — o mesmo `total` dos KPIs, com sinal. */
+  atingido: number
+  period: LeadPeriod
+  mode: CeoPeriodMode
+  byDepartment: CeoFinanceiroBucket[]
+  onSave: (v: number | null) => Promise<void>
+}) {
+  const dias = useMemo(() => businessDaysLeft(period), [period])
+
+  // `Math.max(…, 0)`: passou da meta, falta zero — não "falta negativo".
+  const falta = Math.max(meta - atingido, 0)
+  const batida = meta > 0 && falta === 0
+  const diaria = dias.restantes > 0 ? falta / dias.restantes : 0
+  const pct = meta > 0 ? (atingido / meta) * 100 : 0
+
+  // Rateio da diária pelos departamentos, na proporção do que CADA UM já fez no período.
+  // É o que reproduz o "Negociação: X · SC: Y · Comercial: Z" da mensagem do grupo sem
+  // pedir três metas separadas ao dono.
+  //
+  // ⚠️ É DERIVADO, não cadastrado: nenhum departamento tem meta própria no banco. Só
+  // aparece quando há diária a distribuir e realizado positivo para dar proporção — e a
+  // tela diz de onde veio, logo abaixo, para ninguém ler como alvo oficial.
+  const rateio = useMemo(() => {
+    if (diaria <= 0) return []
+    const positivos = byDepartment.filter((d) => d.total > 0)
+    const soma = positivos.reduce((acc, d) => acc + d.total, 0)
+    if (soma <= 0) return []
+    return positivos.slice(0, 4).map((d) => ({
+      key: deptoCurto(d.key),
+      valor: diaria * (d.total / soma),
+    }))
+  }, [byDepartment, diaria])
+
+  const recorte = mode === 'ciclo' ? 'ciclo' : 'mês'
+
+  return (
+    <div className="relative overflow-hidden rounded-2xl border border-border bg-gradient-card p-5 shadow-elevated">
+      <div className="pointer-events-none absolute -right-16 -top-16 h-48 w-48 rounded-full bg-primary/15 blur-3xl" />
+
+      <div className="relative mb-4 flex flex-wrap items-center gap-2">
+        <Target className="h-4 w-4 text-primary" />
+        <h3 className="text-sm font-semibold text-foreground">Diária para bater a meta</h3>
+        <span className="text-xs text-muted-foreground">
+          o que falta ÷ dias úteis restantes do {recorte}
+        </span>
+      </div>
+
+      {meta <= 0 ? (
+        // Meta nunca cadastrada. Sem alvo não existe diária — o card vira o convite para
+        // definir, em vez de mostrar R$ 0,00 e parecer quebrado.
+        <div className="relative flex flex-wrap items-center gap-x-3 gap-y-2">
+          <span className="text-sm text-muted-foreground">Defina a meta esperada do período:</span>
+          <ValorEditavel valor={0} destaque ariaLabel="Meta esperada do período" onSave={onSave} />
+          <p className="w-full text-xs text-muted-foreground">
+            Um número só, válido para o mês civil e para o ciclo 11→10. Ele fica salvo e vale para
+            os dois recortes do seletor.
+          </p>
+        </div>
+      ) : (
+        <div className="relative grid gap-5 lg:grid-cols-[1.15fr_1fr]">
+          {/* Esquerda — o alvo, o quanto já entrou e o quanto falta. */}
+          <div>
+            <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+              <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                Meta esperada
+              </span>
+              {/* O mesmo campo editável da Saúde da Equipe: clica no número, digita, Enter. */}
+              <ValorEditavel valor={meta} destaque ariaLabel="Meta esperada do período" onSave={onSave} />
+            </div>
+
+            {/* Barra sobre a META (não sobre o maior item, como nos breakdowns): aqui o
+                100% existe e é ele que interessa. Passar da meta trava visualmente em
+                100% — o excedente é dito em texto, não estourando a barra. */}
+            <div className="mt-3 h-2 overflow-hidden rounded-full bg-background/60">
+              <div
+                className={cn('h-full rounded-full', batida ? 'bg-success' : 'bg-gradient-primary')}
+                style={{ width: `${Math.min(Math.max(pct, 0), 100)}%` }}
+              />
+            </div>
+
+            <div className="mt-2 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 text-xs">
+              <span className="text-muted-foreground">
+                Atingido <strong className="tabular-nums text-foreground">{brl(atingido)}</strong> (
+                {pct.toLocaleString('pt-BR', { maximumFractionDigits: 1 })}%)
+              </span>
+              <span className={cn('tabular-nums', batida ? 'text-success' : 'text-muted-foreground')}>
+                {batida ? (
+                  <>
+                    <Trophy className="mr-1 inline h-3.5 w-3.5" />
+                    Meta batida — <strong>{brl(atingido - meta)}</strong> acima
+                  </>
+                ) : (
+                  <>
+                    Falta <strong className="text-foreground">{brl(falta)}</strong>
+                  </>
+                )}
+              </span>
+            </div>
+          </div>
+
+          {/* Direita — a diária, que é o número pedido no grupo. */}
+          <div className="rounded-xl border border-border/60 bg-background/40 p-4">
+            <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+              <CalendarDays className="h-3.5 w-3.5 text-primary" />
+              Precisa entrar por dia útil
+            </div>
+
+            <div
+              className={cn(
+                'mt-1 text-3xl font-semibold tracking-tight tabular-nums',
+                batida ? 'text-success' : 'text-foreground',
+              )}
+            >
+              {batida ? brl(0) : dias.restantes > 0 ? brl(diaria) : '—'}
+            </div>
+
+            <p className="mt-1 text-xs text-muted-foreground">
+              {batida ? (
+                <>Meta já alcançada — o que entrar daqui em diante é excedente.</>
+              ) : dias.restantes > 0 ? (
+                <>
+                  <strong className="text-foreground">{dias.restantes}</strong> de {dias.totais} dias
+                  úteis {dias.futuro ? 'do' : 'restantes no'} {recorte} (hoje conta)
+                </>
+              ) : (
+                <>
+                  Sem dia útil restante no {recorte}: faltaram{' '}
+                  <strong className="text-foreground">{brl(falta)}</strong> para a meta.
+                </>
+              )}
+            </p>
+
+            {rateio.length > 0 && (
+              <>
+                <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 border-t border-border/60 pt-2 text-xs">
+                  {rateio.map((r) => (
+                    <span key={r.key} className="text-muted-foreground">
+                      {r.key} <strong className="tabular-nums text-foreground">{brl(r.valor)}</strong>
+                    </span>
+                  ))}
+                </div>
+                <p className="mt-1 text-[11px] text-muted-foreground">
+                  Rateio da diária no ritmo que cada departamento já teve no período — não é meta
+                  cadastrada por departamento.
+                </p>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 export function CeoFinanceiro() {
   const [mode, setMode] = useState<CeoPeriodMode>('mes')
   const [period, setPeriod] = useState<LeadPeriod>(() => currentCivilMonth())
   const [data, setData] = useState<CeoFinanceiroData | null>(null)
+  const [meta, setMeta] = useState<CeoMetaConfig | null>(null)
   const [loading, setLoading] = useState(true)
   const ct = useChartTheme()
 
@@ -162,6 +360,33 @@ export function CeoFinanceiro() {
       cancelled = true
     }
   }, [period, mode])
+
+  // A meta é buscada UMA VEZ, em efeito próprio, e não junto com o período: ela é um
+  // singleton no banco (o mesmo alvo para mês civil e ciclo), então refazer a chamada a
+  // cada clique no seletor seria round-trip jogado fora. Os dois efeitos disparam no
+  // mesmo mount, em paralelo — a meta não atrasa a aba.
+  useEffect(() => {
+    let cancelled = false
+    getCeoMeta()
+      .then((m) => {
+        if (!cancelled) setMeta(m)
+      })
+      .catch(() => {
+        // A action já degrada pra meta 0; aqui só evitamos rejeição solta.
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  // Grava e atualiza o card na hora, sem recarregar o período: a meta não entra em
+  // nenhum número que vem da RPC do Financeiro — só na conta que a tela faz. Recarregar
+  // aqui piscaria a aba inteira à toa.
+  const salvarMeta = useCallback(async (v: number | null) => {
+    const valor = v ?? 0
+    const r = await setCeoMeta(valor)
+    if (r.ok) setMeta((m) => ({ meta: valor, updatedAt: m?.updatedAt ?? null }))
+  }, [])
 
   const chartData = useMemo(
     () => (data?.monthly ?? []).map((m) => ({ ...m, label: bucketLabel(m.month, mode) })),
@@ -221,6 +446,43 @@ export function CeoFinanceiro() {
             />
           </div>
 
+          {/* ── O QUE O CEO PEDE TODA MANHÃ, JUNTO ─────────────────────────────
+              Diária + quebra por categoria/departamento/forma subiram para CIMA do
+              gráfico em 02/set. A ordem antiga (KPIs → gráfico de 12 ciclos → quebras)
+              vinha da Sprint 1, quando a série era o assunto da aba. Na prática o pedido
+              diário do grupo é "projeção por departamento + diária", e essas duas coisas
+              ficavam abaixo da dobra: virava print de três telas. Agora o gráfico é o
+              contexto histórico, que vem DEPOIS do que se persegue hoje. */}
+          <MetaDiaria
+            meta={meta?.meta ?? 0}
+            atingido={total}
+            period={period}
+            mode={mode}
+            byDepartment={data?.byDepartment ?? []}
+            onSave={salvarMeta}
+          />
+
+          <div className="grid gap-4 lg:grid-cols-3">
+            <Breakdown
+              title="Por categoria"
+              icon={Tag}
+              buckets={data?.byCategory ?? []}
+              empty="Sem pagamentos no período."
+            />
+            <Breakdown
+              title="Por departamento"
+              icon={Receipt}
+              buckets={data?.byDepartment ?? []}
+              empty="Sem pagamentos no período."
+            />
+            <Breakdown
+              title="Por forma de pagamento"
+              icon={Wallet}
+              buckets={data?.byPaymentMethod ?? []}
+              empty="Sem pagamentos no período."
+            />
+          </div>
+
           {/* A série segue o toggle: 12 meses civis ou 12 ciclos 11→10. */}
           <div className="relative overflow-hidden rounded-2xl border border-border bg-gradient-card p-5 shadow-elevated">
             <div className="pointer-events-none absolute -top-20 right-0 h-48 w-48 rounded-full bg-primary/15 blur-3xl" />
@@ -273,27 +535,6 @@ export function CeoFinanceiro() {
                 </AreaChart>
               </ResponsiveContainer>
             </div>
-          </div>
-
-          <div className="grid gap-4 lg:grid-cols-3">
-            <Breakdown
-              title="Por categoria"
-              icon={Tag}
-              buckets={data?.byCategory ?? []}
-              empty="Sem pagamentos no período."
-            />
-            <Breakdown
-              title="Por departamento"
-              icon={Receipt}
-              buckets={data?.byDepartment ?? []}
-              empty="Sem pagamentos no período."
-            />
-            <Breakdown
-              title="Por forma de pagamento"
-              icon={Wallet}
-              buckets={data?.byPaymentMethod ?? []}
-              empty="Sem pagamentos no período."
-            />
           </div>
 
           {/* Contrapeso da regra "sem líquido, sem entrada": estes cards NÃO estão nos

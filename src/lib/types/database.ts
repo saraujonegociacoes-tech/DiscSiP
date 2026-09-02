@@ -652,6 +652,21 @@ export interface CeoSaudeEquipeData {
   semVendedor: { receita: number; pagamentos: number }
 }
 
+// META ESPERADA (aba Financeiro — card "Diária"): get_ceo_meta() / set_ceo_meta(),
+// migration 20260902_ceo_meta_financeira.sql. Singleton: UM número por instalação, não
+// um por período — o mês civil e o ciclo 11→10 valem ~1 mês cada, então o mesmo alvo
+// serve aos dois recortes do seletor.
+//
+// ⚠️ Aqui só vem o alvo. A diária (o que falta ÷ dias úteis restantes) é calculada na
+// tela com `businessDaysLeft()` de lib/period.ts, porque depende de HOJE e do período
+// selecionado — muda a cada clique, sem ir ao banco.
+export interface CeoMetaConfig {
+  /** Meta de entradas do período, em R$. 0 = nunca cadastrada (a tela convida a definir). */
+  meta: number
+  /** Quando foi gravada pela última vez, em BRT ('YYYY-MM-DDTHH:MM:SS'). */
+  updatedAt: string | null
+}
+
 
 // ── Aquecimento de números WhatsApp — domínio SEPARADO ──────────────────────
 // Espelham as tabelas de supabase/migrations/Migrations_warmup/20260719_warmup_schema.sql. Módulo

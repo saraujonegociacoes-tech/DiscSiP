@@ -732,6 +732,29 @@ deploy que já está no ar** — só o próximo build a enxerga. Se `/ceo` mostr
 variável definida, o diagnóstico é esse, não o papel do usuário nem a guarda: refazer o deploy.
 (A flag controla só o **lançamento**; quem barra o acesso é o middleware + `ceo_current_role()`.)
 
+### 02/set — depois da entrega: card **Diária** e a meta esperada na aba Financeiro
+
+Primeira mudança de escopo desde a entrega, e ela não veio de roadmap: veio da rotina. O CEO
+pede todo dia no grupo a projeção por departamento **"junto com a diária"**, e a resposta era
+montada à mão a partir de três prints. A aba passou a responder isso sozinha:
+
+- as quebras por **categoria / departamento / forma** subiram para **cima** do gráfico de 12
+  ciclos (o gráfico virou contexto histórico, que vem depois do que se persegue hoje);
+- entrou o card **Diária**, com a **meta esperada** editável na própria tela e a conta do dono:
+  `(meta − realizado) ÷ dias úteis restantes no período`.
+
+Migration `20260902_ceo_meta_financeira.sql` — tabela `ceo_meta_config` (singleton, no mesmo
+molde de `ceo_custo_config`) + `get_ceo_meta()` / `set_ceo_meta()`, com a mesma guarda ceo/admin
+das outras seis RPCs. **Não** toca em `get_ceo_financeiro`, de propósito (§6 do README das
+migrations — a armadilha do `CREATE OR REPLACE` duplicado).
+
+⚠️ Duas imprecisões conhecidas, ambas escolhidas: **dia útil é seg–sex sem feriados** (a diária
+sai otimista em mês com feriado) e a **meta é um número só**, não uma por ciclo. Detalhes,
+medições e o que ficou de fora: [`meta-diaria-financeiro.md`](meta-diaria-financeiro.md).
+
+⚠️ Mesma pegadinha do custo, uma linha acima: **entregue ≠ configurado.** Enquanto
+`ceo_meta_config.meta_mensal` for 0, o card mostra o convite para definir a meta, não a diária.
+
 ---
 
 ## Riscos & dependências (resumo)

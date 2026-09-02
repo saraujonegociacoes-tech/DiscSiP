@@ -176,3 +176,70 @@ export function dayPeriod(daysAgo: number, now: Date = new Date()): LeadPeriod {
 export function recentDays(now: Date = new Date()): LeadPeriod[] {
   return DAY_NAMES.map((_, i) => dayPeriod(i, now))
 }
+
+// ── Dias úteis do período ───────────────────────────────────────────────────
+// Nasceu do card "Diária" da aba Financeiro do CEO (set/2026): a meta que a operação
+// persegue no dia é o que falta dividido pelos dias que ainda restam para faturar — e
+// sábado e domingo não faturam. Fica aqui, e não na aba, porque é aritmética de
+// calendário em BRT: o mesmo motivo pelo qual todo o resto deste arquivo existe (o app
+// roda em UTC no Cloudflare; contar dia com getDay() local erraria a virada).
+//
+// ⚠️ "Dia útil" aqui é SEGUNDA A SEXTA, sem tabela de feriados — o repo não tem uma, e
+// inventar uma lista incompleta erraria em silêncio no feriado que faltasse. O efeito
+// prático é conhecido: num mês com feriado a diária sai um pouco OTIMISTA (divide por
+// um dia a mais do que a operação tem). Quando existir calendário de feriados, é aqui
+// que ele entra — a aba não muda.
+
+// Dias de semana (seg–sex) entre duas datas BRT 'YYYY-MM-DD', com `endYMD` EXCLUSIVO —
+// mesma convenção de `end` do LeadPeriod. Itera em UTC de propósito: as datas já vêm
+// como Y-M-D BRT, e o Brasil não tem horário de verão desde 2019, então somar 24h nunca
+// pula nem repete dia.
+export function businessDaysBetween(startYMD: string, endYMD: string): number {
+  const [sy, sm, sd] = startYMD.split('-').map(Number)
+  const [ey, em, ed] = endYMD.split('-').map(Number)
+  const end = Date.UTC(ey, em - 1, ed)
+  let count = 0
+  for (let t = Date.UTC(sy, sm - 1, sd); t < end; t += 86_400_000) {
+    const dow = new Date(t).getUTCDay()
+    if (dow !== 0 && dow !== 6) count++
+  }
+  return count
+}
+
+/** Dias úteis de um período: quantos ainda restam (HOJE incluso) e quantos ele tem ao todo. */
+export interface BusinessDaysLeft {
+  /** Dias úteis de hoje (inclusive) até o fim do período. 0 se o período já acabou. */
+  restantes: number
+  /** Dias úteis do período inteiro — a base do "X de Y" na tela. */
+  totais: number
+  /** true quando o período inteiro já passou (`end` ≤ hoje): não há mais dia para faturar. */
+  encerrado: boolean
+  /** true quando o período ainda não começou: restantes = totais. */
+  futuro: boolean
+}
+
+// Dias úteis que ainda contam num período, olhando de `now` (default: agora), em BRT.
+//
+// HOJE CONTA. A conta responde "quanto preciso fazer por dia, a partir de agora" — e
+// hoje ainda dá para faturar. Excluir o dia corrente inflaria a diária todo santo dia
+// da manhã, que é justo a hora em que o CEO pede o número.
+export function businessDaysLeft(period: LeadPeriod, now: Date = new Date()): BusinessDaysLeft {
+  // `period.end` é o limite EXCLUSIVO à meia-noite BRT — lido em BRT ele já é, exato, o
+  // primeiro dia de fora. Nada de somar 1 dia à mão.
+  const inicio = ymd(brtParts(new Date(period.start)))
+  const fim = ymd(brtParts(new Date(period.end)))
+  const hoje = ymd(brtParts(now))
+
+  const totais = businessDaysBetween(inicio, fim)
+  // Comparação de string funciona em 'YYYY-MM-DD' (ISO é lexicograficamente ordenado).
+  const encerrado = hoje >= fim
+  const futuro = hoje < inicio
+  const desde = futuro ? inicio : hoje
+
+  return {
+    restantes: encerrado ? 0 : businessDaysBetween(desde, fim),
+    totais,
+    encerrado,
+    futuro,
+  }
+}

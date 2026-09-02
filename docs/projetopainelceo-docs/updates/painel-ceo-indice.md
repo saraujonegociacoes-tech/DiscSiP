@@ -31,6 +31,17 @@ travadas, e [`../links.md`](../../links.md) (índice geral por domínio).
 > preenchido fica fora da soma e aparece num aviso na aba. Detalhes, medições e o que ficou de
 > fora: [`financeiro-valor-liquido.md`](financeiro-valor-liquido.md).
 >
+> **Mudança posterior — 02/set: a aba Financeiro ganhou o card DIÁRIA e trocou de ordem.** As
+> quebras por categoria/departamento/forma subiram para **cima** do gráfico de 12 ciclos, e entre
+> elas e os KPIs entrou um card novo com a **meta esperada** (editável na tela) e a **diária**:
+> `(meta − realizado) ÷ dias úteis restantes no período`. É a resposta ao pedido que o CEO repete
+> no grupo toda manhã — antes montado à mão a partir de três prints. Exige a migration
+> `20260902_ceo_meta_financeira.sql` (tabela `ceo_meta_config` + `get_ceo_meta`/`set_ceo_meta`);
+> sem ela a aba roda igual, com o card convidando a definir a meta, mas o valor não salva.
+> ⚠️ Dia útil é **seg–sex, sem feriados** (a diária sai um pouco otimista em mês com feriado) e a
+> meta é **um número só**, não um por ciclo. Detalhes e o que ficou de fora:
+> [`meta-diaria-financeiro.md`](meta-diaria-financeiro.md).
+>
 > O histórico abaixo fica como registro do caminho — as datas explicam decisões, não o estado atual.
 >
 > ---

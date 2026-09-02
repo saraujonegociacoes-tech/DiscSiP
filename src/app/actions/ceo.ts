@@ -4,6 +4,7 @@ import { createServerClient } from '@/lib/supabase/server'
 import { sanitizePeriod, type LeadPeriod } from '@/lib/period'
 import type {
   CeoFinanceiroData,
+  CeoMetaConfig,
   CeoProjecaoData,
   CeoSaudeEquipeData,
 } from '@/lib/types/database'
@@ -102,6 +103,50 @@ export async function getCeoFinanceiro(
     missingNet: d.missingNet ?? [],
     missingNetTotal: Number(d.missingNetTotal ?? 0),
   }
+}
+
+// ABA 1 (continuação) — a META ESPERADA do período, que alimenta o card "Diária".
+// Lê get_ceo_meta() (migration 20260902_ceo_meta_financeira.sql).
+//
+// É uma RPC SEPARADA de propósito, e não mais uma chave dentro de get_ceo_financeiro:
+// mexer naquela função de 130 linhas para acrescentar um número exigiria um
+// CREATE OR REPLACE dela numa migration nova, e este projeto já se queimou duas vezes
+// com "a última migration que rodar vence" (supabase/migrations/README.md §6). O custo
+// é uma chamada a mais — barata, uma linha de singleton — e a aba a dispara em efeito
+// próprio, no mesmo mount do carregamento do período: as duas correm em paralelo, e esta
+// não se repete a cada troca do seletor.
+//
+// A meta é UM número para qualquer período: o alvo do mês civil e o do ciclo 11→10 são
+// o mesmo alvo. Trocar o seletor não troca a meta — troca o realizado e os dias úteis
+// que ainda restam, que é o que faz a diária mudar.
+export async function getCeoMeta(): Promise<CeoMetaConfig> {
+  const supabase = await createServerClient()
+  const { data, error } = await supabase.rpc('get_ceo_meta')
+
+  // Mesma disciplina das outras: degrada (meta 0 = "não cadastrada", a aba fica de pé
+  // sem o card) e conta o motivo no servidor, porque erro de RPC e "sem dado" produzem
+  // exatamente a mesma tela.
+  if (error) {
+    console.error('[ceo] get_ceo_meta falhou:', error.message ?? error)
+  }
+  if (error || !data) return { meta: 0, updatedAt: null }
+
+  const d = data as unknown as Partial<CeoMetaConfig>
+  return { meta: Number(d.meta ?? 0), updatedAt: d.updatedAt ?? null }
+}
+
+// Gravação da meta. Mesma guarda ceo/admin da leitura; a tabela tem RLS sem policy,
+// então esta RPC é a única porta. Zero é valor VÁLIDO — é como o dono desliga o card.
+export async function setCeoMeta(valor: number): Promise<{ ok: boolean; erro?: string }> {
+  const supabase = await createServerClient()
+  const { data, error } = await supabase.rpc('set_ceo_meta', { p_valor: valor })
+  if (error) {
+    console.error('[ceo] set_ceo_meta falhou:', error.message ?? error)
+    return { ok: false, erro: error.message }
+  }
+  // NULL = a guarda barrou. Não é erro de rede: é papel sem permissão.
+  if (!data) return { ok: false, erro: 'sem permissão' }
+  return data as { ok: boolean; erro?: string }
 }
 
 const EMPTY_PROJECOES: Omit<CeoProjecaoData, 'referenceDate'> = {
