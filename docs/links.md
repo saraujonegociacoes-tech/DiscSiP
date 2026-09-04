@@ -17,11 +17,22 @@ manter o padrão. O README do projeto fica na raiz do repo (`../README.md`).
 | RBAC / Acessos (transversal) | `rbac-docs/` | [`updates/acessos-e-papel-tester.md`](rbac-docs/updates/acessos-e-papel-tester.md) |
 | Painel do CEO (executivo) | `projetopainelceo-docs/` | [`updates/painel-ceo-indice.md`](projetopainelceo-docs/updates/painel-ceo-indice.md) |
 | Performance / Bundle (transversal) | `performance-docs/` | [`updates/auditoria-performance-2026-08.md`](performance-docs/updates/auditoria-performance-2026-08.md) |
+| Ingestão do Pipefy (transversal) | `ingestao-docs/` | [`updates/ingestao-sob-demanda.md`](ingestao-docs/updates/ingestao-sob-demanda.md) |
 
 Os cinco primeiros são **domínios de produto separados** (código, dados e RLS isolados entre si);
 só a documentação vive junta aqui, por projeto. O **Painel do CEO** é diferente: uma **camada de
 leitura/agregação** por cima das verticais isoladas (não tem schema próprio — compõe os dados dos
 outros domínios), com trava por um papel novo `ceo`.
+
+---
+
+# Ingestão do Pipefy · `ingestao-docs/`
+
+Transversal: alimenta Leads, CS, Financeiro e Negociação. Substituiu os 4 cenários agendados do
+Make em 04/set/2026.
+
+## `updates/` — features e mudanças de arquitetura
+- [`ingestao-sob-demanda.md`](ingestao-docs/updates/ingestao-sob-demanda.md) — **⭐ o botão "Atualizar" no lugar dos cenários do Make (set/2026)**. Coalescência de requisições: N pessoas clicando viram UMA consulta ao Pipefy. Explica a trava + cooldown no mesmo `UPDATE` atômico (e por que não pode viver em memória no Worker), as três marcas de tempo que substituíram o `since = now − 35min`, o encadeamento de uma página por invocação (limite de CPU/subrequests da Cloudflare) e a retomada quando quem executava fecha a aba. **Começar por aqui** para mexer em ingestão.
 
 ---
 

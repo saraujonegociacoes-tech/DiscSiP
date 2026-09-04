@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useMemo } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { LayoutDashboard, Users, FileText, Wallet } from 'lucide-react'
 import { AppShell } from '@/components/bluedesk/AppShell'
@@ -9,6 +9,7 @@ import { Tabs, TabsContent } from '@/components/ui/tabs'
 import { CsTabNav, CsMatrix, type CsTab } from '@/features/cs'
 // Abas 2–4 sob demanda (elas já buscavam o próprio dado só ao montar) — ver features/cs/lazy.tsx.
 import { CsTeam, CsMinutas, CsPagamento } from '@/features/cs/lazy'
+import { BotaoAtualizar } from '@/features/sync'
 import type { CsMatrixData } from '@/lib/types/database'
 
 // Painel de Sucesso do Cliente (CS) reformulado — domínio SEPARADO do dashboard de
@@ -43,6 +44,15 @@ export function CsClient({ initialData }: { initialData: CsMatrixData }) {
     [requestedTab],
   )
 
+  // Depois de sincronizar: `router.refresh()` renova o `initialData` (que vem do Server
+  // Component da aba 1) e a troca de `key` remonta as abas 2 a 4, que buscam o próprio
+  // dado ao montar. Uma coisa só não cobre as duas.
+  const [recarga, setRecarga] = useState(0)
+  const recarregar = useCallback(() => {
+    setRecarga((n) => n + 1)
+    router.refresh()
+  }, [router])
+
   const handleTabChange = useCallback(
     (slug: string) => {
       const params = new URLSearchParams(searchParams.toString())
@@ -57,6 +67,12 @@ export function CsClient({ initialData }: { initialData: CsMatrixData }) {
       <PageHeader
         title="Sucesso do Cliente"
         description="Acompanhamento do pipe de CS (Pipefy)."
+        actions={
+          // Duas fontes: o delta do pipe + o balde "Aguardando Pagamento" relido inteiro.
+          // A conexão do pagamento é feita do lado do Financeiro e NÃO mexe no `updated_at`
+          // do card do CS, então o delta sozinho não enxerga pagamento novo.
+          <BotaoAtualizar fontes={['cs', 'cs_pagamento']} aoConcluir={recarregar} />
+        }
       />
 
       <Tabs value={activeTab} onValueChange={handleTabChange} className="w-full">
@@ -73,21 +89,21 @@ export function CsClient({ initialData }: { initialData: CsMatrixData }) {
               migration 20260722; a completude já rende do snapshot, o movimento enche conforme
               o Make acumula. Componente busca o próprio dado (getCsTeam) por período. */}
           <TabsContent value="equipe" className="mt-6">
-            <CsTeam />
+            <CsTeam key={recarga} />
           </TabsContent>
 
           {/* 3 · Minutas — snapshot (foto de estado atual, sem período). Buckets por
               vencimento (data_da_quita_o) + valor da minuta (Q.D) + % desconto + etiqueta,
               com link do card. Componente busca o próprio dado (getCsMinutas). */}
           <TabsContent value="minutas" className="mt-6">
-            <CsMinutas />
+            <CsMinutas key={recarga} />
           </TabsContent>
 
           {/* 4 · Pagamento + Insights — projeção (plano de parcelas na fase Aguardando Pagamento,
               snapshot) + realizado/histórico (conexão com o pipe do Financeiro, série por período).
               Componente busca o próprio dado (getCsPagamentoProjecao + getCsPagamentoHistorico). */}
           <TabsContent value="pagamento" className="mt-6">
-            <CsPagamento />
+            <CsPagamento key={recarga} />
           </TabsContent>
         </div>
       </Tabs>

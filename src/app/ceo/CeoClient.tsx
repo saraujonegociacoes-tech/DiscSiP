@@ -1,12 +1,13 @@
 'use client'
 
-import { useCallback, useMemo } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { Wallet, CalendarClock, Users } from 'lucide-react'
 import { AppShell } from '@/components/bluedesk/AppShell'
 import { PageHeader } from '@/components/bluedesk/PageHeader'
 import { Tabs, TabsContent } from '@/components/ui/tabs'
 import { CeoTabNav, type CeoTab } from '@/features/ceo'
+import { BotaoAtualizar } from '@/features/sync'
 // Abas com gráfico (Recharts) sob demanda — ver features/ceo/lazy.tsx.
 import { CeoFinanceiro, CeoProjecoes, CeoSaudeEquipe } from '@/features/ceo/lazy'
 
@@ -56,6 +57,11 @@ export function CeoClient() {
   const pathname = usePathname()
   const searchParams = useSearchParams()
 
+  // Recarga das abas depois de uma sincronização. Cada aba busca o próprio dado ao
+  // montar (features/ceo/lazy.tsx), então `router.refresh()` não as alcança — quem faz
+  // elas relerem é a troca de `key`, que as remonta.
+  const [recarga, setRecarga] = useState(0)
+
   // Aba ativa sincronizada com ?aba=; deep-link inválido cai na primeira (financeiro).
   const requestedTab = searchParams.get('aba')
   const activeTab = useMemo<TabSlug>(() => {
@@ -77,6 +83,15 @@ export function CeoClient() {
       <PageHeader
         title="Painel do CEO"
         description="Visão executiva do negócio — financeiro, projeções e saúde da empresa e da equipe."
+        actions={
+          // Duas fontes porque o painel come de dois pipes: a aba Financeiro sai de
+          // `fin_entries` e a de Projeções de `neg_cards`. Atualizar só uma deixaria o
+          // painel internamente incoerente, então o botão leva as duas.
+          <BotaoAtualizar
+            fontes={['financeiro', 'negociacao']}
+            aoConcluir={() => setRecarga((n) => n + 1)}
+          />
+        }
       />
 
       <Tabs value={activeTab} onValueChange={handleTabChange} className="w-full">
@@ -88,7 +103,7 @@ export function CeoClient() {
               convenção no meio de 2025 e cards antigos carregam até 4 pagamentos com datas em
               meses diferentes). Componente busca o próprio dado, com período próprio. */}
           <TabsContent value="financeiro" className="mt-6">
-            <CeoFinanceiro />
+            <CeoFinanceiro key={recarga} />
           </TabsContent>
 
           {/* 2 · Projeções (Sprint 2) — lê get_ceo_projecoes(p_start, p_end), que junta
@@ -99,7 +114,7 @@ export function CeoClient() {
               O período filtra por VENCIMENTO; as faixas (vencida/≤30d/…) seguem relativas a
               HOJE, não ao início do período — "isso já atrasou?" é pergunta sobre hoje. */}
           <TabsContent value="projecoes" className="mt-6">
-            <CeoProjecoes />
+            <CeoProjecoes key={recarga} />
           </TabsContent>
 
           {/* 3 · Saúde da Equipe (Sprints 3+4 fundidas) — receita × custo × margem por
@@ -108,7 +123,7 @@ export function CeoClient() {
               aquelas são SECURITY INVOKER e o papel `ceo` não está no RLS delas, então
               devolveriam zero — não erro, zero. */}
           <TabsContent value="saude-equipe" className="mt-6">
-            <CeoSaudeEquipe />
+            <CeoSaudeEquipe key={recarga} />
           </TabsContent>
 
         </div>

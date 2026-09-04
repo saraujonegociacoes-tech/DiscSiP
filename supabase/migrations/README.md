@@ -46,6 +46,7 @@ achar rápido "de quem é esta migration", espelhando os nomes de [`docs/`](../.
 | `Migrations_inventario/` | Central de Aparelhos (inventário de TI, `inv_*`) — transversal, gate por papel | `docs/inventario-docs/` |
 | `Migrations_warmup/` | Aquecimento de números WhatsApp | `docs/warmup-docs/` |
 | `Migrations_rbac/` | Plataforma: papéis e departamentos (transversal a todos) | `docs/rbac-docs/` |
+| `Migrations_ingestao/` | Ingestão do Pipefy sob demanda (`sync_state` e a trava do refresh) — transversal a Leads, CS, Financeiro e Negociação | `docs/ingestao-docs/` |
 
 ### Duas classificações que enganam pelo nome
 
