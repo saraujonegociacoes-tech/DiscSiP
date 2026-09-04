@@ -49,9 +49,8 @@ Duas coisas faltavam para o Blue Desk responder isso com **um print só**:
 | Aviso de líquido faltando | **Gráfico — últimos 12 ciclos/meses** |
 | | Aviso de líquido faltando |
 
-O gráfico não foi rebaixado por ser menos importante — ele mudou de papel. É **contexto
-histórico**, e contexto vem depois do que se persegue hoje. A ordem antiga é da Sprint 1
-(31/jul), quando a série *era* o assunto da aba.
+O gráfico mudou de papel: virou **contexto histórico**, e contexto vem depois do que se
+persegue hoje. A ordem antiga é da Sprint 1 (31/jul), quando a série *era* o assunto da aba.
 
 ### 2. Card **Diária** (feature)
 
@@ -68,19 +67,42 @@ mesmo, clicando no valor), o **atingido** com barra de progresso e %, o que **fa
 
 Abaixo da diária, quando há o que ratear, vem a linha que fecha o print:
 
-> Negociação **R$ 1.240** · SC **R$ 6.900** · Comercial **R$ 980**
-> *Rateio da diária no ritmo que cada departamento já teve no período — não é meta cadastrada
-> por departamento.*
+> Negociação **R$ 13.952,01** · Quitação **R$ 4.783,31** · Comercial **R$ 3.351,90**
 
-⚠️ **Esse rateio é derivado, não cadastrado.** Ele distribui a diária na proporção do que cada
-departamento já realizou no período (`byDepartment`, que a RPC já devolvia). Ninguém definiu
-meta por departamento no banco — e a legenda diz isso na tela para que o número não seja lido
-como alvo oficial. Se um dia o dono quiser metas por departamento, o lugar é uma segunda
-tabela; a linha de rateio sai e dá lugar a elas.
+⚠️ **Esse rateio é derivado.** Ele distribui a diária na proporção do que cada departamento já
+realizou no período (`byDepartment`, que a RPC já devolvia); o banco guarda uma meta só, global.
+Se um dia o dono quiser metas por departamento, o lugar é uma segunda tabela — a linha de rateio
+sai e dá lugar a elas.
+
+**A legenda que explicava isso na tela saiu em 03/set, a pedido do dono.** O card é lido de
+relance e vai para print; um rodapé de texto explicando a origem do número competia com os
+próprios números. A explicação vive aqui e no comentário do `rateio` em `CeoFinanceiro.tsx`.
+
+### 3. Rodapé de ritmo — como o período vem andando (03/set)
+
+Com a legenda fora, sobrou espaço embaixo do "Atingido / Falta" na coluna esquerda. Ele recebeu
+três campos que respondem a pergunta seguinte à diária — *e como estamos indo até aqui?* — sem
+nenhuma consulta nova, só com o que o card já tinha em mãos:
+
+| campo | conta | exemplo (03/set) |
+|---|---|---|
+| **Ritmo até aqui** | `atingido ÷ dias úteis já fechados` | R$ 6.616,28 · média de 17 dias úteis |
+| **Nesse ritmo, fecha em** | `atingido + ritmo × dias restantes` | R$ 152.174,33 · 62% da meta |
+| **Ritmo necessário** | `diária ÷ ritmo atual` | 3,3× o atual · acima do que vem sendo feito |
+
+`dias úteis já fechados` = `totais − restantes`. Como **hoje conta** entre os restantes, o dia
+corrente (ainda pela metade) fica fora da média — incluí-lo puxaria o ritmo para baixo toda
+manhã, justo quando o número é pedido.
+
+Os três campos são honestos com o estado do período: enquanto nenhum dia útil fechou (período
+recém-começado ou futuro) mostram `—` com a legenda "à espera do 1º dia útil fechado"; com a
+meta batida, o terceiro vira "cumprido" em verde; com o período encerrado, o segundo troca o
+rótulo para "Fechou em". O bloco ocupa o mesmo espaço nos três casos, então o card mantém a
+altura na virada do mês.
 
 ## As decisões que o código tomou
 
-### A meta é UM número, não um por período
+### A meta é UM número, global
 
 `ceo_meta_config` é singleton (uma linha, `CHECK (id)`), igual a `ceo_custo_config`. Trocar o
 seletor de mês civil para ciclo 11→10, ou voltar para julho, **não troca a meta** — troca o
@@ -89,7 +111,7 @@ realizado e os dias úteis restantes, que é o que faz a diária mudar.
 Isso é simplificação consciente: os dois recortes do seletor valem ~1 mês, e a operação
 persegue o mesmo alvo nos dois. O custo é que um período antigo é medido contra a meta de
 hoje. Meta por ciclo exigiria uma tabela com chave de período e uma tela para preencher 12
-linhas — não foi pedido.
+linhas; ficou de fora do pedido.
 
 ### "Dia útil" é segunda a sexta, **sem feriados**
 
@@ -159,11 +181,17 @@ Aritmética dos dias úteis, medida com as funções reais (esbuild + node, 02/s
 | novembro/2026 (futuro) | 21 de 21, `futuro: true` |
 | 30/set 23h30 BRT (= 01/out 02h30 **UTC**) | 1 restante — a virada é em BRT, não em UTC |
 
+Card em produção (03/set, ciclo 11 ago → 10 set, meta de R$ 245.000,00): atingido
+R$ 112.476,68 (45,9%), falta R$ 132.523,32, **6 de 23 dias úteis restantes**, diária
+**R$ 22.087,22** — conferida contra a mesma conta rodada à parte. O rodapé de ritmo, com os
+mesmos números: R$ 6.616,28/dia útil, projeção de R$ 152.174,33 (62% da meta), 3,3× o ritmo
+atual para fechar.
+
 `tsc --noEmit` limpo e `eslint` sem apontamento nos arquivos tocados.
 
 ## O que ficou de fora
 
-- **Meta por departamento cadastrada.** Hoje é rateio proporcional, rotulado como tal.
+- **Meta por departamento cadastrada.** Hoje o card mostra rateio proporcional ao realizado.
 - **Meta por ciclo/histórico de metas.** Um alvo só, o corrente.
 - **Feriados.** Ver acima — é a única imprecisão conhecida da conta.
 - **Meta de quantidade** (nº de pagamentos). A conta pedida é em dinheiro.

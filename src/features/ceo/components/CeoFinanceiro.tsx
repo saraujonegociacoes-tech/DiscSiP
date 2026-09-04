@@ -81,12 +81,20 @@ function bucketLabel(bucket: string, modo: CeoPeriodMode): string {
 
 // Delta % da janela contra a anterior. Sem base anterior não existe "variação" —
 // devolvemos undefined em vez de fingir 100%.
-function delta(total: number, previous: number): { value: string; positive: boolean } | undefined {
+//
+// `base` nomeia contra QUEM a variação é medida ("ciclo anterior", "mês anterior"). A pílula
+// é estreita, então ela fica curta de propósito: a janela exata, com os dias úteis e as datas,
+// é dita por extenso no cabeçalho da aba, logo ao lado do seletor.
+function delta(
+  total: number,
+  previous: number,
+  base: string,
+): { value: string; positive: boolean } | undefined {
   if (previous === 0) return undefined
   const pct = ((total - previous) / Math.abs(previous)) * 100
   const sign = pct >= 0 ? '+' : ''
   return {
-    value: `${sign}${pct.toLocaleString('pt-BR', { maximumFractionDigits: 1 })}% vs. período anterior`,
+    value: `${sign}${pct.toLocaleString('pt-BR', { maximumFractionDigits: 1 })}% vs. ${base}`,
     positive: pct >= 0,
   }
 }
@@ -196,13 +204,29 @@ function MetaDiaria({
   const diaria = dias.restantes > 0 ? falta / dias.restantes : 0
   const pct = meta > 0 ? (atingido / meta) * 100 : 0
 
+  // ── Ritmo: a diária responde "quanto por dia daqui pra frente"; estas três linhas
+  // respondem "e como está indo até agora". Ocupam o rodapé da coluna esquerda, que
+  // ficava vazio embaixo do total, e usam só o que o card já tem em mãos.
+  //
+  // `decorridos` conta os dias úteis JÁ FECHADOS: `restantes` inclui hoje (ver
+  // businessDaysLeft), então o dia corrente, ainda pela metade, fica de fora da média —
+  // incluí-lo puxaria o ritmo para baixo toda manhã.
+  const decorridos = dias.totais - dias.restantes
+  const ritmo = decorridos > 0 ? atingido / decorridos : 0
+  // Onde o período fecha mantendo exatamente o ritmo atual.
+  const projecao = atingido + ritmo * dias.restantes
+  const projPct = meta > 0 ? (projecao / meta) * 100 : 0
+  // Quantas vezes o ritmo atual precisa render para a meta sair. 1× = já dá.
+  const acelerar = ritmo > 0 ? diaria / ritmo : 0
+
   // Rateio da diária pelos departamentos, na proporção do que CADA UM já fez no período.
   // É o que reproduz o "Negociação: X · SC: Y · Comercial: Z" da mensagem do grupo sem
   // pedir três metas separadas ao dono.
   //
-  // ⚠️ É DERIVADO, não cadastrado: nenhum departamento tem meta própria no banco. Só
-  // aparece quando há diária a distribuir e realizado positivo para dar proporção — e a
-  // tela diz de onde veio, logo abaixo, para ninguém ler como alvo oficial.
+  // ⚠️ O número é DERIVADO: a proporção sai do realizado do período, e o banco guarda uma
+  // meta só, global. Só aparece quando há diária a distribuir e realizado positivo para
+  // dar proporção. A legenda que explicava isso na tela saiu a pedido do dono em 03/set —
+  // ele lê os três valores de relance, e o rodapé de texto atrapalhava o print.
   const rateio = useMemo(() => {
     if (diaria <= 0) return []
     const positivos = byDepartment.filter((d) => d.total > 0)
@@ -279,6 +303,74 @@ function MetaDiaria({
                 )}
               </span>
             </div>
+
+            {/* Rodapé do progresso: como o período vem andando. Enquanto nenhum dia útil
+                fechou (período novo ou futuro), os três campos mostram '—' e a legenda
+                explica a espera — o bloco continua ocupando o mesmo espaço, então o card
+                mantém a altura ao virar o mês. */}
+            <div className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3 border-t border-border/60 pt-3 sm:grid-cols-3">
+              <div>
+                <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+                  Ritmo até aqui
+                </div>
+                <div className="mt-0.5 text-sm font-medium tabular-nums text-foreground">
+                  {ritmo > 0 ? brl(ritmo) : '—'}
+                </div>
+                <div className="text-[11px] text-muted-foreground">
+                  {decorridos > 0
+                    ? `média de ${decorridos} ${decorridos === 1 ? 'dia útil' : 'dias úteis'}`
+                    : 'à espera do 1º dia útil fechado'}
+                </div>
+              </div>
+
+              <div>
+                <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+                  {dias.restantes > 0 ? 'Nesse ritmo, fecha em' : 'Fechou em'}
+                </div>
+                <div
+                  className={cn(
+                    'mt-0.5 text-sm font-medium tabular-nums',
+                    ritmo > 0 && projecao >= meta ? 'text-success' : 'text-foreground',
+                  )}
+                >
+                  {ritmo > 0 ? brl(projecao) : '—'}
+                </div>
+                <div className="text-[11px] text-muted-foreground">
+                  {ritmo > 0
+                    ? `${projPct.toLocaleString('pt-BR', { maximumFractionDigits: 0 })}% da meta`
+                    : 'projeção do período'}
+                </div>
+              </div>
+
+              <div>
+                <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+                  Ritmo necessário
+                </div>
+                <div
+                  className={cn(
+                    'mt-0.5 text-sm font-medium tabular-nums',
+                    batida || (acelerar > 0 && acelerar <= 1) ? 'text-success' : 'text-foreground',
+                  )}
+                >
+                  {batida
+                    ? 'cumprido'
+                    : acelerar > 0
+                      ? `${acelerar.toLocaleString('pt-BR', { maximumFractionDigits: 1 })}× o atual`
+                      : '—'}
+                </div>
+                <div className="text-[11px] text-muted-foreground">
+                  {batida
+                    ? 'meta alcançada'
+                    : dias.restantes === 0
+                      ? 'período encerrado'
+                      : acelerar > 1
+                        ? 'acima do que vem sendo feito'
+                        : acelerar > 0
+                          ? 'o ritmo atual já cobre'
+                          : 'aparece com o 1º dia fechado'}
+                </div>
+              </div>
+            </div>
           </div>
 
           {/* Direita — a diária, que é o número pedido no grupo. */}
@@ -314,19 +406,13 @@ function MetaDiaria({
             </p>
 
             {rateio.length > 0 && (
-              <>
-                <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 border-t border-border/60 pt-2 text-xs">
-                  {rateio.map((r) => (
-                    <span key={r.key} className="text-muted-foreground">
-                      {r.key} <strong className="tabular-nums text-foreground">{brl(r.valor)}</strong>
-                    </span>
-                  ))}
-                </div>
-                <p className="mt-1 text-[11px] text-muted-foreground">
-                  Rateio da diária no ritmo que cada departamento já teve no período — não é meta
-                  cadastrada por departamento.
-                </p>
-              </>
+              <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 border-t border-border/60 pt-2 text-xs">
+                {rateio.map((r) => (
+                  <span key={r.key} className="text-muted-foreground">
+                    {r.key} <strong className="tabular-nums text-foreground">{brl(r.valor)}</strong>
+                  </span>
+                ))}
+              </div>
             )}
           </div>
         </div>
@@ -398,6 +484,18 @@ export function CeoFinanceiro() {
   const ticket = count > 0 ? total / count : 0
   const topCategory = data?.byCategory?.[0]
   const missingNet = data?.missingNet ?? []
+
+  // A janela de comparação vem pronta da action, casada em DIAS ÚTEIS com o período
+  // escolhido (ver previousBusinessWindow em lib/period.ts). `adjusted` acontece em recorte
+  // maior que um mês: aí ela encosta no início do período em vez de recuar um ciclo, para o
+  // mesmo dinheiro não entrar nos dois lados da conta.
+  const comp = data?.previousWindow ?? null
+  const recorteNome = mode === 'ciclo' ? 'ciclo' : 'mês'
+  const baseDelta = comp
+    ? comp.adjusted
+      ? 'janela anterior'
+      : `${recorteNome} anterior`
+    : 'período anterior'
   const hasData = count > 0 || chartData.some((m) => m.count > 0)
 
   return (
@@ -409,6 +507,19 @@ export function CeoFinanceiro() {
             Valor do Pagamento Líquido dos cards do Financeiro, sem a fase de cancelados.
             Devoluções e descontos entram como valor negativo.
           </p>
+          {/* A régua da variação, dita por extenso. A pílula do KPI só cabe "vs. ciclo
+              anterior"; quem confere o número precisa das datas e da contagem de dias úteis
+              — principalmente em recorte personalizado, em que a janela é calculada. */}
+          {comp && (
+            <p className="mt-1 text-xs text-muted-foreground">
+              Variação medida contra os mesmos{' '}
+              <strong className="text-foreground">
+                {comp.businessDays} {comp.businessDays === 1 ? 'dia útil' : 'dias úteis'}
+              </strong>{' '}
+              {comp.adjusted ? 'imediatamente anteriores' : `do ${recorteNome} anterior`} (
+              {comp.label}).
+            </p>
+          )}
         </div>
         <CeoPeriodPicker
           value={period}
@@ -432,7 +543,7 @@ export function CeoFinanceiro() {
             <KpiCard
               label="Entradas no período"
               value={brl(total)}
-              delta={delta(total, data?.previousTotal ?? 0)}
+              delta={delta(total, data?.previousTotal ?? 0, baseDelta)}
               icon={Wallet}
             />
             <KpiCard label="Pagamentos" value={nf(count)} icon={Receipt} />
