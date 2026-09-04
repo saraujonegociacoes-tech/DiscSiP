@@ -31,6 +31,33 @@ export const dynamic = 'force-dynamic'
 
 type Contexto = { params: Promise<{ fonte: string }> }
 
+// ⚠️ ESTA CHECAGEM EXISTE POR UM 500 REAL (04/set/2026).
+// `createServiceClient()` chama `createClient(url!, key!)`, e o supabase-js LANÇA na
+// construção quando a chave é undefined ("supabaseKey is required"). Como isso acontecia
+// fora de qualquer try, a rota devolvia um 500 seco: sem corpo útil, sem log, e sem
+// nada em `sync_state.last_erro` — porque a rodada nem chegava a começar.
+//
+// A causa era ambiental, e do tipo que só aparece no deploy: `PIPEFY_TOKEN` e
+// `SUPABASE_SERVICE_ROLE_KEY` viviam só no `.env.local` (eram de CLI) e não tinham sido
+// publicados como Secret no Cloudflare. Em local funcionava; em produção, 500.
+// Agora a resposta diz o nome da variável que falta.
+function ambienteFaltando(): string[] {
+  return (['NEXT_PUBLIC_SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY', 'PIPEFY_TOKEN'] as const).filter(
+    (v) => !process.env[v]
+  )
+}
+
+function erroDeAmbiente(faltando: string[]) {
+  return NextResponse.json(
+    {
+      status: 'erro',
+      done: true,
+      erro: `configuração ausente no ambiente: ${faltando.join(', ')}. Publique como Secret no Cloudflare — ver docs/ingestao-docs/updates/ingestao-sob-demanda.md`,
+    },
+    { status: 500 }
+  )
+}
+
 // Espelha o gate de rota do middleware: quem enxerga o painel pode atualizá-lo.
 // O middleware protege /api/sync (a rota não está nas exceções do matcher), então
 // aqui já chega com sessão — o que falta é o papel, que ele só checa por prefixo de
@@ -64,30 +91,45 @@ export async function GET(_req: NextRequest, ctx: Contexto) {
   const { fonte } = await ctx.params
   if (!ehFonte(fonte)) return NextResponse.json({ erro: 'fonte desconhecida' }, { status: 404 })
 
-  const auth = await autorizar(fonte)
-  if (!auth.ok) return NextResponse.json({ erro: auth.erro }, { status: auth.status })
+  const faltando = ambienteFaltando()
+  if (faltando.length > 0) return erroDeAmbiente(faltando)
 
-  const { data, error } = await createServiceClient()
-    .from('sync_state')
-    .select('fonte, rodando, paginas, cards, last_ok_at, last_erro_at, last_erro')
-    .eq('fonte', fonte)
-    .single()
+  try {
+    const auth = await autorizar(fonte)
+    if (!auth.ok) return NextResponse.json({ erro: auth.erro }, { status: auth.status })
 
-  if (error) return NextResponse.json({ erro: error.message }, { status: 500 })
+    const { data, error } = await createServiceClient()
+      .from('sync_state')
+      .select('fonte, rodando, paginas, cards, last_ok_at, last_erro_at, last_erro')
+      .eq('fonte', fonte)
+      .single()
 
-  return NextResponse.json({
-    fonte,
-    rodando: data.rodando,
-    paginas: data.paginas,
-    cards: data.cards,
-    atualizadoEm: data.last_ok_at,
-    erro: data.last_erro,
-  })
+    if (error) return NextResponse.json({ erro: error.message }, { status: 500 })
+
+    return NextResponse.json({
+      fonte,
+      rodando: data.rodando,
+      paginas: data.paginas,
+      cards: data.cards,
+      atualizadoEm: data.last_ok_at,
+      erro: data.last_erro,
+    })
+  } catch (e) {
+    // Qualquer coisa inesperada vira mensagem, nunca um 500 mudo.
+    return NextResponse.json(
+      { erro: e instanceof Error ? e.message : String(e) },
+      { status: 500 }
+    )
+  }
 }
 
 export async function POST(req: NextRequest, ctx: Contexto) {
   const { fonte } = await ctx.params
   if (!ehFonte(fonte)) return NextResponse.json({ erro: 'fonte desconhecida' }, { status: 404 })
+
+  // Antes de qualquer coisa: sem os segredos, `createServiceClient()` lança na construção.
+  const faltando = ambienteFaltando()
+  if (faltando.length > 0) return erroDeAmbiente(faltando)
 
   const auth = await autorizar(fonte)
   if (!auth.ok) return NextResponse.json({ erro: auth.erro }, { status: auth.status })

@@ -241,6 +241,25 @@ chega com sessão. O que falta é o **papel**, que o middleware só confere por 
 por isso a rota repete a checagem, espelhando o gate de cada painel. Sem isso, um agente do CS
 conseguiria disparar a ingestão do Financeiro.
 
+> ⚠️ **`/api/sync` precisa estar em `CEO_ROUTES`** (em [`src/lib/supabase/middleware.ts`](../../../src/lib/supabase/middleware.ts)).
+> O papel `ceo` é trava **lateral**: tudo fora da lista de permissão é redirecionado para `/ceo`.
+> Sem essa entrada, o botão do painel executivo chama a rota, o middleware devolve um redirect, o
+> `fetch` segue para a página, recebe HTML no lugar de JSON — e a sincronização falha **sem erro
+> nenhum na tela**. Passar pelo middleware não afrouxa nada: a rota confere o papel por fonte, e
+> o `ceo` só alcança Financeiro e Negociação.
+
+### Quando der 500
+
+A rota checa `NEXT_PUBLIC_SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` e `PIPEFY_TOKEN` **antes** de
+tocar em qualquer cliente, e responde nomeando o que falta. Esse cuidado existe por um caso real:
+`createServiceClient()` chama `createClient(url!, key!)`, e o supabase-js **lança na construção**
+quando a chave é `undefined`. Fora de um `try`, isso virava um 500 seco — sem corpo útil e sem
+nada em `sync_state.last_erro`, porque a rodada nem começava.
+
+É a falha clássica desta mudança: as duas variáveis eram de CLI e viviam só no `.env.local`. Em
+local tudo funciona; em produção, 500. **Se a resposta disser `configuração ausente no ambiente`,
+publique os Secrets no Cloudflare e refaça o deploy.**
+
 ---
 
 ## Para ligar
