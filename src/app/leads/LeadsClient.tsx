@@ -44,6 +44,7 @@ import {
   StepConversion,
 } from '@/features/leads/lazy'
 import { useLeadsRealtime, LEADS_REALTIME_ENABLED } from '@/features/leads/useLeadsRealtime'
+import { BotaoAtualizar } from '@/features/sync'
 import {
   getLeadsData,
   getAgentLeads,
@@ -277,6 +278,8 @@ export function LeadsClient({
                 Ao vivo
               </span>
             )}
+            {/* `refresh` já é a releitura do período ativo — a mesma que o Realtime usa. */}
+            <BotaoAtualizar fontes={['leads']} aoConcluir={refresh} />
             <PeriodPicker value={period} onChange={changePeriod} disabled={loading} />
           </div>
         }

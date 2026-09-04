@@ -1,5 +1,21 @@
 # Integração Pipefy → Make → Supabase (Negociação)
 
+> ## 🔴 SUPERADO EM 04/set/2026 — este cenário sai do ar
+>
+> A ingestão passou a ser **sob demanda**: o painel ganhou um botão **Atualizar** e o Blue Desk
+> consulta o Pipefy por conta própria, sem Make. Motivo: cada cenário rodava 48×/dia e consumia
+> ~2 operações por rodada mesmo quando o delta voltava vazio — ~11.500 ops/mês só de ociosidade
+> entre os quatro. Ver [`ingestao-sob-demanda.md`](../../ingestao-docs/updates/ingestao-sob-demanda.md).
+>
+> **Este documento continua valendo como registro** do desenho, da query e do mapeamento — a
+> query GraphQL daqui é a que a rota nova usa. O que mudou é quem chama e a partir de quando: a
+> variável `since = now − 35min` deu lugar a uma marca d'água em `sync_state`, porque uma janela
+> fixa de 35 minutos só funciona colada num agendamento fixo.
+>
+> ⚠️ **Desligue o cenário no Make só depois de validar o botão** (ver o checklist no doc novo).
+> Os dois caminhos rodando juntos não duplicam nada — a ingestão é idempotente.
+
+
 Clone do cenário do Financeiro ([`make-integracao-financeiro.md`](make-integracao-financeiro.md)),
 apontando pro pipe **"3.0 Negociação"** (id `304370275`). É o que mantém a aba **Projeções** do
 painel do CEO atualizada depois da carga inicial. **Ainda não montado** — este doc é a receita.

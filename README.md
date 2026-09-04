@@ -145,9 +145,12 @@ e RPCs próprios no Supabase. Atrás da flag `NEXT_PUBLIC_LEADS_ENABLED` (sem el
 mostra "Em breve"). Detalhes completos em
 [`docs/painelleads-docs/updates/dashboard-leads-indice.md`](docs/painelleads-docs/updates/dashboard-leads-indice.md).
 
-- **Ingestão:** Pipefy → cenário Make (schedule 24/7, GraphQL delta) → RPC
-  `ingest_lead_card` no Supabase. Ver
-  [`docs/painelleads-docs/updates/make-integracao-pipefy.md`](docs/painelleads-docs/updates/make-integracao-pipefy.md).
+- **Ingestão:** Pipefy → `POST /api/sync/leads` (botão "Atualizar" do painel) → RPC
+  `ingest_lead_card` no Supabase. **Sob demanda desde 04/set/2026** — substituiu o cenário
+  agendado do Make. Ver
+  [`docs/ingestao-docs/updates/ingestao-sob-demanda.md`](docs/ingestao-docs/updates/ingestao-sob-demanda.md)
+  (o cenário antigo fica registrado em
+  [`make-integracao-pipefy.md`](docs/painelleads-docs/updates/make-integracao-pipefy.md)).
 - **Abas:** Visão Geral (KPIs, funil, distribuição por fase), Meus leads / ranking do
   agente, Performance, canal, órfãos/duplicados, alertas de leads parados por SLA.
 - **Ganhos por data de venda:** o KPI "Ganhos" e o funil "geral" contam por
@@ -169,8 +172,11 @@ domínio separado do Discador e do Dashboard de Leads. Atrás da flag
 - **Funil:** Triagem → Apresentação → Negociação do Cliente → 24 fases mensais de
   acompanhamento (1° a 24° Mês) → saídas (Quitados, Distratos, Acordos Vencidos,
   Arquivado, etc.) — 35 fases no total, seedadas na migration `20260715_cs_pipeline_schema.sql`.
-- **Ingestão:** Pipefy → Make → RPCs `ingest_cs_card`/`ingest_cs_event` (mesmo desenho do
-  comercial, pipe diferente). Carga histórica via `npm run import:cs-cards`.
+- **Ingestão:** Pipefy → `POST /api/sync/cs` (botão "Atualizar") → RPCs
+  `ingest_cs_card`/`ingest_cs_event` (mesmo desenho do comercial, pipe diferente). Sob demanda
+  desde 04/set/2026 — ver
+  [`docs/ingestao-docs/updates/ingestao-sob-demanda.md`](docs/ingestao-docs/updates/ingestao-sob-demanda.md).
+  Carga histórica via `npm run import:cs-cards`.
 - **Dado sensível:** o pipe tem dado pessoal de clientes reais (CPF, RG, endereço, dados
   financeiros) — ingerido inteiro em `cs_cards.metadata` (jsonb). Por isso o RLS de
   `cs_cards`/`cs_card_events` é mais estrito: só quem é do departamento de CS (ou
@@ -370,7 +376,7 @@ Pré-requisito: Node.js instalado.
 | Gráficos | Recharts |
 | Parse de mailing | `xlsx` (SheetJS), client-side com dynamic import |
 | Discagem | softphone utilizado + helper local Node.js/Express |
-| Ingestão Leads/CS | Pipefy (funis) → Make (sincronização quase real-time) → RPCs de ingestão no Supabase |
+| Ingestão do Pipefy (Leads/CS/Financeiro/Negociação) | Pipefy (funis) → `POST /api/sync/[fonte]` **sob demanda** (botão "Atualizar") → RPCs de ingestão no Supabase. Coalescência e cooldown de 5 min em `sync_state` |
 | Aquecimento WhatsApp | Blue Desk (plano de controle) → Make (braço executor) → Graph API da Meta; tick agendado por GitHub Actions |
 
 ---
@@ -421,6 +427,7 @@ src/
 │   │   ├── NumbersConfigSection.tsx · TemplatesSection.tsx · HistoryTable.tsx
 │   │   └── WarmupComingSoon.tsx       Tela exibida com a flag desligada
 │   ├── api/aquecimento/        tick (cron GitHub Actions) + dispatch-result (callback do Make); auth por segredo
+│   ├── api/sync/[fonte]/       ingestão sob demanda do Pipefy (botão "Atualizar"); uma página por invocação
 │   └── ajuda/                  "Como usar?" (todos os papéis)
 ├── features/
 │   ├── leads/components/      Gráficos e painéis do Dashboard de Leads: Funnel, EvolutionChart,
@@ -622,8 +629,9 @@ O `build:cf` faz o build com `@opennextjs/cloudflare` e, em seguida: renomeia `w
 | `NEXT_PUBLIC_SUPABASE_URL` | `.env.local` + Cloudflare (Secret) | URL do projeto Supabase |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | `.env.local` + Cloudflare (Secret) | Chave pública (anon) do Supabase |
 | `MAKE_WEBHOOK_URL` | Cloudflare (Secret, opcional) | Webhook do Make para notificação pós-chamada (Discador); sem ela, no-op |
-| `SUPABASE_SERVICE_ROLE_KEY` | `.env.local` (backend/CLI only) | Carga histórica de Leads e CS (`scripts/import-leads.mjs`, `scripts/import-cs-cards.mjs`) — nunca expor no frontend |
-| `PIPEFY_TOKEN` | `.env.local` (backend/CLI only) | Token pessoal da API do Pipefy, usado pelas cargas históricas de Leads e CS |
+| `SUPABASE_SERVICE_ROLE_KEY` | `.env.local` + **Cloudflare (Secret)** | Cargas históricas **e a ingestão sob demanda** (`/api/sync/[fonte]`) — nunca expor no frontend |
+| `PIPEFY_TOKEN` | `.env.local` + **Cloudflare (Secret)** | Token da API do Pipefy. ⚠️ Desde 04/set/2026 deixou de ser só de CLI: a ingestão sob demanda consulta o Pipefy do servidor. Sem ele no Cloudflare, o botão "Atualizar" falha **só em produção** |
+| `SYNC_PAGE_SIZE` | `.env.local` + Cloudflare (opcional, default `30`) | Cards por página na ingestão sob demanda. Teto de 40 no código — limite de subrequests do Worker, não preferência |
 | `PIPEFY_PIPE_ID` | `.env.local` (backend/CLI only) | Pipe do Pipefy do funil comercial (Dashboard de Leads) |
 | `CS_PIPEFY_PIPE_ID` | `.env.local` (backend/CLI only) | Pipe "3.3 - Customer Success" no Pipefy (default `305801110`) |
 | `NEXT_PUBLIC_LEADS_ENABLED` | `.env.local` + Cloudflare (build-time) | Liga o Dashboard de Leads (`/leads`); sem ela (ou `!=1`), mostra "Em breve" |
