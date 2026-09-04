@@ -535,6 +535,30 @@ export interface CeoFinanceiroData {
   byPaymentMethod: CeoFinanceiroBucket[]
   missingNet: CeoFinanceiroMissingNet[] // cards fora do total por líquido vazio
   missingNetTotal: number // quanto de dinheiro eles somam (fora do KPI)
+  /**
+   * A janela que gerou `previousTotal`/`previousCount`, para a tela poder NOMEAR a base da
+   * variação. `null` quando não havia dia útil a comparar (recorte só de fim de semana) ou
+   * quando a segunda consulta falhou — nos dois casos a aba omite o delta.
+   */
+  previousWindow: CeoFinanceiroPreviousWindow | null
+}
+
+/**
+ * Base da comparação, casada em DIAS ÚTEIS com o período escolhido (04/set).
+ *
+ * A régua antiga vivia dentro da RPC e era "o mesmo tanto de dias CORRIDOS, imediatamente
+ * antes". Ela comparava um ciclo em andamento (18 dias úteis decorridos) contra o ciclo
+ * anterior inteiro (23), e um recorte livre de 15 dias contra 15 dias corridos que podiam
+ * ter 9, 10 ou 11 dias úteis. Agora os dois lados têm o mesmo `businessDays`.
+ */
+export interface CeoFinanceiroPreviousWindow {
+  startDate: string // ISO date BRT, inclusivo
+  endDate: string // ISO date BRT, INCLUSIVO (o último dia da janela)
+  label: string // '13 jul – 6 ago', pronto para a tela
+  /** Dias úteis dos dois lados — o que torna a comparação justa. */
+  businessDays: number
+  /** true = a janela encostou no início do período em vez de recuar um ciclo inteiro. */
+  adjusted: boolean
 }
 
 // ABA 2 (Projeções): get_ceo_projecoes(), migration 20260731b_negociacao_schema.sql.
@@ -650,6 +674,21 @@ export interface CeoSaudeEquipeData {
   }
   departamentos: CeoSaudeDepartamento[]
   semVendedor: { receita: number; pagamentos: number }
+}
+
+// META ESPERADA (aba Financeiro — card "Diária"): get_ceo_meta() / set_ceo_meta(),
+// migration 20260902_ceo_meta_financeira.sql. Singleton: UM número por instalação, não
+// um por período — o mês civil e o ciclo 11→10 valem ~1 mês cada, então o mesmo alvo
+// serve aos dois recortes do seletor.
+//
+// ⚠️ Aqui só vem o alvo. A diária (o que falta ÷ dias úteis restantes) é calculada na
+// tela com `businessDaysLeft()` de lib/period.ts, porque depende de HOJE e do período
+// selecionado — muda a cada clique, sem ir ao banco.
+export interface CeoMetaConfig {
+  /** Meta de entradas do período, em R$. 0 = nunca cadastrada (a tela convida a definir). */
+  meta: number
+  /** Quando foi gravada pela última vez, em BRT ('YYYY-MM-DDTHH:MM:SS'). */
+  updatedAt: string | null
 }
 
 

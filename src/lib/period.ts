@@ -176,3 +176,197 @@ export function dayPeriod(daysAgo: number, now: Date = new Date()): LeadPeriod {
 export function recentDays(now: Date = new Date()): LeadPeriod[] {
   return DAY_NAMES.map((_, i) => dayPeriod(i, now))
 }
+
+// ── Dias úteis do período ───────────────────────────────────────────────────
+// Nasceu do card "Diária" da aba Financeiro do CEO (set/2026): a meta que a operação
+// persegue no dia é o que falta dividido pelos dias que ainda restam para faturar — e
+// sábado e domingo não faturam. Fica aqui, e não na aba, porque é aritmética de
+// calendário em BRT: o mesmo motivo pelo qual todo o resto deste arquivo existe (o app
+// roda em UTC no Cloudflare; contar dia com getDay() local erraria a virada).
+//
+// ⚠️ "Dia útil" aqui é SEGUNDA A SEXTA, sem tabela de feriados — o repo não tem uma, e
+// inventar uma lista incompleta erraria em silêncio no feriado que faltasse. O efeito
+// prático é conhecido: num mês com feriado a diária sai um pouco OTIMISTA (divide por
+// um dia a mais do que a operação tem). Quando existir calendário de feriados, é aqui
+// que ele entra — a aba não muda.
+
+// Dias de semana (seg–sex) entre duas datas BRT 'YYYY-MM-DD', com `endYMD` EXCLUSIVO —
+// mesma convenção de `end` do LeadPeriod. Itera em UTC de propósito: as datas já vêm
+// como Y-M-D BRT, e o Brasil não tem horário de verão desde 2019, então somar 24h nunca
+// pula nem repete dia.
+export function businessDaysBetween(startYMD: string, endYMD: string): number {
+  const [sy, sm, sd] = startYMD.split('-').map(Number)
+  const [ey, em, ed] = endYMD.split('-').map(Number)
+  const end = Date.UTC(ey, em - 1, ed)
+  let count = 0
+  for (let t = Date.UTC(sy, sm - 1, sd); t < end; t += 86_400_000) {
+    const dow = new Date(t).getUTCDay()
+    if (dow !== 0 && dow !== 6) count++
+  }
+  return count
+}
+
+/** Dias úteis de um período: quantos ainda restam (HOJE incluso) e quantos ele tem ao todo. */
+export interface BusinessDaysLeft {
+  /** Dias úteis de hoje (inclusive) até o fim do período. 0 se o período já acabou. */
+  restantes: number
+  /** Dias úteis do período inteiro — a base do "X de Y" na tela. */
+  totais: number
+  /** true quando o período inteiro já passou (`end` ≤ hoje): não há mais dia para faturar. */
+  encerrado: boolean
+  /** true quando o período ainda não começou: restantes = totais. */
+  futuro: boolean
+}
+
+// Dias úteis que ainda contam num período, olhando de `now` (default: agora), em BRT.
+//
+// HOJE CONTA. A conta responde "quanto preciso fazer por dia, a partir de agora" — e
+// hoje ainda dá para faturar. Excluir o dia corrente inflaria a diária todo santo dia
+// da manhã, que é justo a hora em que o CEO pede o número.
+export function businessDaysLeft(period: LeadPeriod, now: Date = new Date()): BusinessDaysLeft {
+  // `period.end` é o limite EXCLUSIVO à meia-noite BRT — lido em BRT ele já é, exato, o
+  // primeiro dia de fora. Nada de somar 1 dia à mão.
+  const inicio = ymd(brtParts(new Date(period.start)))
+  const fim = ymd(brtParts(new Date(period.end)))
+  const hoje = ymd(brtParts(now))
+
+  const totais = businessDaysBetween(inicio, fim)
+  // Comparação de string funciona em 'YYYY-MM-DD' (ISO é lexicograficamente ordenado).
+  const encerrado = hoje >= fim
+  const futuro = hoje < inicio
+  const desde = futuro ? inicio : hoje
+
+  return {
+    restantes: encerrado ? 0 : businessDaysBetween(desde, fim),
+    totais,
+    encerrado,
+    futuro,
+  }
+}
+
+// ── Janela de comparação, casada por dias úteis ─────────────────────────────
+// Pedido do dono (04/set/2026): *"filtrei os últimos 15 dias de meta; quero comparar com os
+// últimos 15 dias de meta da meta passada"*. A régua antiga (dentro de `get_ceo_financeiro`)
+// era `início − quantidade de dias corridos`, e ela mente em dois casos que acontecem todo
+// dia na tela:
+//
+//   · **Ciclo em andamento.** Escolher o ciclo corrente comparava o que entrou em ~18 dias
+//     úteis contra o ciclo anterior INTEIRO (23). O delta nascia negativo por construção.
+//   · **Recorte livre.** "Últimos 15 dias" caía nos 15 dias corridos imediatamente
+//     anteriores, que podem carregar 9, 10 ou 11 dias úteis conforme os fins de semana.
+//
+// A régua nova: a janela de comparação **começa um ciclo antes** (menos um mês — como o
+// ciclo é ancorado no dia 11, um mês atrás é exatamente o ciclo passado) e vai até completar
+// **a mesma quantidade de dias úteis** que a janela escolhida tem até hoje.
+
+const pad2 = (n: number) => String(n).padStart(2, '0')
+
+// Desloca uma data BRT 'YYYY-MM-DD' em `days` dias. Date.UTC normaliza virada de mês e ano.
+function shiftYMD(s: string, days: number): string {
+  const [y, m, d] = s.split('-').map(Number)
+  const t = new Date(Date.UTC(y, m - 1, d + days))
+  return `${t.getUTCFullYear()}-${pad2(t.getUTCMonth() + 1)}-${pad2(t.getUTCDate())}`
+}
+
+// Mesma data `n` meses atrás, com o dia GRAMPEADO ao último do mês de destino: 31/mar menos
+// um mês é 28/fev, e não 3/mar (que é onde o Date.UTC cru cairia, rolando para frente).
+function monthsBackYMD(s: string, n: number): string {
+  const [y, m, d] = s.split('-').map(Number)
+  const ultimoDia = new Date(Date.UTC(y, m - n, 0)).getUTCDate()
+  const t = new Date(Date.UTC(y, m - 1 - n, Math.min(d, ultimoDia)))
+  return `${t.getUTCFullYear()}-${pad2(t.getUTCMonth() + 1)}-${pad2(t.getUTCDate())}`
+}
+
+function isBusinessDay(s: string): boolean {
+  const [y, m, d] = s.split('-').map(Number)
+  const dow = new Date(Date.UTC(y, m - 1, d)).getUTCDay()
+  return dow !== 0 && dow !== 6
+}
+
+/** Fim EXCLUSIVO da janela que começa em `startYMD` e contém exatamente `n` dias úteis. */
+export function businessDaysEnd(startYMD: string, n: number): string {
+  if (n <= 0) return startYMD
+  let cur = startYMD
+  let count = 0
+  while (count < n) {
+    if (isBusinessDay(cur)) count++
+    cur = shiftYMD(cur, 1)
+  }
+  return cur
+}
+
+/** Início da janela que termina (EXCLUSIVO) em `endYMD` e contém exatamente `n` dias úteis. */
+export function businessDaysStart(endYMD: string, n: number): string {
+  let cur = endYMD
+  let count = 0
+  while (count < n) {
+    cur = shiftYMD(cur, -1)
+    if (isBusinessDay(cur)) count++
+  }
+  return cur
+}
+
+/** A janela anterior comparável, e por que ela tem esse tamanho. */
+export interface ComparableWindow {
+  /** A janela em si, pronta para ir à RPC (start/end UTC ISO, `end` EXCLUSIVO). */
+  period: LeadPeriod
+  /** Dias úteis dos dois lados da comparação — é o que a torna justa. */
+  businessDays: number
+  /**
+   * true quando a janela teve de recuar para ficar colada na selecionada, em vez de um
+   * ciclo cheio atrás. Acontece com recorte maior que um mês, em que "um ciclo antes"
+   * invadiria o próprio período escolhido e contaria o mesmo dinheiro dos dois lados.
+   */
+  adjusted: boolean
+}
+
+// A janela de comparação de um período, casada em DIAS ÚTEIS.
+//
+// `now` (default: agora) entra na conta porque um período em andamento só realizou o que já
+// passou: a contagem vai até HOJE, inclusive. Escolher o ciclo corrente no dia 4 compara os
+// dias úteis decorridos contra os mesmos N dias úteis do ciclo passado, em vez do ciclo
+// passado inteiro.
+//
+// Devolve `null` quando não há dia útil nenhum a comparar (janela só de fim de semana) — aí
+// a tela simplesmente não mostra variação, em vez de inventar uma base.
+export function previousBusinessWindow(
+  period: LeadPeriod,
+  now: Date = new Date(),
+): ComparableWindow | null {
+  const inicio = ymd(brtParts(new Date(period.start)))
+  const fim = ymd(brtParts(new Date(period.end))) // EXCLUSIVO
+  // Amanhã em BRT: o limite exclusivo que faz HOJE contar.
+  const limite = shiftYMD(ymd(brtParts(now)), 1)
+
+  // Período em andamento → conta só o decorrido. Período inteiro no passado → `fim` manda.
+  const fimEfetivo = fim < limite ? fim : limite
+  // Período inteiramente no futuro não tem decorrido: aí a janela cheia é a única medida
+  // possível, e a comparação vira "mesmo tamanho, um ciclo antes".
+  const dias =
+    businessDaysBetween(inicio, fimEfetivo) || businessDaysBetween(inicio, fim)
+  if (dias === 0) return null
+
+  // Começa no primeiro DIA ÚTIL a partir de um mês atrás. Sem isso, um início que cai no
+  // sábado arrastaria o fim de semana para dentro só de um dos lados da comparação — e
+  // pagamento datado em sábado existe na base. Contar N dias úteis a partir do sábado ou da
+  // segunda seguinte termina no mesmo dia, então o corte só enxuga a ponta.
+  let prevStart = monthsBackYMD(inicio, 1)
+  while (!isBusinessDay(prevStart)) prevStart = shiftYMD(prevStart, 1)
+  let prevEnd = businessDaysEnd(prevStart, dias) // EXCLUSIVO
+  let adjusted = false
+
+  // Recorte maior que um mês: a janela de um ciclo atrás entraria dentro da selecionada e o
+  // mesmo dinheiro apareceria nos dois lados. Nesse caso ela encosta no início do período.
+  if (prevEnd > inicio) {
+    prevEnd = inicio
+    prevStart = businessDaysStart(inicio, dias)
+    adjusted = true
+  }
+
+  return {
+    // customPeriod recebe o último dia INCLUSIVO e já monta rótulo ("11 jul – 4 ago").
+    period: customPeriod(prevStart, shiftYMD(prevEnd, -1)),
+    businessDays: dias,
+    adjusted,
+  }
+}

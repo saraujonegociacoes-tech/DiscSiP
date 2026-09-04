@@ -1,9 +1,10 @@
 'use server'
 
 import { createServerClient } from '@/lib/supabase/server'
-import { sanitizePeriod, type LeadPeriod } from '@/lib/period'
+import { previousBusinessWindow, sanitizePeriod, type LeadPeriod } from '@/lib/period'
 import type {
   CeoFinanceiroData,
+  CeoMetaConfig,
   CeoProjecaoData,
   CeoSaudeEquipeData,
 } from '@/lib/types/database'
@@ -41,6 +42,7 @@ const EMPTY_FINANCEIRO: Omit<CeoFinanceiroData, 'periodStart' | 'periodEnd'> = {
   byPaymentMethod: [],
   missingNet: [],
   missingNetTotal: 0,
+  previousWindow: null,
 }
 
 // ABA 1 — Financeiro (entradas do mês). Lê get_ceo_financeiro(p_start, p_end)
@@ -66,11 +68,35 @@ export async function getCeoFinanceiro(
 ): Promise<CeoFinanceiroData> {
   const p = sanitizePeriod(period)
   const supabase = await createServerClient()
-  const { data, error } = await supabase.rpc('get_ceo_financeiro', {
-    p_start: p.start,
-    p_end: p.end,
-    p_modo: modo,
-  })
+
+  // A base de comparação é calculada AQUI, no TypeScript, e buscada com uma segunda chamada
+  // à mesma RPC (pedido do dono, 04/set: "filtrei os últimos 15 dias de meta, quero comparar
+  // com os últimos 15 dias de meta da meta passada").
+  //
+  // Por que não dentro do SQL: a RPC já devolve um `previousTotal` próprio, medido em dias
+  // CORRIDOS imediatamente anteriores — e ele é a régua que o dono mandou trocar. Reescrever
+  // aquela função de 130 linhas para casar dias úteis significaria (a) `CREATE OR REPLACE`
+  // dela numa migration nova, a armadilha que já mordeu este projeto duas vezes
+  // (supabase/migrations/README.md §6), e (b) uma SEGUNDA definição de "dia útil" no banco,
+  // que poderia divergir da de `lib/period.ts` sem ninguém perceber. Uma definição só, em
+  // TypeScript, testada — e o Postgres continua fazendo o que faz bem: somar.
+  //
+  // O preço é uma consulta a mais, que calcula série de 12 baldes e breakdowns para jogar
+  // fora (só `total`/`count` são lidos). Ela sai em PARALELO com a principal, então não soma
+  // latência; se um dia pesar, o caminho é uma RPC enxuta de janela.
+  const janela = previousBusinessWindow(p)
+
+  const [principal, anterior] = await Promise.all([
+    supabase.rpc('get_ceo_financeiro', { p_start: p.start, p_end: p.end, p_modo: modo }),
+    janela
+      ? supabase.rpc('get_ceo_financeiro', {
+          p_start: janela.period.start,
+          p_end: janela.period.end,
+          p_modo: modo,
+        })
+      : Promise.resolve({ data: null, error: null }),
+  ])
+  const { data, error } = principal
 
   // Degrada (não quebra) se a migration ainda não foi aplicada, se o papel não passar na
   // guarda, ou se não houver dado ingerido.
@@ -86,14 +112,35 @@ export async function getCeoFinanceiro(
     return { periodStart: p.start, periodEnd: p.end, ...EMPTY_FINANCEIRO }
   }
 
+  // A janela anterior é tudo ou nada: falhou a consulta, a aba fica SEM variação em vez de
+  // cair no `previousTotal` da RPC. Os dois números medem coisas diferentes, e um delta que
+  // troca de régua no meio é pior que delta nenhum.
+  if (anterior.error) {
+    console.error('[ceo] janela de comparação falhou:', anterior.error.message ?? anterior.error)
+  }
+  const prev = (anterior.data ?? null) as unknown as Partial<CeoFinanceiroData> | null
+  const comparavel = janela && prev ? janela : null
+
   const d = data as unknown as Partial<CeoFinanceiroData>
   return {
     periodStart: d.periodStart ?? p.start,
     periodEnd: d.periodEnd ?? p.end,
     total: Number(d.total ?? 0),
     count: Number(d.count ?? 0),
-    previousTotal: Number(d.previousTotal ?? 0),
-    previousCount: Number(d.previousCount ?? 0),
+    previousTotal: Number(prev?.total ?? 0),
+    previousCount: Number(prev?.count ?? 0),
+    previousWindow: comparavel
+      ? {
+          startDate: comparavel.period.start.slice(0, 10),
+          // `end` da janela é EXCLUSIVO; a tela mostra o último dia que entrou na conta.
+          endDate: new Date(new Date(comparavel.period.end).getTime() - 86_400_000)
+            .toISOString()
+            .slice(0, 10),
+          label: comparavel.period.label,
+          businessDays: comparavel.businessDays,
+          adjusted: comparavel.adjusted,
+        }
+      : null,
     monthly: d.monthly ?? [],
     byCategory: d.byCategory ?? [],
     byDepartment: d.byDepartment ?? [],
@@ -102,6 +149,50 @@ export async function getCeoFinanceiro(
     missingNet: d.missingNet ?? [],
     missingNetTotal: Number(d.missingNetTotal ?? 0),
   }
+}
+
+// ABA 1 (continuação) — a META ESPERADA do período, que alimenta o card "Diária".
+// Lê get_ceo_meta() (migration 20260902_ceo_meta_financeira.sql).
+//
+// É uma RPC SEPARADA de propósito, e não mais uma chave dentro de get_ceo_financeiro:
+// mexer naquela função de 130 linhas para acrescentar um número exigiria um
+// CREATE OR REPLACE dela numa migration nova, e este projeto já se queimou duas vezes
+// com "a última migration que rodar vence" (supabase/migrations/README.md §6). O custo
+// é uma chamada a mais — barata, uma linha de singleton — e a aba a dispara em efeito
+// próprio, no mesmo mount do carregamento do período: as duas correm em paralelo, e esta
+// não se repete a cada troca do seletor.
+//
+// A meta é UM número para qualquer período: o alvo do mês civil e o do ciclo 11→10 são
+// o mesmo alvo. Trocar o seletor não troca a meta — troca o realizado e os dias úteis
+// que ainda restam, que é o que faz a diária mudar.
+export async function getCeoMeta(): Promise<CeoMetaConfig> {
+  const supabase = await createServerClient()
+  const { data, error } = await supabase.rpc('get_ceo_meta')
+
+  // Mesma disciplina das outras: degrada (meta 0 = "não cadastrada", a aba fica de pé
+  // sem o card) e conta o motivo no servidor, porque erro de RPC e "sem dado" produzem
+  // exatamente a mesma tela.
+  if (error) {
+    console.error('[ceo] get_ceo_meta falhou:', error.message ?? error)
+  }
+  if (error || !data) return { meta: 0, updatedAt: null }
+
+  const d = data as unknown as Partial<CeoMetaConfig>
+  return { meta: Number(d.meta ?? 0), updatedAt: d.updatedAt ?? null }
+}
+
+// Gravação da meta. Mesma guarda ceo/admin da leitura; a tabela tem RLS sem policy,
+// então esta RPC é a única porta. Zero é valor VÁLIDO — é como o dono desliga o card.
+export async function setCeoMeta(valor: number): Promise<{ ok: boolean; erro?: string }> {
+  const supabase = await createServerClient()
+  const { data, error } = await supabase.rpc('set_ceo_meta', { p_valor: valor })
+  if (error) {
+    console.error('[ceo] set_ceo_meta falhou:', error.message ?? error)
+    return { ok: false, erro: error.message }
+  }
+  // NULL = a guarda barrou. Não é erro de rede: é papel sem permissão.
+  if (!data) return { ok: false, erro: 'sem permissão' }
+  return data as { ok: boolean; erro?: string }
 }
 
 const EMPTY_PROJECOES: Omit<CeoProjecaoData, 'referenceDate'> = {

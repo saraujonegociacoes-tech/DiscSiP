@@ -732,6 +732,54 @@ deploy que já está no ar** — só o próximo build a enxerga. Se `/ceo` mostr
 variável definida, o diagnóstico é esse, não o papel do usuário nem a guarda: refazer o deploy.
 (A flag controla só o **lançamento**; quem barra o acesso é o middleware + `ceo_current_role()`.)
 
+### 02/set — depois da entrega: card **Diária** e a meta esperada na aba Financeiro
+
+Primeira mudança de escopo desde a entrega, e ela veio da rotina. O CEO pede todo dia no grupo a
+projeção por departamento **"junto com a diária"**, e a resposta era montada à mão a partir de
+três prints. A aba passou a responder isso sozinha:
+
+- as quebras por **categoria / departamento / forma** subiram para **cima** do gráfico de 12
+  ciclos (o gráfico virou contexto histórico, que vem depois do que se persegue hoje);
+- entrou o card **Diária**, com a **meta esperada** editável na própria tela e a conta do dono:
+  `(meta − realizado) ÷ dias úteis restantes no período`;
+- ajuste de 03/set, com o card já em produção: saiu a legenda do rateio por departamento (o card
+  vai para print, e o rodapé de texto competia com os números) e o espaço livre virou o **rodapé
+  de ritmo** — média por dia útil já fechado, projeção de fechamento e quantas vezes o ritmo
+  atual precisa render.
+
+Migration `20260902_ceo_meta_financeira.sql` — tabela `ceo_meta_config` (singleton, no mesmo
+molde de `ceo_custo_config`) + `get_ceo_meta()` / `set_ceo_meta()`, com a mesma guarda ceo/admin
+das outras seis RPCs. Deixa `get_ceo_financeiro` **intacta**, de propósito (§6 do README das
+migrations — a armadilha do `CREATE OR REPLACE` duplicado).
+
+⚠️ Duas imprecisões conhecidas, ambas escolhidas: **dia útil é seg–sex sem feriados** (a diária
+sai otimista em mês com feriado) e a **meta é um número só**, não uma por ciclo. Detalhes,
+medições e o que ficou de fora: [`meta-diaria-financeiro.md`](meta-diaria-financeiro.md).
+
+⚠️ Mesma pegadinha do custo, uma linha acima: **entregue ≠ configurado.** Enquanto
+`ceo_meta_config.meta_mensal` for 0, o card mostra o convite para definir a meta, não a diária.
+
+### 04/set — a variação passou a comparar os mesmos dias úteis
+
+Segunda mudança vinda da rotina, e da mesma raiz do card de Diária: o dono filtra recortes
+parciais ("os últimos 15 dias de meta") e a pílula de variação respondia com uma base de outro
+tamanho. A régua antiga, dentro de `get_ceo_financeiro`, era `início − dias CORRIDOS do período`.
+
+A nova: a janela de comparação começa **um ciclo antes** e vai até completar **os mesmos dias
+úteis** que o período tem **até hoje**. Some com dois enganos que apareciam todo dia — ciclo em
+andamento medido contra o ciclo anterior inteiro (19 dias úteis × 23), e recorte livre de 15 dias
+medido contra 15 dias corridos.
+
+**Sem migration.** A régua vive em `previousBusinessWindow()` (`src/lib/period.ts`, ao lado da
+contagem de dias úteis que o card de Diária já usava) e a janela anterior é buscada com uma
+segunda chamada à MESMA RPC, disparada em paralelo com a principal. Escrever a conta em SQL
+custaria um `CREATE OR REPLACE` da função de 130 linhas (§6 do README das migrations) e uma
+segunda definição de "dia útil" no banco, livre para divergir da do app.
+
+⚠️ O `previousTotal` que a RPC calcula continua existindo e agora é **ignorado** pela action —
+quem reescrever aquela função um dia pode tirar as duas linhas. Detalhes e a tabela de casos
+medidos: [`comparacao-por-dias-uteis.md`](comparacao-por-dias-uteis.md).
+
 ---
 
 ## Riscos & dependências (resumo)
