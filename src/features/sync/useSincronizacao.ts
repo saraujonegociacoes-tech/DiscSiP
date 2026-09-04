@@ -122,6 +122,13 @@ export function useSincronizacao(fontes: Fonte[], aoConcluir?: () => void) {
     if (!res.ok && !json.status) {
       return { status: 'erro', erro: json.erro ?? `HTTP ${res.status}` }
     }
+    // ⚠️ Resposta 200 sem `status` = não veio desta rota. O caso real foi o middleware
+    // redirecionando /api/sync para uma PÁGINA (o papel `ceo` batia nisso): o fetch segue
+    // o redirect, recebe HTML, o `.json()` falha e sobra `{}`. Antes isto virava um
+    // "não fez nada" mudo, que é o pior desfecho possível — agora aparece na tela.
+    if (!json.status) {
+      return { status: 'erro', erro: `resposta inesperada da rota (HTTP ${res.status})` }
+    }
     return json as Resposta
   }, [])
 

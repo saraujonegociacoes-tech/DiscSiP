@@ -9,7 +9,13 @@ const PUBLIC_ROUTES = ['/login', '/cadastro', '/verifique-email', '/esqueci-senh
 // Tudo que o papel `ceo` alcança. Lista de PERMISSÃO (o oposto dos gates por área abaixo)
 // porque `ceo` é uma trava lateral, não um nível: ele só tem o painel executivo e a ajuda.
 // Ver docs/projetopainelceo-docs/updates/painel-ceo-sprints.md.
-const CEO_ROUTES = ['/ceo', '/ajuda']
+// ⚠️ `/api/sync` PRECISA estar aqui. O botão "Atualizar" do painel executivo chama
+// POST /api/sync/financeiro e /negociacao; sem esta entrada o middleware redireciona a
+// chamada para /ceo, o fetch segue o redirect, recebe HTML no lugar de JSON e a
+// sincronização falha SEM ERRO NENHUM na tela. Passar por aqui não afrouxa nada: a rota
+// confere o papel por fonte (src/lib/sync/fontes.ts), e o `ceo` só alcança Financeiro e
+// Negociação — Leads e CS devolvem 403 para ele.
+const CEO_ROUTES = ['/ceo', '/ajuda', '/api/sync']
 
 // Acesso total (vê tudo). 'tester' entra aqui de propósito — é um admin com seletor de visão.
 const managerLevel = (role: string) => role === 'manager' || role === 'admin' || role === 'tester'
